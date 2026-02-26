@@ -23,18 +23,18 @@
 - [ ] Add UI for configuring HL7 automatic response (message type and response code)
 
 ### Backend Implementation (Tauri)
-- [ ] Implement TCP socket communication with 1s timeout
-- [ ] Implement retry logic with exponential backoff (up to 5 times)
-- [ ] Support sending and receiving plain text messages with special character translation
-- [ ] Handle ASTM and HL7 protocol requirements
-- [ ] Implement Tauri channels for frontend-backend communication
-- [ ] Implement automatic response logic for ASTM (send configured message)
-- [ ] Implement automatic response logic for HL7 (generate response from type/code and received message)
+- [x] Implement TCP socket communication with 1s timeout
+- [x] Implement retry logic with exponential backoff (up to 5 times)
+- [x] Support sending and receiving plain text messages with special character translation
+- [x] Handle ASTM and HL7 protocol requirements
+- [x] Implement Tauri channels for frontend-backend communication
+- [x] Implement automatic response logic for ASTM (send configured message)
+- [x] Implement automatic response logic for HL7 (generate response from type/code and received message)
 
 ### Message Builder Logic
-- [ ] Process input line by line for message building
-- [ ] For MLLP: prepend <VT>, append <CR> to each line, append <FS><CR> after last <CR>
-- [ ] For ASTM: convert each line to ASTM segment with segment number and checksum
+- [x] Process input line by line for message building
+- [x] For MLLP: prepend <VT>, append <CR> to each line, append <FS><CR> after last <CR>
+- [x] For ASTM: convert each line to ASTM segment with segment number and checksum
 
 ### General
 - [ ] Update SPECIFICATION.md as features are designed, implemented, or changed

@@ -115,3 +115,11 @@ The goal of this document is to keep a trace of the prompts I tried
 > Update the wireguard to move the protocol select to the right too. The configuration for auto response should also be on the right and depend on the selected protocol. MLLP should not be an option in this select. Add a toggle which should be on by default to enable or disable connection retries. Can you also make the inputs more compact ?
 
 > Great ! Can you display the config-left and config-right panel with 2 lines each ? Also transform the astm response input from a textarea to an input
+
+## Backend
+
+### Agent mode
+
+> I want you to build the backend for this application. Read the specifications and create the Rust code for it. Limit yourself to the backend / Rust code. Make sure to update the TODO file
+
+> I want you to build the backend for this application. Read the specifications and create the Rust code for it. Limit yourself to the backend / Rust code. Make sure to update the TODO file
