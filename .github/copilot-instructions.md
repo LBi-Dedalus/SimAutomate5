@@ -5,7 +5,7 @@
 - Purpose: Send and receive ASTM/HL7 (and other) messages over TCP sockets on a local network, with message building and auto-response features.
 
 ## Architecture & Key Components
-- **Frontend**: Located in `src/` (HTML, CSS, JS). Handles UI, user input, and communicates with backend via Tauri channels.
+- **Frontend**: Located in `src/` (HTML, CSS, JS). Handles UI, user input, and communicates with backend via Tauri channels. Uses the Oat component library for UI, but only via semantic HTML and Oat CSS classes (not web components).
 - **Backend**: Located in `src-tauri/` (Rust). Handles TCP socket connections, message parsing, protocol logic, and auto-responses.
 - **Message Builder**: UI page for constructing ASTM/MLLP messages from user input.
 - **Auto-Response**: Configurable per protocol (ASTM: user-defined message; HL7: generated from type/code and incoming message).
@@ -39,7 +39,7 @@
 
 ## Examples
 - To add a new protocol, implement parsing and response logic in `src-tauri/src/` and expose via Tauri events.
-- To add a new UI feature, update `src/index.html` and `src/main.js`, and connect to backend via Tauri channels.
+- To add a new UI feature, update `src/index.html` and `src/main.js`, and connect to backend via Tauri channels. When using the Oat library, use semantic HTML elements (div, button, input, etc.) and apply Oat CSS classes as described in the Oat documentation. Do not use web components or custom elements for Oat.
 
 ---
 For more details, see SPECIFICATION.md and TODO.md in the project root.

@@ -5,7 +5,13 @@
 ### UI Implementation
 - [ ] Create configuration section for IP and port input
 - [ ] Enable Connect button only when both fields are filled
-- [ ] Add retry option toggle for connection
+- [ ] Add connection retries toggle (enabled by default) on the left side of config bar
+- [ ] Move protocol select (ASTM / HL7 only) to the right side of config bar
+- [ ] Add connection status indicator (dot + label: Disconnected / Connecting / Connected) next to Connect button
+- [ ] Update Connect button label to "Disconnect" when connected
+- [ ] Add auto-response toggle and protocol-specific config on the right side of config bar
+- [ ] Show ASTM response textarea only when ASTM selected and auto-response enabled
+- [ ] Show HL7 message-type + response-code inputs only when HL7 selected and auto-response enabled
 - [ ] Build message display area with color coding (red for received, green for sent)
 - [ ] Add timestamp to each message
 - [ ] Add Clear button for message display area

@@ -9,6 +9,8 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
 - User can enter the IP address and port of the remote application.
 - Both fields must be filled for the Connect button to be enabled.
 - The IP and port are configurable at any time.
+- Protocol selection (ASTM or HL7) is shown on the right side of the configuration bar. MLLP is a message-builder format only and is not a selectable connection protocol.
+- A toggle to enable/disable connection retries is shown on the left side, enabled by default.
 
 
 ### Connection
@@ -16,6 +18,11 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
 - The connection attempt uses a timeout of 1 second.
 - There is an option to allow connection retries (toggle in the UI).
 - If retries are enabled and the connection fails, the application retries up to 5 times with exponential backoff (e.g., 1s, 2s, 4s, 8s, 16s).
+- A status indicator (dot + label) is shown next to the Connect button:
+  - **Disconnected** (grey): no active connection.
+  - **Connecting** (amber): connection attempt in progress or retrying.
+  - **Connected** (green): TCP socket is open and ready.
+- The auto-response toggle is displayed on the right side of the configuration bar, separated from the connection controls.
 
 ### Messaging UI
 - Message display area:
@@ -31,11 +38,10 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
 ### Automatic Responses
 - The application can automatically respond to incoming messages for ASTM and HL7 protocols.
 - There is a toggle to enable or disable automatic responses.
-- For ASTM:
-  - The user configures the response message to send automatically.
-- For HL7:
-  - The user configures the message type and response code.
-  - The program generates a response message based on this configuration and the received message.
+- The auto-response toggle and its protocol-specific configuration are shown on the right side of the configuration bar, alongside the Protocol selector.
+- The protocol-specific config is only shown when auto-response is enabled and the relevant protocol is selected:
+  - **ASTM**: a textarea for the user to enter the response message to send automatically.
+  - **HL7**: two inputs for message type (e.g. `ACK`) and response code (e.g. `AA`). The program generates a response message based on this configuration and the received message.
 
 
 ## Message Builder
@@ -60,10 +66,10 @@ The application will include a "Message Builder" page to construct messages for 
     - Each line is converted to an ASTM segment with the correct segment number and checksum.
     - The output displays the constructed ASTM message.
 
-## Technical Requirements
 - Tauri backend will handle TCP socket communication, including connection timeout and retry logic with exponential backoff.
 - Frontend will use Vanilla JS for UI logic, including the retry option toggle.
 - Communication between frontend and backend will use Tauri channels (event/message system) for sending and receiving messages, connection status, and errors.
+- UI must use the Oat component library for styling and layout, but only via semantic HTML elements (div, button, input, etc.) and Oat CSS classes as described in the Oat documentation. Do not use web components or custom elements for Oat.
 - UI must provide configuration for automatic responses (toggle, ASTM response message, HL7 message type and response code).
 - Backend must handle automatic response logic for ASTM and HL7, generating and sending responses as configured.
 - All features must be implemented from scratch.

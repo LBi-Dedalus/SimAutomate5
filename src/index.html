@@ -2,38 +2,109 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="stylesheet" href="styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri App</title>
+    <title>SimAutomate5</title>
+    <link rel="stylesheet" href="https://unpkg.com/@knadh/oat/oat.min.css" />
+    <script src="https://unpkg.com/@knadh/oat/oat.min.js" defer></script>
+    <link rel="stylesheet" href="styles.css" />
     <script type="module" src="/main.js" defer></script>
   </head>
-
   <body>
-    <main class="container">
-      <h1>Welcome to Tauri</h1>
+    <div id="app">
 
-      <div class="row">
-        <a href="https://tauri.app" target="_blank">
-          <img src="/assets/tauri.svg" class="logo tauri" alt="Tauri logo" />
-        </a>
-        <a
-          href="https://developer.mozilla.org/en-US/docs/Web/JavaScript"
-          target="_blank"
-        >
-          <img
-            src="/assets/javascript.svg"
-            class="logo vanilla"
-            alt="JavaScript logo"
-          />
-        </a>
+      <!-- Configuration Bar -->
+      <header id="config-bar">
+        <div id="config-left">
+          <div class="config-row">
+            <label>
+              IP Address
+              <input type="text" id="ip-address" placeholder="127.0.0.1" />
+            </label>
+            <label>
+              Port
+              <input type="number" id="port" placeholder="5000" />
+            </label>
+            <label>
+              Retries
+              <input type="checkbox" role="switch" id="enable-retries" checked />
+            </label>
+          </div>
+          <div class="config-row">
+            <button id="connect-btn" data-variant="primary">Connect</button>
+            <output id="conn-status" aria-live="polite">
+              <span id="conn-dot"></span>
+              <span id="conn-label">Disconnected</span>
+            </output>
+          </div>
+        </div>
+        <div id="config-right">
+          <div class="config-row">
+            <label>
+              Protocol
+              <select id="protocol">
+                <option value="ASTM">ASTM</option>
+                <option value="HL7">HL7</option>
+              </select>
+            </label>
+            <label>
+              Auto-Response
+              <input type="checkbox" role="switch" id="auto-response" />
+            </label>
+          </div>
+          <div class="config-row">
+            <!-- ASTM auto-response config (shown when ASTM + auto-response enabled) -->
+            <div id="astm-response-config" class="auto-response-config" hidden>
+              <label>
+                Response Message
+                <input type="text" id="astm-response" placeholder="ASTM response message..." />
+              </label>
+            </div>
+            <!-- HL7 auto-response config (shown when HL7 + auto-response enabled) -->
+            <div id="hl7-response-config" class="auto-response-config" hidden>
+              <label>
+                Message Type
+                <input type="text" id="hl7-msg-type" placeholder="ACK" />
+              </label>
+              <label>
+                Response Code
+                <input type="text" id="hl7-resp-code" placeholder="AA" />
+              </label>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Message Log -->
+      <div id="message-log-wrapper">
+        <main id="message-log">
+          <!-- Example message bubbles -->
+          <div class="message sent">
+            <span class="message-time">10:01:23</span>
+            <div class="message-body">Sent message example</div>
+          </div>
+          <div class="message received">
+            <span class="message-time">10:01:25</span>
+            <div class="message-body">Received message example</div>
+          </div>
+          <!-- Messages will be dynamically inserted here -->
+        </main>
+        <div id="log-sidebar">
+          <button id="clear-log-btn" class="small">Clear</button>
+        </div>
       </div>
-      <p>Click on the Tauri logo to learn more about the framework</p>
 
-      <form class="row" id="greet-form">
-        <input id="greet-input" placeholder="Enter a name..." />
-        <button type="submit">Greet</button>
-      </form>
-      <p id="greet-msg"></p>
-    </main>
+      <!-- Message Builder -->
+      <footer id="message-builder">
+        <label id="message-label">
+          Build Message
+          <textarea id="message-input" rows="4" placeholder="Enter message..."></textarea>
+        </label>
+        <div id="builder-actions">
+          <button id="clear-input-btn" class="small">Clear</button>
+          <button id="send-btn" data-variant="primary">Send</button>
+        </div>
+      </footer>
+
+    </div>
   </body>
 </html>
