@@ -1,6 +1,41 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+const CONTROL_TOKENS = [
+  ["<NUL>", 0x00],
+  ["<SOH>", 0x01],
+  ["<STX>", 0x02],
+  ["<ETX>", 0x03],
+  ["<EOT>", 0x04],
+  ["<ENQ>", 0x05],
+  ["<ACK>", 0x06],
+  ["<BEL>", 0x07],
+  ["<BS>", 0x08],
+  ["<HT>", 0x09],
+  ["<LF>", 0x0a],
+  ["<VT>", 0x0b],
+  ["<FF>", 0x0c],
+  ["<CR>", 0x0d],
+  ["<SO>", 0x0e],
+  ["<SI>", 0x0f],
+  ["<DLE>", 0x10],
+  ["<DC1>", 0x11],
+  ["<DC2>", 0x12],
+  ["<DC3>", 0x13],
+  ["<DC4>", 0x14],
+  ["<NAK>", 0x15],
+  ["<SYN>", 0x16],
+  ["<ETB>", 0x17],
+  ["<CAN>", 0x18],
+  ["<EM>", 0x19],
+  ["<SUB>", 0x1a],
+  ["<ESC>", 0x1b],
+  ["<FS>", 0x1c],
+  ["<GS>", 0x1d],
+  ["<RS>", 0x1e],
+  ["<US>", 0x1f],
+];
+
 const selectors = {
   ip: "#ip-address",
   port: "#port",
@@ -105,7 +140,8 @@ async function disconnect() {
 }
 
 async function onSendClick() {
-  const message = (el.builderOutput.value || el.messageInput.value).trim();
+  const messageRaw = (el.builderOutput.value || el.messageInput.value).trim();
+  const message = toVisibleText(messageRaw);
   if (!message) {
     return;
   }
@@ -169,7 +205,7 @@ async function onBuildClick() {
 
   try {
     const result = await invoke("build_message_cmd", { req: { protocol, input } });
-    el.builderOutput.value = result.output || "";
+    el.builderOutput.value = toVisibleText(result.output || "");
   } catch (err) {
     console.error("Failed to build message", err);
     el.builderOutput.value = String(err);
@@ -238,4 +274,35 @@ function formatTime(value) {
 function valueOrNull(raw) {
   const trimmed = raw.trim();
   return trimmed.length ? trimmed : null;
+}
+
+function toVisibleText(text) {
+  if (!text) return "";
+  const tokenByByte = new Map(CONTROL_TOKENS.map(([tok, byte]) => [byte, tok]));
+  let output = "";
+  let i = 0;
+
+  while (i < text.length) {
+    // Preserve existing tokens
+    if (text[i] === "<") {
+      const token = CONTROL_TOKENS.find(([tok]) => text.startsWith(tok, i));
+      if (token) {
+        output += token[0];
+        i += token[0].length;
+        continue;
+      }
+    }
+
+    const code = text.charCodeAt(i);
+    if (tokenByByte.has(code)) {
+      output += tokenByByte.get(code);
+    } else if (code === 0x0a) {
+      output += "\n";
+    } else {
+      output += text[i];
+    }
+    i += 1;
+  }
+
+  return output;
 }

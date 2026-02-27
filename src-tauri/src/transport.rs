@@ -73,6 +73,10 @@ pub async fn connect_and_spawn(app: AppHandle, state: State<'_, AppState>, req: 
 pub async fn disconnect_active(app: &AppHandle, state: &State<'_, AppState>) {
     let mut connection = state.connection.lock().await;
     if let Some(active) = connection.take() {
+        {
+            let mut writer = active.writer.lock().await;
+            let _ = writer.shutdown().await;
+        }
         active.reader_task.abort();
     }
     emit_status(app, ConnectionStatus::Disconnected, 0, None);

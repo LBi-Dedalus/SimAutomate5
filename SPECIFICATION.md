@@ -23,6 +23,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
   - **Connecting** (amber): connection attempt in progress or retrying.
   - **Connected** (green): TCP socket is open and ready.
 - The auto-response toggle is displayed on the right side of the configuration bar, separated from the connection controls.
+- On user-triggered disconnect, the socket write half is shutdown to close the connection cleanly; application shutdown does not need an explicit clean disconnect.
 
 ### Messaging UI
 - Message display area:
@@ -35,6 +36,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
   - Send button to send the message (disabled while disconnected).
   - Clear button to clear the input area.
   - Uses Tauri commands `connect_socket`, `disconnect_socket`, and `send_message` with events `connection://status` and `message://stream` to reflect live status and message flow.
+  - Outgoing messages normalize control characters to readable tokens (e.g., "<CR>", "<VT>") before sending.
 
 ### Automatic Responses
 - The application can automatically respond to incoming messages for ASTM and HL7 protocols.
@@ -55,7 +57,8 @@ The application will include a "Message Builder" page to construct messages for 
 - Output area to display the built message.
 - Protocol selection (ASTM or MLLP).
 - "Build" button to generate the message.
-- Built output is read-only and can be sent directly from the builder panel.
+- Built output can be edited and sent directly from the builder panel.
+- Special/control characters in built output are shown as human-readable tokens (e.g., "<STX>", "<CR>") for clarity.
 
 ### Build Logic
 - On clicking the Build button:

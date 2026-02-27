@@ -66,6 +66,7 @@ body {
 #hl7-msg-type    { width: 70px; }
 #hl7-resp-code   { width: 70px; }
 #astm-response   { width: 220px; }
+#protocol        { min-width: 140px; }
 
 /* Auto-response config panels */
 .auto-response-config {

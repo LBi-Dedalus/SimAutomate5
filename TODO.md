@@ -30,6 +30,7 @@
 - [x] Implement Tauri channels for frontend-backend communication
 - [x] Implement automatic response logic for ASTM (send configured message)
 - [x] Implement automatic response logic for HL7 (generate response from type/code and received message)
+- [x] Ensure user-triggered disconnect shuts down the socket cleanly
 
 ### Message Builder Logic
 - [x] Process input line by line for message building

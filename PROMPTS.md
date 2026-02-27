@@ -129,3 +129,11 @@ The goal of this document is to keep a trace of the prompts I tried
 ### Agent mode
 
 > You have written the backend code. I have updated it a bit, but haven't changed the stucture of the code or any public function signature. Can you now link the frontend and the backend of this Tauri app ? Make sure to update the specs if needed and the todo accordingly
+
+## Bugfixing
+
+### Agent mode
+
+> This is looking good. I now want you to fix some stuff. First, the build output isn't editable, which means I can't send my own custom mesages. Second, I want special characters to be displayed there as human readable strings, similar to what is done in the message display section. Third, I want the select for the auto response protocol to be larger. Make sure to update the spec and todo accordingly
+
+> The disconnect behaviour isn't what is expected. On disconnect, the socket should close cleanly. It is not necessary to close the connection cleanly on application close. Update the spec and todo accordingly
