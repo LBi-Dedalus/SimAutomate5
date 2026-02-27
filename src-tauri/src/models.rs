@@ -2,15 +2,14 @@ use serde::{Deserialize, Serialize};
 
 pub const STATUS_EVENT: &str = "connection://status";
 pub const MESSAGE_EVENT: &str = "message://stream";
-pub const MAX_RETRIES: u32 = 5;
-pub const RETRY_DELAYS: [u64; 5] = [1, 2, 4, 8, 16];
+pub const MAX_RETRIES: u32 = 6;
+pub const RETRY_DELAYS: [u64; 6] = [1, 2, 4, 8, 16, 32];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Protocol {
     Astm,
     Hl7,
-    Mllp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

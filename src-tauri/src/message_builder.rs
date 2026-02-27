@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::{models::{AutoBuildRequest, BuildResponse}, translate::ControlToken};
+use crate::{models::{AutoBuildRequest, BuildResponse}, translate::{ControlToken, to_human_readable}};
 
 pub fn auto_build(req: AutoBuildRequest) -> Result<BuildResponse> {
     let trimmed = req.input.trim_start();
@@ -20,13 +20,18 @@ pub fn auto_build(req: AutoBuildRequest) -> Result<BuildResponse> {
 }
 
 fn build_mllp(input: &str) -> String {
-    let mut output = String::from("<VT>");
+    let mut output = String::new();
+    output.push(ControlToken::VT.into());
+
     for line in input.lines() {
         output.push_str(line);
-        output.push_str("<CR>");
+        output.push(ControlToken::CR.into());
     }
-    output.push_str("<FS><CR>");
-    output
+
+    output.push(ControlToken::FS.into());
+    output.push(ControlToken::CR.into());
+
+    to_human_readable(output.as_bytes())
 }
 
 fn build_astm(input: &str) -> String {
@@ -38,7 +43,7 @@ fn build_astm(input: &str) -> String {
         .map(|(idx, l)| build_astm_segment(l, idx, line_count))
         .collect();
 
-    segments.join("\n")
+    to_human_readable(segments.join("\n").as_bytes())
 }
 
 fn build_astm_segment(line: &str, idx: usize, line_count: usize) -> String {

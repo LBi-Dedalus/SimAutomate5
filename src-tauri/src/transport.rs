@@ -18,10 +18,6 @@ use crate::models::{
 use crate::translate;
 
 pub async fn connect_and_spawn(app: AppHandle, state: State<'_, AppState>, req: ConnectRequest) -> Result<()> {
-    if req.protocol == Protocol::Mllp {
-        return Err(anyhow!("MLLP is only supported in the message builder"));
-    }
-
     let address: SocketAddr = format!("{}:{}", req.ip, req.port)
         .parse()
         .context("Invalid address")?;
@@ -73,17 +69,15 @@ pub async fn connect_and_spawn(app: AppHandle, state: State<'_, AppState>, req: 
 pub async fn disconnect_active(app: &AppHandle, state: &State<'_, AppState>) {
     let mut connection = state.connection.lock().await;
     if let Some(active) = connection.take() {
-        {
-            let mut writer = active.writer.lock().await;
-            let _ = writer.shutdown().await;
-        }
+        let mut writer = active.writer.lock().await;
+        let _ = writer.shutdown().await;
         active.reader_task.abort();
     }
     emit_status(app, ConnectionStatus::Disconnected, 0, None);
 }
 
 pub async fn send_user_message(app: AppHandle, state: State<'_, AppState>, payload: SendRequest) -> Result<()> {
-    let message_bytes = translate::encode_tokens(&payload.message);
+    let message_bytes = translate::to_bytes(&payload.message);
     let timestamp = now_ts();
 
     let writer = {
@@ -102,7 +96,7 @@ pub async fn send_user_message(app: AppHandle, state: State<'_, AppState>, paylo
         MessagePayload {
             direction: MessageDirection::Sent,
             protocol: current_protocol(&state).await,
-            content: translate::to_visible(&message_bytes),
+            content: translate::to_human_readable(&message_bytes),
             timestamp,
             auto_response: false,
         },
@@ -159,7 +153,7 @@ async fn read_loop(
             }
             Ok(len) => {
                 let slice = &buffer[..len];
-                let visible = translate::to_visible(slice);
+                let visible = translate::to_human_readable(slice);
 
                 emit_message(
                     &app,
@@ -181,7 +175,7 @@ async fn read_loop(
                                 MessagePayload {
                                     direction: MessageDirection::Sent,
                                     protocol: protocol.clone(),
-                                    content: translate::to_visible(&response_bytes),
+                                    content: translate::to_human_readable(&response_bytes),
                                     timestamp: now_ts(),
                                     auto_response: true,
                                 },
