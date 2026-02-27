@@ -77,15 +77,6 @@
       <!-- Message Log -->
       <div id="message-log-wrapper">
         <main id="message-log">
-          <!-- Example message bubbles -->
-          <div class="message sent">
-            <span class="message-time">10:01:23</span>
-            <div class="message-body">Sent message example</div>
-          </div>
-          <div class="message received">
-            <span class="message-time">10:01:25</span>
-            <div class="message-body">Received message example</div>
-          </div>
           <!-- Messages will be dynamically inserted here -->
         </main>
         <div id="log-sidebar">
@@ -99,6 +90,22 @@
           Build Message
           <textarea id="message-input" rows="4" placeholder="Enter message..."></textarea>
         </label>
+
+        <div id="builder-panel">
+          <label>
+            Builder Protocol
+            <select id="builder-protocol">
+              <option value="ASTM">ASTM</option>
+              <option value="MLLP">MLLP</option>
+            </select>
+          </label>
+          <button id="build-btn" class="small">Build</button>
+          <label id="builder-output-label">
+            Built Output
+            <textarea id="builder-output" rows="4" readonly placeholder="Built message will appear here..."></textarea>
+          </label>
+        </div>
+
         <div id="builder-actions">
           <button id="clear-input-btn" class="small">Clear</button>
           <button id="send-btn" data-variant="primary">Send</button>

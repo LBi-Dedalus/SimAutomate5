@@ -180,8 +180,30 @@ body {
   resize: vertical;
 }
 
-#send-btn {
-  align-self: flex-end;
+#builder-panel {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 0.6rem;
+  min-width: 320px;
+}
+
+#builder-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+#builder-output-label {
+  min-width: 220px;
+  flex: 1;
+}
+
+#builder-output {
+  width: 100%;
+  resize: vertical;
 }
 
 #builder-actions {
@@ -189,6 +211,10 @@ body {
   flex-direction: column;
   align-items: stretch;
   gap: 0.4rem;
+  align-self: flex-end;
+}
+
+#send-btn {
   align-self: flex-end;
 }
 

@@ -3,24 +3,24 @@
 ## Application Todo List
 
 ### UI Implementation
-- [ ] Create configuration section for IP and port input
-- [ ] Enable Connect button only when both fields are filled
-- [ ] Add connection retries toggle (enabled by default) on the left side of config bar
-- [ ] Move protocol select (ASTM / HL7 only) to the right side of config bar
-- [ ] Add connection status indicator (dot + label: Disconnected / Connecting / Connected) next to Connect button
-- [ ] Update Connect button label to "Disconnect" when connected
-- [ ] Add auto-response toggle and protocol-specific config on the right side of config bar
-- [ ] Show ASTM response textarea only when ASTM selected and auto-response enabled
-- [ ] Show HL7 message-type + response-code inputs only when HL7 selected and auto-response enabled
-- [ ] Build message display area with color coding (red for received, green for sent)
-- [ ] Add timestamp to each message
-- [ ] Add Clear button for message display area
-- [ ] Add input textarea for message entry
-- [ ] Add Send and Clear buttons for input area
-- [ ] Create Message Builder page with input textarea, output area, protocol selection, and Build button
-- [ ] Add toggle to enable/disable automatic responses
-- [ ] Add UI for configuring ASTM automatic response message
-- [ ] Add UI for configuring HL7 automatic response (message type and response code)
+- [x] Create configuration section for IP and port input
+- [x] Enable Connect button only when both fields are filled
+- [x] Add connection retries toggle (enabled by default) on the left side of config bar
+- [x] Move protocol select (ASTM / HL7 only) to the right side of config bar
+- [x] Add connection status indicator (dot + label: Disconnected / Connecting / Connected) next to Connect button
+- [x] Update Connect button label to "Disconnect" when connected
+- [x] Add auto-response toggle and protocol-specific config on the right side of config bar
+- [x] Show ASTM response textarea only when ASTM selected and auto-response enabled
+- [x] Show HL7 message-type + response-code inputs only when HL7 selected and auto-response enabled
+- [x] Build message display area with color coding (red for received, green for sent)
+- [x] Add timestamp to each message
+- [x] Add Clear button for message display area
+- [x] Add input textarea for message entry
+- [x] Add Send and Clear buttons for input area
+- [x] Create Message Builder page with input textarea, output area, protocol selection, and Build button
+- [x] Add toggle to enable/disable automatic responses
+- [x] Add UI for configuring ASTM automatic response message
+- [x] Add UI for configuring HL7 automatic response (message type and response code)
 
 ### Backend Implementation (Tauri)
 - [x] Implement TCP socket communication with 1s timeout
@@ -37,9 +37,9 @@
 - [x] For ASTM: convert each line to ASTM segment with segment number and checksum
 
 ### General
-- [ ] Update SPECIFICATION.md as features are designed, implemented, or changed
+- [x] Update SPECIFICATION.md as features are designed, implemented, or changed
 - [ ] Test all features and edge cases
 - [ ] Document usage and protocols supported
 
 ---
-_Last updated: February 26, 2026_
+_Last updated: February 27, 2026_

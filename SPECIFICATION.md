@@ -32,8 +32,9 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
   - A Clear button allows clearing the message display area.
 - Input area:
   - Textarea for entering messages.
-  - Send button to send the message.
+  - Send button to send the message (disabled while disconnected).
   - Clear button to clear the input area.
+  - Uses Tauri commands `connect_socket`, `disconnect_socket`, and `send_message` with events `connection://status` and `message://stream` to reflect live status and message flow.
 
 ### Automatic Responses
 - The application can automatically respond to incoming messages for ASTM and HL7 protocols.
@@ -54,6 +55,7 @@ The application will include a "Message Builder" page to construct messages for 
 - Output area to display the built message.
 - Protocol selection (ASTM or MLLP).
 - "Build" button to generate the message.
+- Built output is read-only and can be sent directly from the builder panel.
 
 ### Build Logic
 - On clicking the Build button:
@@ -69,6 +71,10 @@ The application will include a "Message Builder" page to construct messages for 
 - Tauri backend will handle TCP socket communication, including connection timeout and retry logic with exponential backoff.
 - Frontend will use Vanilla JS for UI logic, including the retry option toggle.
 - Communication between frontend and backend will use Tauri channels (event/message system) for sending and receiving messages, connection status, and errors.
+- Event names used for cross-layer communication:
+  - Status: `connection://status` (payload: status, attempts, optional message).
+  - Message stream: `message://stream` (payload: direction, protocol, content, timestamp, auto_response).
+- Frontend invokes Tauri commands: `connect_socket`, `disconnect_socket`, `send_message`, `build_message_cmd`, and `update_auto_response`.
 - UI must use the Oat component library for styling and layout, but only via semantic HTML elements (div, button, input, etc.) and Oat CSS classes as described in the Oat documentation. Do not use web components or custom elements for Oat.
 - UI must provide configuration for automatic responses (toggle, ASTM response message, HL7 message type and response code).
 - Backend must handle automatic response logic for ASTM and HL7, generating and sending responses as configured.

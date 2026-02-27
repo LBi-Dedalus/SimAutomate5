@@ -123,3 +123,9 @@ The goal of this document is to keep a trace of the prompts I tried
 > I want you to build the backend for this application. Read the specifications and create the Rust code for it. Limit yourself to the backend / Rust code. Make sure to update the TODO file
 
 > I want you to build the backend for this application. Read the specifications and create the Rust code for it. Limit yourself to the backend / Rust code. Make sure to update the TODO file
+
+## Linking both 
+
+### Agent mode
+
+> You have written the backend code. I have updated it a bit, but haven't changed the stucture of the code or any public function signature. Can you now link the frontend and the backend of this Tauri app ? Make sure to update the specs if needed and the todo accordingly
