@@ -143,3 +143,9 @@ The goal of this document is to keep a trace of the prompts I tried
 ### Agent mode
 
 > I want you to add extra features. The first one is persistent configuration. The configuration should be saved (whether in an JSON file or in another easily accessible place like localStorage) whenever a config change is made and retrieved whenever the app launches. The second extra feature I want is autobuild. Instead of having 2 textareas, one for input and one for output, a protocol select and a Build button, I want a button called "Autobuild". This button would send the inputted message to the backend which would detect if the message is an ASTM message (starting with "H|") or an HL7 message (starting with "MSH|") and call the corresponding BuildMessage function (ASTM for ASTM, MLLP for HL7). The generated output would replace the user input. If the message isn't ASTM or HL7, leave the user input intact. Make sure to update the specs and todo 
+
+## Finalizing
+
+### Agent mode
+
+> Clean the code by removing unused commands and functions

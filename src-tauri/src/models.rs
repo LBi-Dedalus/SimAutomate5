@@ -35,12 +35,6 @@ pub struct AutoResponseConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BuildRequest {
-    pub protocol: Protocol,
-    pub input: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoBuildRequest {
     pub input: String,
 }

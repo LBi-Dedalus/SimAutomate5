@@ -1,21 +1,6 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
-use crate::{
-    models::{AutoBuildRequest, BuildRequest, BuildResponse, Protocol},
-    translate::ControlToken,
-};
-
-pub fn build(req: BuildRequest) -> Result<BuildResponse> {
-    match req.protocol {
-        Protocol::Mllp => Ok(BuildResponse {
-            output: build_mllp(&req.input),
-        }),
-        Protocol::Astm => Ok(BuildResponse {
-            output: build_astm(&req.input),
-        }),
-        Protocol::Hl7 => Err(anyhow!("Use MLLP or ASTM for message builder")),
-    }
-}
+use crate::{models::{AutoBuildRequest, BuildResponse}, translate::ControlToken};
 
 pub fn auto_build(req: AutoBuildRequest) -> Result<BuildResponse> {
     let trimmed = req.input.trim_start();
@@ -62,9 +47,9 @@ fn build_astm_segment(line: &str, idx: usize, line_count: usize) -> String {
 
     body.push(ControlToken::CR.into());
     body.push(if idx == line_count - 1 {
-        ControlToken::ETB.into()
-    } else {
         ControlToken::ETX.into()
+    } else {
+        ControlToken::ETB.into()
     });
 
     let checksum = astm_checksum(body.as_bytes());

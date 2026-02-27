@@ -8,8 +8,8 @@ mod transport;
 mod translate;
 
 use app_state::AppState;
-use message_builder::{auto_build, build as build_message};
-use models::{AutoBuildRequest, AutoResponseConfig, BuildRequest, BuildResponse, ConnectRequest, SendRequest};
+use message_builder::auto_build;
+use models::{AutoBuildRequest, AutoResponseConfig, BuildResponse, ConnectRequest, SendRequest};
 use tauri::{AppHandle, State};
 use transport::{connect_and_spawn, disconnect_active, send_user_message};
 
@@ -39,11 +39,6 @@ async fn update_auto_response(state: State<'_, AppState>, config: AutoResponseCo
 }
 
 #[tauri::command]
-async fn build_message_cmd(req: BuildRequest) -> Result<BuildResponse, String> {
-    build_message(req).map_err(|err| err.to_string())
-}
-
-#[tauri::command]
 async fn auto_build_message_cmd(req: AutoBuildRequest) -> Result<BuildResponse, String> {
     auto_build(req).map_err(|err| err.to_string())
 }
@@ -57,7 +52,6 @@ pub fn run() {
             connect_socket,
             disconnect_socket,
             send_message,
-            build_message_cmd,
             auto_build_message_cmd,
             update_auto_response,
         ])

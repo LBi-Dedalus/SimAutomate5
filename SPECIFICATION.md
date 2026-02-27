@@ -77,7 +77,7 @@ The application includes a single message textarea with an Autobuild helper to c
 - Event names used for cross-layer communication:
   - Status: `connection://status` (payload: status, attempts, optional message).
   - Message stream: `message://stream` (payload: direction, protocol, content, timestamp, auto_response).
-- Frontend invokes Tauri commands: `connect_socket`, `disconnect_socket`, `send_message`, `build_message_cmd`, `auto_build_message_cmd`, and `update_auto_response`.
+- Frontend invokes Tauri commands: `connect_socket`, `disconnect_socket`, `send_message`, `auto_build_message_cmd`, and `update_auto_response`.
 - UI must use the Oat component library for styling and layout, but only via semantic HTML elements (div, button, input, etc.) and Oat CSS classes as described in the Oat documentation. Do not use web components or custom elements for Oat.
 - UI must provide configuration for automatic responses (toggle, ASTM response message, HL7 message type and response code).
 - Backend must handle automatic response logic for ASTM and HL7, generating and sending responses as configured.
