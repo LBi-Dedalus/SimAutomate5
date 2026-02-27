@@ -11,6 +11,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
 - The IP and port are configurable at any time.
 - Protocol selection (ASTM or HL7) is shown on the right side of the configuration bar. MLLP is a message-builder format only and is not a selectable connection protocol.
 - A toggle to enable/disable connection retries is shown on the left side, enabled by default.
+- Configuration (IP, port, retries toggle, protocol selection, auto-response toggle and fields, last message input) is persisted locally and restored on app launch.
 
 
 ### Connection
@@ -50,26 +51,25 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
 ## Message Builder
 
 ### Overview
-The application will include a "Message Builder" page to construct messages for ASTM and MLLP protocols.
+The application includes a single message textarea with an Autobuild helper to construct messages for ASTM and MLLP protocols.
 
 ### Features
-- Input textarea for entering message lines.
-- Output area to display the built message.
-- Protocol selection (ASTM or MLLP).
-- "Build" button to generate the message.
-- Built output can be edited and sent directly from the builder panel.
-- Special/control characters in built output are shown as human-readable tokens (e.g., "<STX>", "<CR>") for clarity.
+- Single textarea for entering message lines (also used for sending).
+- "Autobuild" button sends the current content to the backend for protocol-aware building.
+- Special/control characters are shown as human-readable tokens (e.g., "<STX>", "<CR>") for clarity.
 
 ### Build Logic
-- On clicking the Build button:
-  - The input is processed line by line.
-  - If MLLP is selected:
-    - "<VT>" is added at the beginning.
-    - "<CR>" is added at the end of each line.
-    - "<FS><CR>" is added after the last "<CR>".
-  - If ASTM is selected:
-    - Each line is converted to an ASTM segment with the correct segment number and checksum.
-    - The output displays the constructed ASTM message.
+- Autobuild behavior (backend detection):
+  - If input starts with "H|", treat as ASTM and build ASTM output.
+  - If input starts with "MSH|", treat as HL7 and build MLLP-wrapped output.
+  - Otherwise, leave the input unchanged.
+- ASTM build rules:
+  - Each line is converted to an ASTM segment with the correct segment number and checksum.
+  - Output contains the constructed ASTM message.
+- MLLP build rules (used for HL7):
+  - "<VT>" is added at the beginning.
+  - "<CR>" is added at the end of each line.
+  - "<FS><CR>" is added after the last "<CR>".
 
 - Tauri backend will handle TCP socket communication, including connection timeout and retry logic with exponential backoff.
 - Frontend will use Vanilla JS for UI logic, including the retry option toggle.
@@ -77,7 +77,7 @@ The application will include a "Message Builder" page to construct messages for 
 - Event names used for cross-layer communication:
   - Status: `connection://status` (payload: status, attempts, optional message).
   - Message stream: `message://stream` (payload: direction, protocol, content, timestamp, auto_response).
-- Frontend invokes Tauri commands: `connect_socket`, `disconnect_socket`, `send_message`, `build_message_cmd`, and `update_auto_response`.
+- Frontend invokes Tauri commands: `connect_socket`, `disconnect_socket`, `send_message`, `build_message_cmd`, `auto_build_message_cmd`, and `update_auto_response`.
 - UI must use the Oat component library for styling and layout, but only via semantic HTML elements (div, button, input, etc.) and Oat CSS classes as described in the Oat documentation. Do not use web components or custom elements for Oat.
 - UI must provide configuration for automatic responses (toggle, ASTM response message, HL7 message type and response code).
 - Backend must handle automatic response logic for ASTM and HL7, generating and sending responses as configured.

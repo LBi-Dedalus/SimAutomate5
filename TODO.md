@@ -21,6 +21,9 @@
 - [x] Add toggle to enable/disable automatic responses
 - [x] Add UI for configuring ASTM automatic response message
 - [x] Add UI for configuring HL7 automatic response (message type and response code)
+- [x] Persist configuration locally (IP, port, retries, protocol, auto-response toggles/fields, last message input) and hydrate on launch
+- [x] Replace builder dual textarea/protocol select with single textarea and Autobuild button
+- [x] Autobuild sends content to backend; backend detects ASTM (H|) vs HL7 (MSH|) and builds accordingly, leaving other input unchanged
 
 ### Backend Implementation (Tauri)
 - [x] Implement TCP socket communication with 1s timeout
@@ -30,6 +33,7 @@
 - [x] Implement Tauri channels for frontend-backend communication
 - [x] Implement automatic response logic for ASTM (send configured message)
 - [x] Implement automatic response logic for HL7 (generate response from type/code and received message)
+- [x] Expose autobuild command that detects protocol and returns built content
 - [x] Ensure user-triggered disconnect shuts down the socket cleanly
 
 ### Message Builder Logic

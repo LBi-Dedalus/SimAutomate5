@@ -55,13 +55,12 @@ const selectors = {
   hl7Config: "#hl7-response-config",
   hl7Type: "#hl7-msg-type",
   hl7Code: "#hl7-resp-code",
-  builderProtocol: "#builder-protocol",
-  build: "#build-btn",
-  builderOutput: "#builder-output",
+  autobuild: "#autobuild-btn",
 };
 
 const el = {};
 let isConnected = false;
+const CONFIG_KEY = "simautomate:config";
 
 const STATUS_EVENT = "connection://status";
 const MESSAGE_EVENT = "message://stream";
@@ -84,9 +83,11 @@ function init() {
   el.astmMessage.addEventListener("input", onAutoConfigChange);
   el.hl7Type.addEventListener("input", onAutoConfigChange);
   el.hl7Code.addEventListener("input", onAutoConfigChange);
-  el.build.addEventListener("click", onBuildClick);
-  el.builderProtocol.addEventListener("change", () => (el.builderOutput.value = ""));
+  el.retries.addEventListener("change", persistConfig);
+  el.protocol.addEventListener("change", persistConfig);
+  el.autobuild.addEventListener("click", onAutobuildClick);
 
+  hydrateConfig();
   applyStatus({ status: "disconnected", attempts: 0, message: null });
   updateConnectEnabled();
   updateAutoResponseVisibility();
@@ -98,6 +99,7 @@ function updateConnectEnabled() {
   const ipReady = el.ip.value.trim().length > 0;
   const portReady = el.port.value.trim().length > 0;
   el.connect.disabled = !(ipReady && portReady);
+  persistConfig();
 }
 
 async function wireEvents() {
@@ -118,6 +120,8 @@ async function connect() {
   const port = Number.parseInt(el.port.value.trim(), 10);
   const protocol = el.protocol.value.toLowerCase();
   const retriesEnabled = el.retries.checked;
+
+  persistConfig();
 
   if (!ip || Number.isNaN(port)) {
     return;
@@ -140,7 +144,7 @@ async function disconnect() {
 }
 
 async function onSendClick() {
-  const messageRaw = (el.builderOutput.value || el.messageInput.value).trim();
+  const messageRaw = el.messageInput.value.trim();
   const message = toVisibleText(messageRaw);
   if (!message) {
     return;
@@ -148,7 +152,8 @@ async function onSendClick() {
 
   try {
     await invoke("send_message", { payload: { message } });
-    el.builderOutput.value = "";
+    el.messageInput.value = "";
+    persistConfig();
   } catch (err) {
     console.error("Failed to send", err);
   }
@@ -160,7 +165,7 @@ function clearLog() {
 
 function clearInput() {
   el.messageInput.value = "";
-  el.builderOutput.value = "";
+  persistConfig();
 }
 
 function onProtocolChange() {
@@ -192,23 +197,22 @@ async function onAutoConfigChange() {
   } catch (err) {
     console.error("Failed to update auto-response", err);
   }
+
+  persistConfig();
 }
 
-async function onBuildClick() {
+async function onAutobuildClick() {
   const input = el.messageInput.value;
   if (!input.trim()) {
-    el.builderOutput.value = "";
     return;
   }
 
-  const protocol = el.builderProtocol.value.toLowerCase();
-
   try {
-    const result = await invoke("build_message_cmd", { req: { protocol, input } });
-    el.builderOutput.value = toVisibleText(result.output || "");
+    const result = await invoke("auto_build_message_cmd", { req: { input } });
+    el.messageInput.value = toVisibleText(result.output || "");
+    persistConfig();
   } catch (err) {
-    console.error("Failed to build message", err);
-    el.builderOutput.value = String(err);
+    console.error("Failed to autobuild message", err);
   }
 }
 
@@ -274,6 +278,45 @@ function formatTime(value) {
 function valueOrNull(raw) {
   const trimmed = raw.trim();
   return trimmed.length ? trimmed : null;
+}
+
+function persistConfig() {
+  const data = {
+    ip: el.ip.value,
+    port: el.port.value,
+    retries: el.retries.checked,
+    protocol: el.protocol.value,
+    auto: el.autoToggle.checked,
+    astm: el.astmMessage.value,
+    hl7Type: el.hl7Type.value,
+    hl7Code: el.hl7Code.value,
+    message: el.messageInput.value,
+  };
+
+  try {
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(data));
+  } catch (err) {
+    console.error("Failed to persist config", err);
+  }
+}
+
+function hydrateConfig() {
+  try {
+    const raw = localStorage.getItem(CONFIG_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (typeof data.ip === "string") el.ip.value = data.ip;
+    if (typeof data.port === "string") el.port.value = data.port;
+    if (typeof data.retries === "boolean") el.retries.checked = data.retries;
+    if (typeof data.protocol === "string") el.protocol.value = data.protocol;
+    if (typeof data.auto === "boolean") el.autoToggle.checked = data.auto;
+    if (typeof data.astm === "string") el.astmMessage.value = data.astm;
+    if (typeof data.hl7Type === "string") el.hl7Type.value = data.hl7Type;
+    if (typeof data.hl7Code === "string") el.hl7Code.value = data.hl7Code;
+    if (typeof data.message === "string") el.messageInput.value = data.message;
+  } catch (err) {
+    console.error("Failed to hydrate config", err);
+  }
 }
 
 function toVisibleText(text) {

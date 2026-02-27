@@ -137,3 +137,9 @@ The goal of this document is to keep a trace of the prompts I tried
 > This is looking good. I now want you to fix some stuff. First, the build output isn't editable, which means I can't send my own custom mesages. Second, I want special characters to be displayed there as human readable strings, similar to what is done in the message display section. Third, I want the select for the auto response protocol to be larger. Make sure to update the spec and todo accordingly
 
 > The disconnect behaviour isn't what is expected. On disconnect, the socket should close cleanly. It is not necessary to close the connection cleanly on application close. Update the spec and todo accordingly
+
+## Extra features
+
+### Agent mode
+
+> I want you to add extra features. The first one is persistent configuration. The configuration should be saved (whether in an JSON file or in another easily accessible place like localStorage) whenever a config change is made and retrieved whenever the app launches. The second extra feature I want is autobuild. Instead of having 2 textareas, one for input and one for output, a protocol select and a Build button, I want a button called "Autobuild". This button would send the inputted message to the backend which would detect if the message is an ASTM message (starting with "H|") or an HL7 message (starting with "MSH|") and call the corresponding BuildMessage function (ASTM for ASTM, MLLP for HL7). The generated output would replace the user input. If the message isn't ASTM or HL7, leave the user input intact. Make sure to update the specs and todo 

@@ -40,6 +40,11 @@ pub struct BuildRequest {
     pub input: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoBuildRequest {
+    pub input: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct BuildResponse {
     pub output: String,

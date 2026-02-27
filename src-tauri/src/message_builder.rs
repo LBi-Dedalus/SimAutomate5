@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 
 use crate::{
-    models::{BuildRequest, BuildResponse, Protocol},
+    models::{AutoBuildRequest, BuildRequest, BuildResponse, Protocol},
     translate::ControlToken,
 };
 
@@ -15,6 +15,23 @@ pub fn build(req: BuildRequest) -> Result<BuildResponse> {
         }),
         Protocol::Hl7 => Err(anyhow!("Use MLLP or ASTM for message builder")),
     }
+}
+
+pub fn auto_build(req: AutoBuildRequest) -> Result<BuildResponse> {
+    let trimmed = req.input.trim_start();
+    if trimmed.starts_with("H|") {
+        return Ok(BuildResponse {
+            output: build_astm(&req.input),
+        });
+    }
+
+    if trimmed.starts_with("MSH|") {
+        return Ok(BuildResponse {
+            output: build_mllp(&req.input),
+        });
+    }
+
+    Ok(BuildResponse { output: req.input })
 }
 
 fn build_mllp(input: &str) -> String {

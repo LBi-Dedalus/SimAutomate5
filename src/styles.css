@@ -182,29 +182,7 @@ body {
 }
 
 #builder-panel {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 0.6rem;
-  min-width: 320px;
-}
-
-#builder-panel label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.8rem;
-  font-weight: 500;
-}
-
-#builder-output-label {
-  min-width: 220px;
-  flex: 1;
-}
-
-#builder-output {
-  width: 100%;
-  resize: vertical;
+  display: none;
 }
 
 #builder-actions {
