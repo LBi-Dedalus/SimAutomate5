@@ -155,3 +155,5 @@ The goal of this document is to keep a trace of the prompts I tried
 > I don't want the message input to be cleared each time I send a message. Can you fix this ? Make sure to update the specification and todo
 
 > I get this error in the JS console : "Failed to update auto-response invalid args `config` for command `update_auto_response`: unknown variant `HL7`, expected `astm` or `hl7`". Can you fix it please ?
+
+> I want the "Clear" button in the message output to be floating in the top right corner of the message output. Can you do that please ? Update the spec and todo if necessary

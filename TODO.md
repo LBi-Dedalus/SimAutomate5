@@ -15,6 +15,7 @@
 - [x] Build message display area with color coding (red for received, green for sent)
 - [x] Add timestamp to each message
 - [x] Add Clear button for message display area
+- [x] Position message-log Clear button as a floating control in the top-right corner
 - [x] Add input textarea for message entry
 - [x] Add Send and Clear buttons for input area
 - [x] Keep message textarea content after Send (clear only via Clear button)

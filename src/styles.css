@@ -16,10 +16,9 @@ body {
 
 #config-bar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
-  gap: 0.5rem 1rem;
+  gap: 0.5rem;
   padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--border);
   background: var(--background);
@@ -31,49 +30,47 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  justify-content: space-evenly;
+  height: 110px;
 }
 
 .config-row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.5rem 0.75rem;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 #config-right {
   border-left: 1px solid var(--border);
   padding-left: 1rem;
+  flex: 0 1 30%;
 }
 
 #config-bar label {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 500;
+  height: 100%;
 }
 
 /* Compact inputs in the config bar */
 #config-bar input:not([type="checkbox"]),
-#config-bar select,
-#config-bar textarea {
+#config-bar select {
   font-size: 0.8rem;
   padding: 0.25rem 0.4rem;
 }
 
-#ip-address      { width: 120px; }
 #port            { width: 70px; }
-#hl7-msg-type    { width: 70px; }
-#hl7-resp-code   { width: 70px; }
-#astm-response   { width: 220px; }
+#hl7-resp-code   { width: 50px; }
 #protocol        { min-width: 140px; }
 
 /* Auto-response config panels */
 .auto-response-config {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
+  gap: 0.5rem;
   align-items: flex-end;
+  width: 100%;
 }
 
 .auto-response-config.is-hidden {
@@ -88,7 +85,7 @@ body {
   gap: 0.4rem;
   font-size: 0.8rem;
   color: var(--muted-foreground);
-  padding-bottom: 0.35rem; /* align with button baseline */
+  margin-left: 0.5rem;
 }
 
 #conn-dot {
@@ -111,13 +108,14 @@ body {
 #message-log-wrapper {
   flex: 1;
   display: flex;
+  position: relative;
   min-height: 0;
 }
 
 #message-log {
   flex: 1;
   overflow-y: auto;
-  padding: 1rem;
+  padding: 2.5rem 1rem 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -125,12 +123,10 @@ body {
 }
 
 #log-sidebar {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 0.5rem 0.4rem;
-  border-left: 1px solid var(--border);
-  background: var(--background);
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 1;
 }
 
 .message {
@@ -194,10 +190,6 @@ body {
   flex-direction: column;
   align-items: stretch;
   gap: 0.4rem;
-  align-self: flex-end;
-}
-
-#send-btn {
   align-self: flex-end;
 }
 

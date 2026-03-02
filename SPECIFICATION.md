@@ -31,7 +31,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
   - Received messages are shown in red.
   - Sent messages are shown in green.
   - Each message includes a timestamp.
-  - A Clear button allows clearing the message display area.
+  - A Clear button allows clearing the message display area and is displayed as a floating control in the top-right corner of the log.
 - Input area:
   - Textarea for entering messages.
   - Send button to send the message (disabled while disconnected).
