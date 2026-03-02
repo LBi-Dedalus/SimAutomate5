@@ -33,7 +33,7 @@ async fn connect_socket(
 
 #[tauri::command]
 async fn disconnect_socket(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
     let state_val = state.lock().await;
@@ -47,7 +47,7 @@ async fn disconnect_socket(
 
 #[tauri::command]
 async fn send_message(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, Mutex<AppState>>,
     payload: SendRequest,
 ) -> Result<(), String> {
@@ -65,6 +65,7 @@ async fn send_message(
 
 #[tauri::command]
 async fn update_auto_response(
+    _app: AppHandle,
     state: State<'_, Mutex<AppState>>,
     config: AutoResponseConfig,
 ) -> Result<(), String> {

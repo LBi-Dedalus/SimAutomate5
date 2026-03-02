@@ -10,9 +10,11 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "simautomate5",
+        "title": "SimAutomateV5",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "minWidth": 700,
+        "minHeight": 450
       }
     ],
     "security": {

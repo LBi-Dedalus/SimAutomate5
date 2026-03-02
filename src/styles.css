@@ -43,7 +43,7 @@ body {
 #config-right {
   border-left: 1px solid var(--border);
   padding-left: 1rem;
-  flex: 0 1 30%;
+  flex: 0 1 300px;
 }
 
 #config-bar label {
