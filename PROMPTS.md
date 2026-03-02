@@ -149,3 +149,5 @@ The goal of this document is to keep a trace of the prompts I tried
 ### Agent mode
 
 > Clean the code by removing unused commands and functions
+
+> The astm and HL7 auto-response configuration divs are not hidden correctly. Maybe you could use classes to do it instead ?

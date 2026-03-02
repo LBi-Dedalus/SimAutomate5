@@ -76,6 +76,10 @@ body {
   align-items: flex-end;
 }
 
+.auto-response-config.is-hidden {
+  display: none;
+}
+
 /* ── Connection status indicator ─────────────────────────── */
 
 #conn-status {

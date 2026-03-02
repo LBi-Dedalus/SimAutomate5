@@ -44,7 +44,7 @@ function init() {
   el.clearInput.addEventListener("click", clearInput);
   el.send.addEventListener("click", onSendClick);
   el.protocol.addEventListener("change", onProtocolChange);
-  el.autoToggle.addEventListener("change", onAutoConfigChange);
+  el.autoToggle.addEventListener("change", onProtocolChange);
   el.astmMessage.addEventListener("input", onAutoConfigChange);
   el.hl7Type.addEventListener("input", onAutoConfigChange);
   el.hl7Code.addEventListener("input", onAutoConfigChange);
@@ -143,8 +143,8 @@ function updateAutoResponseVisibility() {
   const showAstm = enabled && protocol === "ASTM";
   const showHl7 = enabled && protocol === "HL7";
 
-  el.astmConfig.hidden = !showAstm;
-  el.hl7Config.hidden = !showHl7;
+  el.astmConfig.classList.toggle("is-hidden", !showAstm);
+  el.hl7Config.classList.toggle("is-hidden", !showHl7);
 }
 
 async function onAutoConfigChange() {
