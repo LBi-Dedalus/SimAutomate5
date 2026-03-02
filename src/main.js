@@ -10,6 +10,7 @@ const selectors = {
   status: "#conn-status",
   statusLabel: "#conn-label",
   messageLog: "#message-log",
+  openLogs: "#open-logs-btn",
   clearLog: "#clear-log-btn",
   messageInput: "#message-input",
   clearInput: "#clear-input-btn",
@@ -47,6 +48,7 @@ function init() {
   el.ip.addEventListener("input", updateConnectEnabled);
   el.port.addEventListener("input", updateConnectEnabled);
   el.connect.addEventListener("click", onConnectClick);
+  el.openLogs.addEventListener("click", onOpenLogsClick);
   el.clearLog.addEventListener("click", clearLog);
   el.clearInput.addEventListener("click", clearInput);
   el.send.addEventListener("click", onSendClick);
@@ -139,6 +141,16 @@ async function onSendClick() {
   } catch (err) {
     console.error("Failed to send", err);
     await logError(`Failed to send message: ${String(err)}`, "main.js:onSendClick");
+  }
+}
+
+async function onOpenLogsClick() {
+  try {
+    await invoke("open_logs_folder");
+    void logInfo("Open logs folder requested", "main.js:onOpenLogsClick");
+  } catch (err) {
+    console.error("Failed to open logs folder", err);
+    await logError(`Failed to open logs folder: ${String(err)}`, "main.js:onOpenLogsClick");
   }
 }
 

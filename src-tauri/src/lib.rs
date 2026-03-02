@@ -15,6 +15,7 @@ use models::{
     AutoBuildRequest, AutoResponseConfig, BuildResponse, ConnectRequest, FrontendLogEntry,
     LogLevel, SendRequest,
 };
+use std::process::Command;
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
 
@@ -213,6 +214,46 @@ async fn log_frontend(
     Ok(())
 }
 
+#[tauri::command]
+async fn open_logs_folder(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+    let state_val = state.lock().await;
+    let logger = state_val.logger.clone();
+    let log_dir = logger.log_directory();
+
+    logger.log_backend(
+        LogLevel::Inf,
+        file!(),
+        line!(),
+        format!("open_logs_folder requested path={}", log_dir.display()),
+    );
+
+    let mut command = if cfg!(target_os = "windows") {
+        let mut command = Command::new("explorer");
+        command.arg(&log_dir);
+        command
+    } else if cfg!(target_os = "macos") {
+        let mut command = Command::new("open");
+        command.arg(&log_dir);
+        command
+    } else {
+        let mut command = Command::new("xdg-open");
+        command.arg(&log_dir);
+        command
+    };
+
+    command.spawn().map_err(|err| {
+        logger.log_backend(
+            LogLevel::Err,
+            file!(),
+            line!(),
+            format!("failed to open logs folder {}: {err}", log_dir.display()),
+        );
+        err.to_string()
+    })?;
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -230,6 +271,7 @@ pub fn run() {
             auto_build_message_cmd,
             update_auto_response,
             log_frontend,
+            open_logs_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

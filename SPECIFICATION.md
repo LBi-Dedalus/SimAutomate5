@@ -16,6 +16,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
 - Each log line contains: timestamp, location (`file:line`), level (`INF`, `WRN`, `ERR`), and message.
 - Logging for message traffic is metadata-only (for example direction/protocol/length/status) and must not write raw message payload bodies.
 - Log files use size-based rotation: 5 MB per file, keeping up to 5 rotated files per stream.
+- The UI provides an `Open Logs` action that opens the log directory in the system file explorer.
 
 ### Configuration
 - User can enter the IP address and port of the remote application.

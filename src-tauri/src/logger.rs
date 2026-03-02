@@ -19,6 +19,7 @@ pub struct AppLogger {
 
 struct LoggerState {
     write_lock: Mutex<()>,
+    log_dir: PathBuf,
     backend_path: PathBuf,
     frontend_path: PathBuf,
 }
@@ -44,10 +45,15 @@ impl AppLogger {
         Ok(Self {
             state: Arc::new(LoggerState {
                 write_lock: Mutex::new(()),
+                log_dir,
                 backend_path,
                 frontend_path,
             }),
         })
+    }
+
+    pub fn log_directory(&self) -> PathBuf {
+        self.state.log_dir.clone()
     }
 
     pub fn log_backend(&self, level: LogLevel, file: &str, line: u32, message: impl AsRef<str>) {
