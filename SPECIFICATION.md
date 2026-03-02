@@ -9,6 +9,14 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
 - The UI uses a light, colorful, and professional theme by overriding Oat design tokens via CSS variables in `:root`.
 - Styling changes must remain token-driven (using Oat variables) to preserve consistency across controls and states.
 
+### Logging
+- The application writes logs to dedicated files in the app log directory:
+  - `backend.log` for backend operations and errors.
+  - `frontend.log` for frontend operations and errors (forwarded through a Tauri command).
+- Each log line contains: timestamp, location (`file:line`), level (`INF`, `WRN`, `ERR`), and message.
+- Logging for message traffic is metadata-only (for example direction/protocol/length/status) and must not write raw message payload bodies.
+- Log files use size-based rotation: 5 MB per file, keeping up to 5 rotated files per stream.
+
 ### Configuration
 - User can enter the IP address and port of the remote application.
 - Both fields must be filled for the Connect button to be enabled.

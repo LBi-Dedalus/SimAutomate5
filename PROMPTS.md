@@ -163,3 +163,15 @@ The goal of this document is to keep a trace of the prompts I tried
 > I don't really like the blue you proposed as primary color. Can you propose a different tone ?
 
 > I like it ! Can you update the rest of the theme, especially the "danger" variable to match the indigo ?
+
+## Log system
+
+### Plan mode
+
+> I now want you to implement a log system, both for the frontend and backend. I want each of them to log their operations and eventual errors to a dedicated file (one for the frontend and one for the backend). Each log should have a timestamp, a location (file and line number), a log level (INF, WRN ou ERR) and the message to log. Give me a plan of how you would implement this
+
+### Agent mode
+
+> Start implementation
+
+> I like what you have done. However, I would like you to change some things. First, can you rename the functions in logger.rs to be more explicit, like 'log_backend' and 'log_frontend' ? Then, in lib.rs, can you add AppLogger to AppState so that the manage function for the Tauri app is called only once ? You can modify the AppState as you see fit. Finally, can you explain why you added 'void' before all calls to 'log*' functions in main.js ?

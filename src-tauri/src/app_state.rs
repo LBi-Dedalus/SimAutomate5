@@ -1,14 +1,17 @@
+use crate::logger::AppLogger;
 use crate::transport::ConnectionQueue;
 
 
 pub struct AppState {
     pub connection: Option<ConnectionQueue>,
+    pub logger: AppLogger,
 }
 
-impl Default for AppState {
-    fn default() -> Self {
+impl AppState {
+    pub fn new(logger: AppLogger) -> Self {
         Self {
             connection: None,
+            logger,
         }
     }
 }

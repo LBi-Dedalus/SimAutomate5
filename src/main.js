@@ -29,10 +29,17 @@ const CONFIG_KEY = "simautomate:config";
 
 const STATUS_EVENT = "connection://status";
 const MESSAGE_EVENT = "message://stream";
+const LOG_LEVEL = {
+  INF: "INF",
+  WRN: "WRN",
+  ERR: "ERR",
+};
 
 window.addEventListener("DOMContentLoaded", init);
 
 function init() {
+  installGlobalErrorLogging();
+
   Object.entries(selectors).forEach(([key, selector]) => {
     el[key] = document.querySelector(selector);
   });
@@ -59,6 +66,7 @@ function init() {
   updateAutoResponseVisibility();
   onAutoConfigChange();
   persistConfig();
+  void logInfo("Application initialized", "main.js:init");
 }
 
 function updateConnectEnabled() {
@@ -71,6 +79,7 @@ function updateConnectEnabled() {
 async function wireEvents() {
   await listen(STATUS_EVENT, (event) => applyStatus(event.payload));
   await listen(MESSAGE_EVENT, (event) => appendMessage(event.payload));
+  void logInfo("Tauri event listeners registered", "main.js:wireEvents");
 }
 
 async function onConnectClick() {
@@ -89,46 +98,59 @@ async function connect() {
   persistConfig();
 
   if (!ip || Number.isNaN(port)) {
+    void logWarn("Connect skipped due to invalid IP/port", "main.js:connect");
     return;
   }
 
   try {
+    void logInfo(
+      `Connect requested (ip=${ip}, port=${port}, retries=${retriesEnabled})`,
+      "main.js:connect",
+    );
     await invoke("connect_socket", { req: { ip, port, retries_enabled: retriesEnabled } });
   } catch (err) {
     console.error("Failed to connect", err);
+    await logError(`Failed to connect: ${String(err)}`, "main.js:connect");
     applyStatus({ status: "error", attempts: 0, message: String(err) });
   }
 }
 
 async function disconnect() {
   try {
+    void logInfo("Disconnect requested", "main.js:disconnect");
     await invoke("disconnect_socket");
   } catch (err) {
     console.error("Failed to disconnect", err);
+    await logError(`Failed to disconnect: ${String(err)}`, "main.js:disconnect");
   }
 }
 
 async function onSendClick() {
   const message = el.messageInput.value.trim();
   if (!message) {
+    void logWarn("Send skipped because input is empty", "main.js:onSendClick");
     return;
   }
 
   try {
+    void logInfo(`Send requested (length=${message.length})`, "main.js:onSendClick");
     await invoke("send_message", { payload: { message } });
     persistConfig();
   } catch (err) {
     console.error("Failed to send", err);
+    await logError(`Failed to send message: ${String(err)}`, "main.js:onSendClick");
   }
 }
 
 function clearLog() {
   el.messageLog.innerHTML = "";
+  void logInfo("Message log cleared", "main.js:clearLog");
 }
 
 function clearInput() {
   el.messageInput.value = "";
   persistConfig();
+  void logInfo("Message input cleared", "main.js:clearInput");
 }
 
 function onProtocolChange() {
@@ -159,6 +181,7 @@ async function onAutoConfigChange() {
     await invoke("update_auto_response", { config });
   } catch (err) {
     console.error("Failed to update auto-response", err);
+    await logError(`Failed to update auto-response: ${String(err)}`, "main.js:onAutoConfigChange");
   }
   
   persistConfig();
@@ -174,8 +197,13 @@ async function onAutobuildClick() {
     const result = await invoke("auto_build_message_cmd", { req: { input } });
     el.messageInput.value = result.output;
     persistConfig();
+    void logInfo(
+      `Autobuild completed (input_length=${input.length}, output_length=${result.output.length})`,
+      "main.js:onAutobuildClick",
+    );
   } catch (err) {
     console.error("Failed to autobuild message", err);
+    await logError(`Failed to autobuild message: ${String(err)}`, "main.js:onAutobuildClick");
   }
 }
 
@@ -193,6 +221,10 @@ function applyStatus(payload) {
   isConnected = status === "connected";
   el.connect.textContent = isConnected ? "Disconnect" : "Connect";
   el.send.disabled = !isConnected;
+  void logInfo(
+    `Status updated (status=${status}, attempts=${attempts}, has_message=${Boolean(message)})`,
+    "main.js:applyStatus",
+  );
 }
 
 function statusLabel(status, attempts, message) {
@@ -225,6 +257,10 @@ function appendMessage(payload) {
 
   el.messageLog.appendChild(entry);
   el.messageLog.scrollTop = el.messageLog.scrollHeight;
+  void logInfo(
+    `Message appended (direction=${direction}, length=${content.length}, timestamp=${timestamp})`,
+    "main.js:appendMessage",
+  );
 }
 
 function formatTime(value) {
@@ -262,6 +298,7 @@ function persistConfig() {
     localStorage.setItem(CONFIG_KEY, JSON.stringify(data));
   } catch (err) {
     console.error("Failed to persist config", err);
+    void logError(`Failed to persist config: ${String(err)}`, "main.js:persistConfig");
   }
 }
 
@@ -281,5 +318,60 @@ function hydrateConfig() {
     if (typeof data.message === "string") el.messageInput.value = data.message;
   } catch (err) {
     console.error("Failed to hydrate config", err);
+    void logError(`Failed to hydrate config: ${String(err)}`, "main.js:hydrateConfig");
   }
+}
+
+function installGlobalErrorLogging() {
+  window.addEventListener("error", (event) => {
+    const location = event.filename
+      ? `${event.filename.split("/").at(-1)}:${event.lineno || 0}`
+      : "main.js:window.onerror";
+    void logError(`Unhandled error: ${event.message}`, location);
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason instanceof Error ? event.reason.message : String(event.reason);
+    void logError(`Unhandled rejection: ${reason}`, "main.js:unhandledrejection");
+  });
+}
+
+function deriveLocation(fallback) {
+  const stack = new Error().stack;
+  if (!stack) return fallback;
+
+  const lines = stack.split("\n");
+  const candidate = lines.find((line) => line.includes("main.js"));
+  if (!candidate) return fallback;
+
+  const match = candidate.match(/main\.js:(\d+):\d+/);
+  if (!match) return fallback;
+
+  return `main.js:${match[1]}`;
+}
+
+async function writeFrontendLog(level, message, location) {
+  const entry = {
+    level,
+    location: location || deriveLocation("main.js:unknown"),
+    message,
+  };
+
+  try {
+    await invoke("log_frontend", { entry });
+  } catch (err) {
+    console.error("Failed to write frontend log", err);
+  }
+}
+
+function logInfo(message, location) {
+  return writeFrontendLog(LOG_LEVEL.INF, message, location);
+}
+
+function logWarn(message, location) {
+  return writeFrontendLog(LOG_LEVEL.WRN, message, location);
+}
+
+function logError(message, location) {
+  return writeFrontendLog(LOG_LEVEL.ERR, message, location);
 }

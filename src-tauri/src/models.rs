@@ -5,6 +5,33 @@ pub const MESSAGE_EVENT: &str = "message://stream";
 pub const MAX_RETRIES: u32 = 6;
 pub const RETRY_DELAYS: [u64; 6] = [1, 2, 4, 8, 16, 32];
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum LogLevel {
+    #[serde(rename = "INF")]
+    Inf,
+    #[serde(rename = "WRN")]
+    Wrn,
+    #[serde(rename = "ERR")]
+    Err,
+}
+
+impl LogLevel {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            LogLevel::Inf => "INF",
+            LogLevel::Wrn => "WRN",
+            LogLevel::Err => "ERR",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FrontendLogEntry {
+    pub level: LogLevel,
+    pub location: String,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Protocol {

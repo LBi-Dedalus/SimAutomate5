@@ -27,6 +27,7 @@
 - [x] Persist configuration locally (IP, port, retries, protocol, auto-response toggles/fields, last message input) and hydrate on launch
 - [x] Replace builder dual textarea/protocol select with single textarea and Autobuild button
 - [x] Autobuild sends content to backend; backend detects ASTM (H|) vs HL7 (MSH|) and builds accordingly, leaving other input unchanged
+- [x] Forward frontend logs to dedicated `frontend.log` via Tauri command (`INF`/`WRN`/`ERR`, timestamp, location, message)
 
 ### Backend Implementation (Tauri)
 - [x] Implement TCP socket communication with 1s timeout
@@ -38,6 +39,8 @@
 - [x] Implement automatic response logic for HL7 (generate response from type/code and received message)
 - [x] Expose autobuild command that detects protocol and returns built content
 - [x] Ensure user-triggered disconnect shuts down the socket cleanly
+- [x] Add dedicated `backend.log` file logging for backend operations/errors (`INF`/`WRN`/`ERR`, timestamp, location, message)
+- [x] Add rotating log files (5 MB per file, keep 5) for frontend and backend logs
 
 ### Message Builder Logic
 - [x] Process input line by line for message building
