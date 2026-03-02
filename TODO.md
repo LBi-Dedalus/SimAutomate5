@@ -17,6 +17,7 @@
 - [x] Add Clear button for message display area
 - [x] Add input textarea for message entry
 - [x] Add Send and Clear buttons for input area
+- [x] Keep message textarea content after Send (clear only via Clear button)
 - [x] Create Message Builder page with input textarea, output area, protocol selection, and Build button
 - [x] Add toggle to enable/disable automatic responses
 - [x] Add UI for configuring ASTM automatic response message
@@ -47,4 +48,4 @@
 - [ ] Document usage and protocols supported
 
 ---
-_Last updated: February 27, 2026_
+_Last updated: March 2, 2026_

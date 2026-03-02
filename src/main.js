@@ -116,7 +116,6 @@ async function onSendClick() {
 
   try {
     await invoke("send_message", { payload: { message } });
-    el.messageInput.value = "";
     persistConfig();
   } catch (err) {
     console.error("Failed to send", err);
@@ -151,7 +150,7 @@ async function onAutoConfigChange() {
   const config = {
     enabled: el.autoToggle.checked,
     astm_message: valueOrNull(el.astmMessage.value),
-    protocol: el.protocol.value,
+    protocol: el.protocol.value.toLowerCase(),
     hl7_message_type: valueOrNull(el.hl7Type.value),
     hl7_response_code: valueOrNull(el.hl7Code.value),
   };
