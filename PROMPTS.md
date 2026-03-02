@@ -157,3 +157,9 @@ The goal of this document is to keep a trace of the prompts I tried
 > I get this error in the JS console : "Failed to update auto-response invalid args `config` for command `update_auto_response`: unknown variant `HL7`, expected `astm` or `hl7`". Can you fix it please ?
 
 > I want the "Clear" button in the message output to be floating in the top right corner of the message output. Can you do that please ? Update the spec and todo if necessary
+
+> I want you to change this app's style to a lighter and more colorful yet professional theme. Here are the variables used by Oat. ...
+
+> I don't really like the blue you proposed as primary color. Can you propose a different tone ?
+
+> I like it ! Can you update the rest of the theme, especially the "danger" variable to match the indigo ?

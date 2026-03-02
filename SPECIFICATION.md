@@ -5,6 +5,10 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
 
 ## Functional Requirements
 
+### Visual Theme
+- The UI uses a light, colorful, and professional theme by overriding Oat design tokens via CSS variables in `:root`.
+- Styling changes must remain token-driven (using Oat variables) to preserve consistency across controls and states.
+
 ### Configuration
 - User can enter the IP address and port of the remote application.
 - Both fields must be filled for the Connect button to be enabled.

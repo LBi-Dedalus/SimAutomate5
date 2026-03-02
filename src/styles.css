@@ -1,9 +1,39 @@
+/* ── Oat Theme Overrides ─────────────────────────────────── */
+
+:root {
+  --background: rgb(248 249 255);
+  --foreground: rgb(30 34 58);
+  --card: rgb(255 255 255);
+  --card-foreground: rgb(30 34 58);
+  --primary: rgb(67 56 202);
+  --primary-foreground: rgb(248 251 255);
+  --secondary: rgb(224 231 255);
+  --secondary-foreground: rgb(52 46 120);
+  --muted: rgb(237 239 252);
+  --muted-foreground: rgb(98 102 141);
+  --faint: rgb(243 244 255);
+  --faint-foreground: rgb(124 128 167);
+  --accent: rgb(234 230 255);
+  --accent-foreground: rgb(58 49 136);
+  --danger: rgb(186 73 118);
+  --danger-foreground: rgb(255 255 255);
+  --success: rgb(38 154 118);
+  --success-foreground: rgb(255 255 255);
+  --warning: rgb(217 147 45);
+  --warning-foreground: rgb(41 33 12);
+  --border: rgb(209 208 239);
+  --input: rgb(195 196 232);
+  --ring: rgb(67 56 202);
+}
+
 /* ── App Shell Layout ─────────────────────────────────────── */
 
 body {
   margin: 0;
   height: 100vh;
   overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
 }
 
 #app {
@@ -21,7 +51,7 @@ body {
   gap: 0.5rem;
   padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--border);
-  background: var(--background);
+  background: var(--card);
   flex-shrink: 0;
 }
 
@@ -150,6 +180,7 @@ body {
   font-size: 0.875rem;
   white-space: pre-wrap;
   word-break: break-all;
+  border: 1px solid var(--border);
 }
 
 .message.sent     .message-body { background: var(--success); color: var(--success-foreground); }
@@ -163,7 +194,7 @@ body {
   gap: 1rem;
   padding: 0.75rem 1rem;
   border-top: 1px solid var(--border);
-  background: var(--background);
+  background: var(--card);
   flex-shrink: 0;
 }
 
