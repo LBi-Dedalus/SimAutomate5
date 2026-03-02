@@ -229,7 +229,12 @@ function appendMessage(payload) {
 
 function formatTime(value) {
   try {
-    return new Date(value).toLocaleTimeString();
+    return new Date(value).toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      fractionalSecondDigits: 3 
+    });
   } catch (_) {
     return value;
   }
