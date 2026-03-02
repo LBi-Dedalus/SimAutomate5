@@ -83,7 +83,6 @@ async function onConnectClick() {
 async function connect() {
   const ip = el.ip.value.trim();
   const port = Number.parseInt(el.port.value.trim(), 10);
-  const protocol = el.protocol.value.toLowerCase();
   const retriesEnabled = el.retries.checked;
 
   persistConfig();
@@ -93,7 +92,7 @@ async function connect() {
   }
 
   try {
-    await invoke("connect_socket", { req: { ip, port, protocol, retries_enabled: retriesEnabled } });
+    await invoke("connect_socket", { req: { ip, port, retries_enabled: retriesEnabled } });
   } catch (err) {
     console.error("Failed to connect", err);
     applyStatus({ status: "error", attempts: 0, message: String(err) });
@@ -152,6 +151,7 @@ async function onAutoConfigChange() {
   const config = {
     enabled: el.autoToggle.checked,
     astm_message: valueOrNull(el.astmMessage.value),
+    protocol: el.protocol.value,
     hl7_message_type: valueOrNull(el.hl7Type.value),
     hl7_response_code: valueOrNull(el.hl7Code.value),
   };
@@ -210,7 +210,7 @@ function statusLabel(status, attempts, message) {
 }
 
 function appendMessage(payload) {
-  const { direction, content, timestamp, auto_response: autoResponse } = payload;
+  const { direction, content, timestamp } = payload;
   const entry = document.createElement("div");
   entry.className = `message ${direction === "sent" ? "sent" : "received"}`;
 
@@ -222,9 +222,6 @@ function appendMessage(payload) {
   const body = document.createElement("div");
   body.className = "message-body";
   body.textContent = content;
-  if (autoResponse) {
-    body.title = "Auto-response";
-  }
   entry.appendChild(body);
 
   el.messageLog.appendChild(entry);

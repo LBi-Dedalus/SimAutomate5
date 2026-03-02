@@ -12,11 +12,16 @@ pub enum Protocol {
     Hl7,
 }
 
+impl Default for Protocol {
+    fn default() -> Self {
+        Protocol::Astm
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectRequest {
     pub ip: String,
     pub port: u16,
-    pub protocol: Protocol,
     pub retries_enabled: bool,
 }
 
@@ -25,12 +30,25 @@ pub struct SendRequest {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoResponseConfig {
     pub enabled: bool,
+    pub protocol: Protocol,
     pub astm_message: Option<String>,
     pub hl7_message_type: Option<String>,
     pub hl7_response_code: Option<String>,
+}
+
+impl AutoResponseConfig {
+    pub const fn default() -> Self {
+        AutoResponseConfig {
+            enabled: false,
+            protocol: Protocol::Astm,
+            astm_message: None,
+            hl7_message_type: None,
+            hl7_response_code: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,10 +64,8 @@ pub struct BuildResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct MessagePayload {
     pub direction: MessageDirection,
-    pub protocol: Protocol,
     pub content: String,
     pub timestamp: String,
-    pub auto_response: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

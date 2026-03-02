@@ -1,28 +1,22 @@
 use chrono::Utc;
 
 use crate::models::{AutoResponseConfig, Protocol};
-use crate::translate::{self, ControlToken};
+use crate::translate::ControlToken;
 
-pub fn build_auto_response(
-    protocol: &Protocol,
-    cfg: &AutoResponseConfig,
-    incoming: &[u8],
-) -> Option<Vec<u8>> {
+/// Builds an automatic response message based on the provided configuration and incoming message.
+/// The response is generated in human-readable format.
+pub fn build_auto_response(cfg: &AutoResponseConfig, incoming: &[u8]) -> Option<String> {
     if !cfg.enabled {
         return None;
     }
 
-    match protocol {
-        Protocol::Astm => cfg
-            .astm_message
-            .as_ref()
-            .filter(|_| cfg.enabled)
-            .map(|msg| translate::to_bytes(msg)),
+    match cfg.protocol {
+        Protocol::Astm => cfg.astm_message.as_ref().map(|msg| msg.clone()),
         Protocol::Hl7 => {
             let msg_type = cfg.hl7_message_type.as_ref()?;
             let code = cfg.hl7_response_code.as_ref()?;
             let ack = generate_hl7_ack(incoming, msg_type, code);
-            Some(translate::to_bytes(&ack))
+            Some(ack)
         }
     }
 }

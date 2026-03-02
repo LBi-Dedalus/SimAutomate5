@@ -1,212 +1,214 @@
-use std::net::SocketAddr;
-use std::sync::Arc;
-
-use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
-use tauri::{AppHandle, State, Emitter};
-use tauri::async_runtime::{spawn, JoinHandle, Mutex};
+use std::io;
+use std::net::SocketAddr;
+use tauri::async_runtime::spawn;
+use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tokio::time::{sleep, timeout, Duration};
 
-use crate::app_state::{ActiveConnection, AppState};
 use crate::auto_response;
 use crate::models::{
-    AutoResponseConfig, ConnectionStatus, ConnectRequest, MessageDirection, MessagePayload, Protocol,
-    SendRequest, StatusPayload, MESSAGE_EVENT, MAX_RETRIES, RETRY_DELAYS, STATUS_EVENT,
+    AutoResponseConfig, ConnectRequest, ConnectionStatus, MessageDirection, MessagePayload,
+    SendRequest, StatusPayload, MAX_RETRIES, MESSAGE_EVENT, RETRY_DELAYS, STATUS_EVENT,
 };
 use crate::translate;
 
-pub async fn connect_and_spawn(app: AppHandle, state: State<'_, AppState>, req: ConnectRequest) -> Result<()> {
-    let address: SocketAddr = format!("{}:{}", req.ip, req.port)
-        .parse()
-        .context("Invalid address")?;
+pub type ConnectionQueue = tokio::sync::mpsc::Sender<ConnectionMessage>;
+pub type ConnectionQueueReceiver = tokio::sync::mpsc::Receiver<ConnectionMessage>;
 
-    disconnect_active(&app, &state).await;
+pub enum ConnectionMessage {
+    Disconnect,
+    SendMessage(SendRequest),
+    SetAutoResponse(AutoResponseConfig),
+    MessageReceived(Result<Vec<u8>, io::Error>),
+}
 
-    match perform_connect(&app, address, req.retries_enabled).await {
-        Ok((stream, attempts)) => {
-            emit_status(&app, ConnectionStatus::Connected, attempts, None);
-            let (reader, writer) = stream.into_split();
-            let writer = Arc::new(Mutex::new(writer));
-            let protocol = req.protocol.clone();
-            let auto_response = state.auto_response.clone();
-            let reader_app = app.clone();
-            let reader_writer = writer.clone();
-            let reader_task: JoinHandle<()> = spawn(async move {
-                read_loop(
-                    reader_app,
-                    reader,
-                    reader_writer,
-                    protocol,
-                    auto_response,
-                )
-                .await;
-            });
-
-            let mut connection = state.connection.lock().await;
-            *connection = Some(ActiveConnection {
-                writer,
-                reader_task,
-                protocol: req.protocol,
-                _remote: address.to_string(),
-            });
-
-            Ok(())
-        }
+pub async fn start(app: &AppHandle, req: ConnectRequest) -> Option<ConnectionQueue> {
+    let address: SocketAddr = match format!("{}:{}", req.ip, req.port).parse() {
+        Ok(addr) => addr,
         Err(err) => {
+            emit_status(
+                &app,
+                ConnectionStatus::Error,
+                0,
+                Some(format!("Invalid address: {err}")),
+            );
+            return None;
+        }
+    };
+
+    let stream = perform_connect(&app, address, req.retries_enabled).await?;
+    let (reader, writer) = stream.into_split();
+    let (tx, rx) = tokio::sync::mpsc::channel::<ConnectionMessage>(100);
+
+    spawn(read_loop(reader, tx.clone()));
+    spawn(receive_loop(writer, rx, app.clone()));
+
+    Some(tx.clone())
+}
+
+async fn perform_connect(
+    app: &AppHandle,
+    addr: SocketAddr,
+    retries_enabled: bool,
+) -> Option<TcpStream> {
+    let mut attempt: u32 = 1;
+    emit_status(app, ConnectionStatus::Connecting, attempt, None);
+
+    loop {
+        let result = timeout(Duration::from_secs(1), TcpStream::connect(addr)).await;
+
+        let err = match result {
+            Ok(Ok(stream)) => {
+                emit_status(&app, ConnectionStatus::Connected, attempt, None);
+                return Some(stream);
+            }
+            Ok(Err(err)) => err.to_string(),
+            Err(err) => err.to_string(),
+        };
+
+        if !retries_enabled || attempt >= MAX_RETRIES {
             emit_status(
                 &app,
                 ConnectionStatus::Error,
                 MAX_RETRIES,
                 Some(err.to_string()),
             );
-            Err(err)
+            return None;
         }
+
+        let backoff = RETRY_DELAYS
+            .get(attempt as usize - 1)
+            .copied()
+            .unwrap_or(16);
+
+        emit_status(app, ConnectionStatus::Connecting, attempt, Some(err));
+        sleep(Duration::from_secs(backoff)).await;
+        attempt += 1;
     }
 }
 
-pub async fn disconnect_active(app: &AppHandle, state: &State<'_, AppState>) {
-    let mut connection = state.connection.lock().await;
-    if let Some(active) = connection.take() {
-        let mut writer = active.writer.lock().await;
-        let _ = writer.shutdown().await;
-        active.reader_task.abort();
+async fn read_loop(mut reader: tokio::net::tcp::OwnedReadHalf, tx: ConnectionQueue) {
+    let mut buffer = vec![0u8; 4096];
+    let mut continuation = true;
+
+    while continuation {
+        let len = reader.read(&mut buffer).await;
+        let res = len.map(|l| Vec::from_iter(buffer[..l].iter().copied()));
+        continuation = tx
+            .send(ConnectionMessage::MessageReceived(res))
+            .await
+            .is_ok();
     }
-    emit_status(app, ConnectionStatus::Disconnected, 0, None);
 }
 
-pub async fn send_user_message(app: AppHandle, state: State<'_, AppState>, payload: SendRequest) -> Result<()> {
-    let message_bytes = translate::to_bytes(&payload.message);
-    let timestamp = now_ts();
-
-    let writer = {
-        let connection = state.connection.lock().await;
-        if let Some(active) = connection.as_ref() {
-            active.writer.clone()
-        } else {
-            return Err(anyhow!("No active connection"));
-        }
+async fn receive_loop(
+    writer: OwnedWriteHalf,
+    mut queue: ConnectionQueueReceiver,
+    app: AppHandle,
+) {
+    let mut connection = Connection {
+        app,
+        writer,
+        auto_response: AutoResponseConfig::default(),
     };
 
-    send_bytes(&writer, &message_bytes).await?;
-
-    emit_message(
-        &app,
-        MessagePayload {
-            direction: MessageDirection::Sent,
-            protocol: current_protocol(&state).await,
-            content: translate::to_human_readable(&message_bytes),
-            timestamp,
-            auto_response: false,
-        },
-    );
-
-    Ok(())
-}
-
-async fn perform_connect(app: &AppHandle, addr: SocketAddr, retries_enabled: bool) -> Result<(TcpStream, u32)> {
-    let mut attempt: u32 = 1;
-
-    loop {
-        emit_status(app, ConnectionStatus::Connecting, attempt, None);
-        let result = timeout(Duration::from_secs(1), TcpStream::connect(addr)).await;
-
-        match result {
-            Ok(Ok(stream)) => return Ok((stream, attempt)),
-            Ok(Err(err)) => {
-                if !retries_enabled || attempt >= MAX_RETRIES {
-                    return Err(anyhow!("Connect failed: {err}"));
-                }
-                let backoff = RETRY_DELAYS.get(attempt as usize - 1).copied().unwrap_or(16);
-                emit_status(app, ConnectionStatus::Connecting, attempt, Some(err.to_string()));
-                sleep(Duration::from_secs(backoff)).await;
-                attempt += 1;
+    while let Some(message) = queue.recv().await {
+        match message {
+            ConnectionMessage::Disconnect => {
+                connection.disconnect().await;
+                queue.close();
             }
-            Err(err) => {
-                if !retries_enabled || attempt >= MAX_RETRIES {
-                    return Err(anyhow!("Connect timed out: {err}"));
+            ConnectionMessage::SendMessage(send_request) => {
+                connection.send_user_message(&send_request).await;
+            }
+            ConnectionMessage::SetAutoResponse(auto_response_config) => {
+                connection.set_auto_response(auto_response_config);
+            }
+            ConnectionMessage::MessageReceived(message_res) => {
+                if let Err(err)  = connection.handle_message(message_res).await {
+                    connection.disconnect_with_error(err).await;
+                    queue.close();
                 }
-                let backoff = RETRY_DELAYS.get(attempt as usize - 1).copied().unwrap_or(16);
-                emit_status(app, ConnectionStatus::Connecting, attempt, Some(err.to_string()));
-                sleep(Duration::from_secs(backoff)).await;
-                attempt += 1;
             }
         }
     }
 }
 
-async fn read_loop(
+struct Connection {
     app: AppHandle,
-    mut reader: tokio::net::tcp::OwnedReadHalf,
-    writer: Arc<Mutex<tokio::net::tcp::OwnedWriteHalf>>,
-    protocol: Protocol,
-    auto_response: Arc<Mutex<AutoResponseConfig>>,
-) {
-    let mut buffer = vec![0u8; 4096];
+    writer: OwnedWriteHalf,
+    auto_response: AutoResponseConfig,
+}
 
-    loop {
-        match reader.read(&mut buffer).await {
-            Ok(0) => {
-                emit_status(&app, ConnectionStatus::Disconnected, 0, None);
-                break;
-            }
-            Ok(len) => {
-                let slice = &buffer[..len];
-                let visible = translate::to_human_readable(slice);
+impl Connection {
+    pub async fn send_user_message(&mut self, payload: &SendRequest) {
+        let message_bytes = translate::to_bytes(&payload.message);
+
+        match self.writer.write_all(&message_bytes).await {
+            Ok(_) => emit_message(
+                &self.app,
+                MessagePayload {
+                    direction: MessageDirection::Sent,
+                    content: payload.message.clone(),
+                    timestamp: now_ts(),
+                },
+            ),
+            Err(err) => emit_status(&self.app, ConnectionStatus::Error, 0, Some(err.to_string())),
+        }
+    }
+
+    pub async fn disconnect(&mut self) {
+        match self.writer.shutdown().await {
+            Ok(_) => emit_status(&self.app, ConnectionStatus::Disconnected, 0, None),
+            Err(err) => emit_status(&self.app, ConnectionStatus::Error, 0, Some(err.to_string())),
+        }
+    }
+
+    pub async fn disconnect_with_error(&mut self, error_message: String) {
+        let _ = self.writer.shutdown().await;
+        emit_status(&self.app, ConnectionStatus::Error, 0, Some(error_message));
+    }
+
+    pub fn set_auto_response(&mut self, cfg: AutoResponseConfig) {
+        self.auto_response = cfg;
+    }
+
+    pub async fn handle_message(
+        &mut self,
+        message: Result<Vec<u8>, io::Error>,
+    ) -> Result<(), String> {
+        match message {
+            Ok(a) if a.is_empty() => Err("Connection closed by peer".to_string()),
+            Ok(msg) => {
+                let visible = translate::to_human_readable(&msg);
 
                 emit_message(
-                    &app,
+                    &self.app,
                     MessagePayload {
                         direction: MessageDirection::Received,
-                        protocol: protocol.clone(),
                         content: visible.clone(),
                         timestamp: now_ts(),
-                        auto_response: false,
                     },
                 );
 
-                let cfg = auto_response.lock().await.clone();
-                if cfg.enabled {
-                    if let Some(response_bytes) = auto_response::build_auto_response(&protocol, &cfg, slice) {
-                        if send_bytes(&writer, &response_bytes).await.is_ok() {
-                            emit_message(
-                                &app,
-                                MessagePayload {
-                                    direction: MessageDirection::Sent,
-                                    protocol: protocol.clone(),
-                                    content: translate::to_human_readable(&response_bytes),
-                                    timestamp: now_ts(),
-                                    auto_response: true,
-                                },
-                            );
-                        }
-                    }
-                }
+                self.send_auto_response(&msg).await;
+                Ok(())
             }
-            Err(err) => {
-                emit_status(&app, ConnectionStatus::Error, 0, Some(err.to_string()));
-                break;
-            }
+            Err(err) => Err(err.to_string()),
         }
     }
-}
 
-async fn send_bytes(writer: &Arc<Mutex<tokio::net::tcp::OwnedWriteHalf>>, bytes: &[u8]) -> Result<()> {
-    let mut guard = writer.lock().await;
-    guard
-        .write_all(bytes)
-        .await
-        .context("Failed to write to socket")?;
-    Ok(())
-}
-
-async fn current_protocol(state: &State<'_, AppState>) -> Protocol {
-    let connection = state.connection.lock().await;
-    connection
-        .as_ref()
-        .map(|c| c.protocol.clone())
-        .unwrap_or(Protocol::Astm)
+    async fn send_auto_response(&mut self, message: &[u8]) {
+        if let Some(response) = auto_response::build_auto_response(&self.auto_response, message) {
+            self.send_user_message(&SendRequest {
+                message: response.clone(),
+            })
+            .await;
+        }
+    }
 }
 
 fn emit_status(app: &AppHandle, status: ConnectionStatus, attempts: u32, message: Option<String>) {
