@@ -54,10 +54,11 @@ function init() {
 
   hydrateConfig();
   applyStatus({ status: "disconnected", attempts: 0, message: null });
+  wireEvents();
   updateConnectEnabled();
   updateAutoResponseVisibility();
   onAutoConfigChange();
-  wireEvents();
+  persistConfig();
 }
 
 function updateConnectEnabled() {
@@ -147,7 +148,6 @@ function updateAutoResponseVisibility() {
 }
 
 async function onAutoConfigChange() {
-  updateAutoResponseVisibility();
   const config = {
     enabled: el.autoToggle.checked,
     astm_message: valueOrNull(el.astmMessage.value),
@@ -161,13 +161,13 @@ async function onAutoConfigChange() {
   } catch (err) {
     console.error("Failed to update auto-response", err);
   }
-
+  
   persistConfig();
 }
 
 async function onAutobuildClick() {
-  const input = el.messageInput.value;
-  if (!input.trim()) {
+  const input = el.messageInput.value.trim();
+  if (!input) {
     return;
   }
 

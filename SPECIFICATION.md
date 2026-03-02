@@ -45,7 +45,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
 - The auto-response toggle and its protocol-specific configuration are shown on the right side of the configuration bar, alongside the Protocol selector.
 - The protocol-specific config is only shown when auto-response is enabled and the relevant protocol is selected:
   - **ASTM**: a textarea for the user to enter the response message to send automatically.
-  - **HL7**: two inputs for message type (e.g. `ACK`) and response code (e.g. `AA`). The program generates a response message based on this configuration and the received message.
+  - **HL7**: two inputs for message type (e.g. `ACK^O21`) and response code (e.g. `AA`). The program generates a response message based on this configuration and the received message.
 
 
 ## Message Builder
