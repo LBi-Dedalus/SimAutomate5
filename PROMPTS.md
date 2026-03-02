@@ -175,3 +175,15 @@ The goal of this document is to keep a trace of the prompts I tried
 > Start implementation
 
 > I like what you have done. However, I would like you to change some things. First, can you rename the functions in logger.rs to be more explicit, like 'log_backend' and 'log_frontend' ? Then, in lib.rs, can you add AppLogger to AppState so that the manage function for the Tauri app is called only once ? You can modify the AppState as you see fit. Finally, can you explain why you added 'void' before all calls to 'log*' functions in main.js ?
+
+> Can you add a button to open the folder where the logs are located ?
+
+## Configure auto-response without connection
+
+### Plan mode
+
+> In the logs, I see this : "Failed to update auto-response: channel closed", "update_auto_response requested without active connection" and "update_auto_response queue send failed: channel closed". However, I want to be able to update the auto-response before being connected as well as when I am connected. Give me a proposition of a system that could allow this
+
+### Agent mode
+
+> Start implementation

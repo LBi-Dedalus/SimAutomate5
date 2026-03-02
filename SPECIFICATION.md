@@ -57,6 +57,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
 - The application can automatically respond to incoming messages for ASTM and HL7 protocols.
 - There is a toggle to enable or disable automatic responses.
 - The auto-response toggle and its protocol-specific configuration are shown on the right side of the configuration bar, alongside the Protocol selector.
+- Auto-response configuration updates are accepted both while disconnected and while connected; disconnected updates are stored and applied automatically on the next connection.
 - The protocol-specific config is only shown when auto-response is enabled and the relevant protocol is selected:
   - **ASTM**: a textarea for the user to enter the response message to send automatically.
   - **HL7**: two inputs for message type (e.g. `ACK^O21`) and response code (e.g. `AA`). The program generates a response message based on this configuration and the received message.

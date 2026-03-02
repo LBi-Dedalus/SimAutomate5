@@ -51,7 +51,8 @@ async fn connect_socket(
         }
     }
 
-    state_val.connection = transport::start(&app, req, logger.clone()).await;
+    let desired_auto_response = state_val.desired_auto_response.clone();
+    state_val.connection = transport::start(&app, req, logger.clone(), desired_auto_response).await;
     logger.log_backend(
         LogLevel::Inf,
         file!(),
@@ -141,7 +142,7 @@ async fn update_auto_response(
     state: State<'_, Mutex<AppState>>,
     config: AutoResponseConfig,
 ) -> Result<(), String> {
-    let state_val = state.lock().await;
+    let mut state_val = state.lock().await;
     let logger = state_val.logger.clone();
 
     logger.log_backend(
@@ -154,25 +155,26 @@ async fn update_auto_response(
         ),
     );
 
+    state_val.desired_auto_response = config.clone();
+
     if let Some(queue) = state_val.connection.as_ref() {
-        queue
-            .send(ConnectionMessage::SetAutoResponse(config))
-            .await
-            .map_err(|err| {
-                logger.log_backend(
-                    LogLevel::Err,
-                    file!(),
-                    line!(),
-                    format!("update_auto_response queue send failed: {err}"),
-                );
-                err.to_string()
-            })?;
+        if let Err(err) = queue.send(ConnectionMessage::SetAutoResponse(config)).await {
+            logger.log_backend(
+                LogLevel::Wrn,
+                file!(),
+                line!(),
+                format!(
+                    "update_auto_response could not reach active connection (stored for next connection): {err}"
+                ),
+            );
+            state_val.connection = None;
+        }
     } else {
         logger.log_backend(
-            LogLevel::Wrn,
+            LogLevel::Inf,
             file!(),
             line!(),
-            "update_auto_response requested without active connection",
+            "update_auto_response stored while disconnected",
         );
     }
 

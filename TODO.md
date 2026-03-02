@@ -38,6 +38,7 @@
 - [x] Implement Tauri channels for frontend-backend communication
 - [x] Implement automatic response logic for ASTM (send configured message)
 - [x] Implement automatic response logic for HL7 (generate response from type/code and received message)
+- [x] Allow auto-response config updates while disconnected and apply stored config on next connection
 - [x] Expose autobuild command that detects protocol and returns built content
 - [x] Ensure user-triggered disconnect shuts down the socket cleanly
 - [x] Add dedicated `backend.log` file logging for backend operations/errors (`INF`/`WRN`/`ERR`, timestamp, location, message)

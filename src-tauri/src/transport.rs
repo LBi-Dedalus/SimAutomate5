@@ -27,7 +27,12 @@ pub enum ConnectionMessage {
     MessageReceived(Result<Vec<u8>, io::Error>),
 }
 
-pub async fn start(app: &AppHandle, req: ConnectRequest, logger: AppLogger) -> Option<ConnectionQueue> {
+pub async fn start(
+    app: &AppHandle,
+    req: ConnectRequest,
+    logger: AppLogger,
+    desired_auto_response: AutoResponseConfig,
+) -> Option<ConnectionQueue> {
     logger.log_backend(
         LogLevel::Inf,
         file!(),
@@ -60,7 +65,13 @@ pub async fn start(app: &AppHandle, req: ConnectRequest, logger: AppLogger) -> O
     let (tx, rx) = tokio::sync::mpsc::channel::<ConnectionMessage>(100);
 
     spawn(read_loop(reader, tx.clone()));
-    spawn(receive_loop(writer, rx, app.clone(), logger));
+    spawn(receive_loop(
+        writer,
+        rx,
+        app.clone(),
+        logger,
+        desired_auto_response,
+    ));
 
     Some(tx.clone())
 }
@@ -153,6 +164,7 @@ async fn receive_loop(
     mut queue: ConnectionQueueReceiver,
     app: AppHandle,
     logger: AppLogger,
+    desired_auto_response: AutoResponseConfig,
 ) {
     logger.log_backend(LogLevel::Inf, file!(), line!(), "receive loop started");
 
@@ -160,7 +172,7 @@ async fn receive_loop(
         app,
         writer,
         logger: logger.clone(),
-        auto_response: AutoResponseConfig::default(),
+        auto_response: desired_auto_response,
     };
 
     while let Some(message) = queue.recv().await {
