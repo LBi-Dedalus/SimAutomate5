@@ -187,3 +187,9 @@ The goal of this document is to keep a trace of the prompts I tried
 ### Agent mode
 
 > Start implementation
+
+## Finalizing #2
+
+### Agent mode
+
+> Can you document the usage, as well as features and development setup in the README ?

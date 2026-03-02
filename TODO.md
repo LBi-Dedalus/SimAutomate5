@@ -52,7 +52,7 @@
 ### General
 - [x] Update SPECIFICATION.md as features are designed, implemented, or changed
 - [ ] Test all features and edge cases
-- [ ] Document usage and protocols supported
+- [x] Document usage and protocols supported
 
 ---
 _Last updated: March 2, 2026_
