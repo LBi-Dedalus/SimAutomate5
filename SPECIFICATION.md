@@ -48,6 +48,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
 - Input area:
   - Textarea for entering messages.
   - Send button to send the message (disabled while disconnected).
+    - A **Send Selection** button sends only the currently selected text in the textarea (disabled while disconnected or when no text is selected). The default Send button always sends the full message.
   - The message input content remains in the textarea after sending; it is only cleared via the Clear button.
   - Clear button to clear the input area.
   - Uses Tauri commands `connect_socket`, `disconnect_socket`, and `send_message` with events `connection://status` and `message://stream` to reflect live status and message flow.

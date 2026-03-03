@@ -14,6 +14,7 @@ const selectors = {
   clearLog: "#clear-log-btn",
   messageInput: "#message-input",
   clearInput: "#clear-input-btn",
+  sendSelection: "#send-selection-btn",
   send: "#send-btn",
   autoToggle: "#auto-response",
   astmConfig: "#astm-response-config",
@@ -51,6 +52,7 @@ function init() {
   el.openLogs.addEventListener("click", onOpenLogsClick);
   el.clearLog.addEventListener("click", clearLog);
   el.clearInput.addEventListener("click", clearInput);
+  el.sendSelection.addEventListener("click", onSendSelectionClick);
   el.send.addEventListener("click", onSendClick);
   el.protocol.addEventListener("change", onProtocolChange);
   el.autoToggle.addEventListener("change", onProtocolChange);
@@ -60,6 +62,7 @@ function init() {
   el.retries.addEventListener("change", persistConfig);
   el.protocol.addEventListener("change", persistConfig);
   el.autobuild.addEventListener("click", onAutobuildClick);
+  document.addEventListener("selectionchange", updateSendSelectionEnabled);
 
   hydrateConfig();
   applyStatus({ status: "disconnected", attempts: 0, message: null });
@@ -141,6 +144,28 @@ async function onSendClick() {
   } catch (err) {
     console.error("Failed to send", err);
     await logError(`Failed to send message: ${String(err)}`, "main.js:onSendClick");
+  }
+}
+
+function updateSendSelectionEnabled() {
+  const { selectionStart, selectionEnd } = el.messageInput;
+  el.sendSelection.disabled = !isConnected || selectionStart === selectionEnd;
+}
+
+async function onSendSelectionClick() {
+  const { selectionStart, selectionEnd } = el.messageInput;
+  const message = el.messageInput.value.substring(selectionStart, selectionEnd);
+  if (!message) {
+    void logWarn("Send Selection skipped because selection is empty", "main.js:onSendSelectionClick");
+    return;
+  }
+
+  try {
+    void logInfo(`Send Selection requested (length=${message.length})`, "main.js:onSendSelectionClick");
+    await invoke("send_message", { payload: { message } });
+  } catch (err) {
+    console.error("Failed to send selection", err);
+    await logError(`Failed to send selection: ${String(err)}`, "main.js:onSendSelectionClick");
   }
 }
 
@@ -233,6 +258,7 @@ function applyStatus(payload) {
   isConnected = status === "connected";
   el.connect.textContent = isConnected ? "Disconnect" : "Connect";
   el.send.disabled = !isConnected;
+  updateSendSelectionEnabled();
   void logInfo(
     `Status updated (status=${status}, attempts=${attempts}, has_message=${Boolean(message)})`,
     "main.js:applyStatus",
