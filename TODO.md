@@ -21,6 +21,7 @@
 - [x] Add input textarea for message entry
 - [x] Add Send and Clear buttons for input area
 - [x] Keep message textarea content after Send (clear only via Clear button)
+- [x] Add "Send Selection" button that sends only the currently selected text in the textarea (disabled when disconnected or nothing is selected); default Send still sends the full message
 - [x] Create Message Builder page with input textarea, output area, protocol selection, and Build button
 - [x] Add toggle to enable/disable automatic responses
 - [x] Add UI for configuring ASTM automatic response message
