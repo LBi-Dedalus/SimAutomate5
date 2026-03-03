@@ -171,13 +171,10 @@ function onProtocolChange() {
 }
 
 function updateAutoResponseVisibility() {
-  const enabled = el.autoToggle.checked;
   const protocol = el.protocol.value;
-  const showAstm = enabled && protocol === "ASTM";
-  const showHl7 = enabled && protocol === "HL7";
 
-  el.astmConfig.classList.toggle("is-hidden", !showAstm);
-  el.hl7Config.classList.toggle("is-hidden", !showHl7);
+  el.astmConfig.classList.toggle("is-hidden", protocol !== "ASTM");
+  el.hl7Config.classList.toggle("is-hidden", protocol !== "HL7");
 }
 
 async function onAutoConfigChange() {
