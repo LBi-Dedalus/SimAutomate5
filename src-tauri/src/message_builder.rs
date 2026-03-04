@@ -20,30 +20,38 @@ pub fn auto_build(req: AutoBuildRequest) -> Result<BuildResponse> {
 }
 
 fn build_mllp(input: &str) -> String {
-    let mut output = String::new();
-    output.push(ControlToken::VT.into());
+    let mut built_lines: Vec<String> = Vec::new();
+    built_lines.push("<VT>".to_string());
 
     for line in input.lines() {
+        let mut output = String::new();
+
         output.push_str(line);
         output.push(ControlToken::CR.into());
+
+        built_lines.push(to_human_readable(output.as_bytes()));
     }
 
-    output.push(ControlToken::FS.into());
-    output.push(ControlToken::CR.into());
+    built_lines.push("<FS><CR>".to_string());
 
-    to_human_readable(output.as_bytes())
+    built_lines.join("\n")
 }
 
 fn build_astm(input: &str) -> String {
-    let lines = input.lines().filter(|l| !l.is_empty());
-    let line_count = lines.clone().count();
+    let lines = input.lines().filter(|l| !l.is_empty()).collect::<Vec<_>>();
+    let line_count = lines.len();
 
-    let segments: Vec<String> = lines
-        .enumerate()
-        .map(|(idx, l)| build_astm_segment(l, idx, line_count))
-        .collect();
+    let mut output = Vec::with_capacity(line_count + 2);
+    output.push("<ENQ>".to_string());
 
-    to_human_readable(segments.join("\n").as_bytes())
+    for (idx, line) in lines.iter().enumerate() {
+        let segment = build_astm_segment(line, idx, line_count);
+        output.push(to_human_readable(segment.as_bytes()));
+    }
+
+    output.push("<EOT>".to_string());
+
+    output.join("\n")
 }
 
 fn build_astm_segment(line: &str, idx: usize, line_count: usize) -> String {

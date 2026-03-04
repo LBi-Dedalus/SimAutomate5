@@ -90,7 +90,10 @@ async fn perform_connect(
             LogLevel::Inf,
             file!(),
             line!(),
-            format!("connect attempt={} address={} retries_enabled={}", attempt, addr, retries_enabled),
+            format!(
+                "connect attempt={} address={} retries_enabled={}",
+                attempt, addr, retries_enabled
+            ),
         );
 
         let result = timeout(Duration::from_secs(1), TcpStream::connect(addr)).await;
@@ -114,7 +117,10 @@ async fn perform_connect(
             LogLevel::Wrn,
             file!(),
             line!(),
-            format!("connect failed attempt={} address={} error={}", attempt, addr, err),
+            format!(
+                "connect failed attempt={} address={} error={}",
+                attempt, addr, err
+            ),
         );
 
         if !retries_enabled || attempt >= MAX_RETRIES {
@@ -129,7 +135,10 @@ async fn perform_connect(
                 LogLevel::Err,
                 file!(),
                 line!(),
-                format!("connect giving up after attempts={} address={}", attempt, addr),
+                format!(
+                    "connect giving up after attempts={} address={}",
+                    attempt, addr
+                ),
             );
             return None;
         }
@@ -139,7 +148,13 @@ async fn perform_connect(
             .copied()
             .unwrap_or(16);
 
-        emit_status(app, logger, ConnectionStatus::Connecting, attempt, Some(err));
+        emit_status(
+            app,
+            logger,
+            ConnectionStatus::Connecting,
+            attempt,
+            Some(err),
+        );
         sleep(Duration::from_secs(backoff)).await;
         attempt += 1;
     }
@@ -178,7 +193,12 @@ async fn receive_loop(
     while let Some(message) = queue.recv().await {
         match message {
             ConnectionMessage::Disconnect => {
-                logger.log_backend(LogLevel::Inf, file!(), line!(), "disconnect message received in queue");
+                logger.log_backend(
+                    LogLevel::Inf,
+                    file!(),
+                    line!(),
+                    "disconnect message received in queue",
+                );
                 connection.disconnect().await;
                 queue.close();
             }
@@ -189,7 +209,7 @@ async fn receive_loop(
                 connection.set_auto_response(auto_response_config);
             }
             ConnectionMessage::MessageReceived(message_res) => {
-                if let Err(err)  = connection.handle_message(message_res).await {
+                if let Err(err) = connection.handle_message(message_res).await {
                     logger.log_backend(
                         LogLevel::Err,
                         file!(),
@@ -215,38 +235,51 @@ struct Connection {
 
 impl Connection {
     pub async fn send_user_message(&mut self, payload: &SendRequest) {
-        let message_bytes = translate::to_bytes(&payload.message);
         self.logger.log_backend(
             LogLevel::Inf,
             file!(),
             line!(),
-            format!("sending user message bytes={}", message_bytes.len()),
+            format!("sending user message={}", payload.message),
         );
 
-        match self.writer.write_all(&message_bytes).await {
-            Ok(_) => emit_message(
-                &self.app,
-                &self.logger,
-                MessagePayload {
-                    direction: MessageDirection::Sent,
-                    content: payload.message.clone(),
-                    timestamp: now_ts(),
-                },
-            ),
-            Err(err) => {
-                self.logger.log_backend(
-                    LogLevel::Err,
-                    file!(),
-                    line!(),
-                    format!("socket write failed bytes={}: {}", message_bytes.len(), err),
-                );
-                emit_status(
-                    &self.app,
-                    &self.logger,
-                    ConnectionStatus::Error,
-                    0,
-                    Some(err.to_string()),
-                )
+        for line in payload.message.lines() {
+            let message_bytes = translate::to_bytes(line);
+
+            match self.writer.write_all(&message_bytes).await {
+                Ok(_) => {
+                    self.logger.log_backend(
+                        LogLevel::Inf,
+                        file!(),
+                        line!(),
+                        format!("sending user message bytes={}", &message_bytes.len()),
+                    );
+
+                    emit_message(
+                        &self.app,
+                        &self.logger,
+                        MessagePayload {
+                            direction: MessageDirection::Sent,
+                            content: line.to_string(),
+                            timestamp: now_ts(),
+                        },
+                    );
+                }
+                Err(err) => {
+                    self.logger.log_backend(
+                        LogLevel::Err,
+                        file!(),
+                        line!(),
+                        format!("socket write failed bytes={}: {}", message_bytes.len(), err),
+                    );
+                    emit_status(
+                        &self.app,
+                        &self.logger,
+                        ConnectionStatus::Error,
+                        0,
+                        Some(err.to_string()),
+                    );
+                    return;
+                }
             }
         }
     }
@@ -254,8 +287,12 @@ impl Connection {
     pub async fn disconnect(&mut self) {
         match self.writer.shutdown().await {
             Ok(_) => {
-                self.logger
-                    .log_backend(LogLevel::Inf, file!(), line!(), "connection shutdown succeeded");
+                self.logger.log_backend(
+                    LogLevel::Inf,
+                    file!(),
+                    line!(),
+                    "connection shutdown succeeded",
+                );
                 emit_status(
                     &self.app,
                     &self.logger,
