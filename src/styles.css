@@ -76,7 +76,7 @@ body {
   flex: 0 1 300px;
 }
 
-#config-bar label {
+label {
   display: flex;
   flex-direction: column;
   font-size: 0.7rem;
@@ -148,7 +148,6 @@ body {
   padding: 2.5rem 1rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
   background: var(--faint);
 }
 
@@ -162,8 +161,8 @@ body {
 .message {
   display: flex;
   flex-direction: column;
-  max-width: 80%;
-  gap: 0.15rem;
+  max-width: 85%;
+  gap: 0.1rem;
 }
 
 .message.sent    { align-self: flex-end; align-items: flex-end; }
@@ -175,9 +174,9 @@ body {
 }
 
 .message-body {
-  padding: 0.5rem 0.75rem;
+  padding: 0.25rem 0.5rem;
   border-radius: 0.5rem;
-  font-size: 0.875rem;
+  font-size: var(--text-8);
   white-space: pre-wrap;
   word-break: break-all;
   border: 1px solid var(--border);
@@ -200,16 +199,14 @@ body {
 
 #message-label {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.8rem;
-  font-weight: 500;
 }
 
 #message-input {
   width: 100%;
+  height: 100%;
   resize: vertical;
+  padding: var(--space-2);
+  font-size: var(--text-7);
 }
 
 #builder-panel {

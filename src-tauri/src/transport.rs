@@ -1,4 +1,5 @@
 use chrono::Utc;
+use std::collections::VecDeque;
 use std::io;
 use std::net::SocketAddr;
 use tauri::async_runtime::spawn;
@@ -15,7 +16,7 @@ use crate::models::{
     MessagePayload, SendRequest, StatusPayload, MAX_RETRIES, MESSAGE_EVENT, RETRY_DELAYS,
     STATUS_EVENT,
 };
-use crate::translate;
+use crate::translate::{self, ControlToken};
 
 pub type ConnectionQueue = tokio::sync::mpsc::Sender<ConnectionMessage>;
 pub type ConnectionQueueReceiver = tokio::sync::mpsc::Receiver<ConnectionMessage>;
@@ -188,6 +189,7 @@ async fn receive_loop(
         writer,
         logger: logger.clone(),
         auto_response: desired_auto_response,
+        segments_awaiting_ack: VecDeque::new(),
     };
 
     while let Some(message) = queue.recv().await {
@@ -201,6 +203,14 @@ async fn receive_loop(
                 );
                 connection.disconnect().await;
                 queue.close();
+            }
+            ConnectionMessage::SendMessage(send_request) if !connection.segments_awaiting_ack.is_empty() => {
+                logger.log_backend(
+                    LogLevel::Wrn,
+                    file!(),
+                    line!(),
+                    "send message received while awaiting ACK, ignoring new message",
+                );
             }
             ConnectionMessage::SendMessage(send_request) => {
                 connection.send_user_message(&send_request).await;
@@ -231,6 +241,7 @@ struct Connection {
     writer: OwnedWriteHalf,
     logger: AppLogger,
     auto_response: AutoResponseConfig,
+    segments_awaiting_ack: VecDeque<Vec<u8>>,
 }
 
 impl Connection {
@@ -242,44 +253,58 @@ impl Connection {
             format!("sending user message={}", payload.message),
         );
 
-        for line in payload.message.lines() {
-            let message_bytes = translate::to_bytes(line);
+        let mut lines = payload.message.lines().map(translate::to_bytes);
 
-            match self.writer.write_all(&message_bytes).await {
-                Ok(_) => {
-                    self.logger.log_backend(
-                        LogLevel::Inf,
-                        file!(),
-                        line!(),
-                        format!("sending user message bytes={}", &message_bytes.len()),
-                    );
+        while let Some(line) = lines.next() {
+            let requires_ack = requires_ack(&line);
 
-                    emit_message(
-                        &self.app,
-                        &self.logger,
-                        MessagePayload {
-                            direction: MessageDirection::Sent,
-                            content: line.to_string(),
-                            timestamp: now_ts(),
-                        },
-                    );
-                }
-                Err(err) => {
-                    self.logger.log_backend(
-                        LogLevel::Err,
-                        file!(),
-                        line!(),
-                        format!("socket write failed bytes={}: {}", message_bytes.len(), err),
-                    );
-                    emit_status(
-                        &self.app,
-                        &self.logger,
-                        ConnectionStatus::Error,
-                        0,
-                        Some(err.to_string()),
-                    );
-                    return;
-                }
+            if let Err(_) = self.send_message(&line).await {
+                return;
+            }
+
+            if requires_ack {
+                self.segments_awaiting_ack.extend(lines);
+                break;
+            }
+        }
+    }
+
+    async fn send_message(&mut self, message: &[u8]) -> Result<(), String> {
+        match self.writer.write_all(message).await {
+            Ok(_) => {
+                self.logger.log_backend(
+                    LogLevel::Inf,
+                    file!(),
+                    line!(),
+                    format!("sending user message bytes={}", message.len()),
+                );
+
+                emit_message(
+                    &self.app,
+                    &self.logger,
+                    MessagePayload {
+                        direction: MessageDirection::Sent,
+                        content: translate::to_human_readable(message),
+                        timestamp: now_ts(),
+                    },
+                );
+                Ok(())
+            }
+            Err(err) => {
+                self.logger.log_backend(
+                    LogLevel::Err,
+                    file!(),
+                    line!(),
+                    format!("socket write failed bytes={}: {}", message.len(), err),
+                );
+                emit_status(
+                    &self.app,
+                    &self.logger,
+                    ConnectionStatus::Error,
+                    0,
+                    Some(err.to_string()),
+                );
+                Err(err.to_string())
             }
         }
     }
@@ -374,6 +399,16 @@ impl Connection {
                     },
                 );
 
+                if let Some(next_segment) = self.segments_awaiting_ack.pop_front() {
+                    self.logger.log_backend(
+                        LogLevel::Inf,
+                        file!(),
+                        line!(),
+                        "received expected ACK, sending next segment",
+                    );
+                    sleep(Duration::from_millis(200)).await;
+                    self.send_message(&next_segment).await?;
+                }
                 self.send_auto_response(&msg).await;
                 Ok(())
             }
@@ -433,4 +468,12 @@ fn emit_message(app: &AppHandle, logger: &AppLogger, payload: MessagePayload) {
 
 fn now_ts() -> String {
     Utc::now().to_rfc3339()
+}
+
+fn requires_ack(line: &[u8]) -> bool {
+    if line.is_empty() {
+        return false;
+    }
+
+    line[0] == ControlToken::ENQ as u8 || line[0] == ControlToken::STX as u8
 }
