@@ -217,7 +217,7 @@ async function onAutoConfigChange() {
     console.error("Failed to update auto-response", err);
     await logError(`Failed to update auto-response: ${String(err)}`, "main.js:onAutoConfigChange");
   }
-  
+
   persistConfig();
 }
 
@@ -287,7 +287,7 @@ function appendMessage(payload) {
 
   const body = document.createElement("div");
   body.className = "message-body";
-  body.textContent = content;
+  body.textContent = content.replaceAll("<CR>", "<CR>\n");
   entry.appendChild(body);
 
   el.messageLog.appendChild(entry);
@@ -304,7 +304,7 @@ function formatTime(value) {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
-      fractionalSecondDigits: 3 
+      fractionalSecondDigits: 3
     });
   } catch (_) {
     return value;
