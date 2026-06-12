@@ -8,98 +8,122 @@
     <script src="./oat.min.js" defer></script>
     <link rel="stylesheet" href="./styles.css" />
     <script type="module" src="./main.js" defer></script>
+    <script type="module" src="./config.js" defer></script>
+    <script type="module" src="./status.js" defer></script>
   </head>
   <body>
-    <div id="app">
+    <header class="hstack justify-between">
+      <div>
+        <button
+          class="small semibold px-4"
+          data-variant="secondary"
+          id="client-mode"
+        >
+          Client
+        </button>
+        <button
+          class="small ghost semibold px-4"
+          data-variant="secondary"
+          id="server-mode"
+        >
+          Server
+        </button>
+      </div>
 
-      <!-- Configuration Bar -->
-      <header id="config-bar">
-        <div id="config-left">
-          <div class="config-row">
+      <div class="hstack">
+        <span class="badge outline" id="status">Disconnected</span>
+        <button
+          class="small"
+          commandfor="protocol-options"
+          command="show-modal"
+        >
+          Protocol Options
+        </button>
+      </div>
+    </header>
+
+    <main class="flex">
+      <div id="connection-options">
+        <div id="client-options">
+          <div class="title py-2 px-4">
+            <span>Client - Connect to server</span>
+          </div>
+
+          <form class="vstack justify-between py-2 px-4">
             <label>
-              IP Address
-              <input type="text" id="ip-address" placeholder="127.0.0.1" />
+              Host
+              <input type="text" placeholder="localhost" name="host" required />
             </label>
+
             <label>
               Port
-              <input type="number" id="port" placeholder="5000" />
+              <input type="number" placeholder="12345" name="port" required />
             </label>
-            <label>
-              Retries
-              <input type="checkbox" role="switch" id="enable-retries" checked />
-            </label>
-          </div>
-          <div class="config-row">
-            <button id="connect-btn" data-variant="danger">Connect</button>
-            <output id="conn-status" aria-live="polite">
-              <span id="conn-dot"></span>
-              <span id="conn-label">Disconnected</span>
-            </output>
-          </div>
-        </div>
-        <div id="config-right">
-          <div class="config-row">
-            <label>
-              Protocol
-              <select id="protocol">
-                <option value="ASTM">ASTM</option>
-                <option value="HL7">HL7</option>
-              </select>
-            </label>
-            <label>
-              Auto-Response
-              <input type="checkbox" role="switch" id="auto-response" />
-            </label>
-          </div>
-          <div class="config-row">
-            <!-- ASTM auto-response config (shown when ASTM + auto-response enabled) -->
-            <div id="astm-response-config" class="auto-response-config is-hidden">
-              <label>
-                Response Message
-                <input type="text" id="astm-response" placeholder="e.g. &lt;ACK>" />
-              </label>
-            </div>
-            <!-- HL7 auto-response config (shown when HL7 + auto-response enabled) -->
-            <div id="hl7-response-config" class="auto-response-config is-hidden">
-              <label>
-                Message Type
-                <input type="text" id="hl7-msg-type" placeholder="e.g. ACK^O21" />
-              </label>
-              <label>
-                Response Code
-                <input type="text" id="hl7-resp-code" placeholder="e.g. AA" />
-              </label>
-            </div>
-          </div>
-        </div>
-      </header>
 
-      <!-- Message Log -->
-      <div id="message-log-wrapper">
-        <main id="message-log">
-          <!-- Messages will be dynamically inserted here -->
-        </main>
-        <div id="log-sidebar">
-          <button id="open-logs-btn" class="small">Open Logs</button>
-          <button id="clear-log-btn" class="small">Clear</button>
+            <button id="connect-btn" data-variant="success">Connect</button>
+          </form>
+        </div>
+
+        <div id="server-options" class="hidden">
+          <div class="title py-2 px-4">
+            <span>Server - Start server</span>
+          </div>
+
+          <form class="vstack justify-between py-2 px-4">
+            <label>
+              Port
+              <input
+                type="number"
+                placeholder="12345"
+                name="server-port"
+                required
+              />
+            </label>
+
+            <button id="connect-btn" data-variant="success">
+              Start server
+            </button>
+          </form>
         </div>
       </div>
 
-      <!-- Message Builder -->
-      <footer id="message-builder">
-        <label id="message-label">
-          Message / Builder
-          <textarea id="message-input" rows="4" placeholder="Enter message..."></textarea>
-        </label>
-
-        <div id="builder-actions">
-          <button id="autobuild-btn" class="small">Autobuild</button>
-          <button id="clear-input-btn" class="small">Clear</button>
-          <button id="send-selection-btn" class="small" data-variant="danger" disabled>Send Selection</button>
-          <button id="send-btn" data-variant="danger">Send</button>
+      <div id="chat" class="vstack">
+        <div class="title hstack justify-between w-100 py-2 px-4">
+          <span>Messages</span>
+          <button class="small outline">Clear</button>
         </div>
-      </footer>
 
-    </div>
+        <div id="messages" class="vstack">
+          <div id="no-connection">
+            <span>No connection</span><br />
+            <span>Configure and connect to a server.</span>
+          </div>
+        </div>
+
+        <form id="message-form" class="py-2 px-4 vstack gap-2">
+          <textarea
+            type="text"
+            placeholder="Type a message..."
+            disabled
+            required
+            name="message"
+          ></textarea>
+          <div class="hstack gap-2 justify-end">
+            <button class="outline small" disabled>Clear</button>
+            <button data-variant="primary" class="small" disabled>Send</button>
+          </div>
+        </form>
+      </div>
+
+      <div id="special-chars" class="vstack">
+        <button class="small" data-variant="secondary">ENQ</button>
+        <button class="small" data-variant="secondary">VT</button>
+        <button class="small" data-variant="secondary">FS.CR</button>
+        <button class="small" data-variant="secondary">CR</button>
+        <button class="small" data-variant="secondary">ACK</button>
+        <button class="small" data-variant="secondary">NAK</button>
+        <button class="small" data-variant="secondary">EOT</button>
+      </div>
+    </main>
   </body>
 </html>
