@@ -13,8 +13,7 @@ use crate::auto_response;
 use crate::logger::AppLogger;
 use crate::models::{
     AutoResponseConfig, ConnectRequest, ConnectionStatus, LogLevel, MessageDirection,
-    MessagePayload, SendRequest, StatusPayload, MAX_RETRIES, MESSAGE_EVENT, RETRY_DELAYS,
-    STATUS_EVENT,
+    MessagePayload, SendRequest, StatusPayload, MESSAGE_EVENT, STATUS_EVENT,
 };
 use crate::translate::{self, ControlToken};
 
@@ -44,13 +43,7 @@ pub async fn start(
     let address: SocketAddr = match format!("{}:{}", req.ip, req.port).parse() {
         Ok(addr) => addr,
         Err(err) => {
-            emit_status(
-                &app,
-                &logger,
-                ConnectionStatus::Error,
-                0,
-                Some(format!("Invalid address: {err}")),
-            );
+            emit_status(&app, &logger, ConnectionStatus::Error);
             logger.log_backend(
                 LogLevel::Err,
                 file!(),
@@ -61,7 +54,7 @@ pub async fn start(
         }
     };
 
-    let stream = perform_connect(&app, &logger, address, req.retries_enabled).await?;
+    let stream = perform_connect(&app, &logger, address).await?;
     let (reader, writer) = stream.into_split();
     let (tx, rx) = tokio::sync::mpsc::channel::<ConnectionMessage>(100);
 
@@ -81,27 +74,23 @@ async fn perform_connect(
     app: &AppHandle,
     logger: &AppLogger,
     addr: SocketAddr,
-    retries_enabled: bool,
 ) -> Option<TcpStream> {
     let mut attempt: u32 = 1;
-    emit_status(app, logger, ConnectionStatus::Connecting, attempt, None);
+    emit_status(app, logger, ConnectionStatus::Connecting);
 
     loop {
         logger.log_backend(
             LogLevel::Inf,
             file!(),
             line!(),
-            format!(
-                "connect attempt={} address={} retries_enabled={}",
-                attempt, addr, retries_enabled
-            ),
+            format!("connect attempt={} address={}", attempt, addr),
         );
 
         let result = timeout(Duration::from_secs(1), TcpStream::connect(addr)).await;
 
         let err = match result {
             Ok(Ok(stream)) => {
-                emit_status(&app, logger, ConnectionStatus::Connected, attempt, None);
+                emit_status(&app, logger, ConnectionStatus::Connected);
                 logger.log_backend(
                     LogLevel::Inf,
                     file!(),
@@ -125,13 +114,7 @@ async fn perform_connect(
         );
 
         if !retries_enabled || attempt >= MAX_RETRIES {
-            emit_status(
-                &app,
-                logger,
-                ConnectionStatus::Error,
-                MAX_RETRIES,
-                Some(err.to_string()),
-            );
+            emit_status(&app, logger, ConnectionStatus::Error);
             logger.log_backend(
                 LogLevel::Err,
                 file!(),
@@ -149,13 +132,7 @@ async fn perform_connect(
             .copied()
             .unwrap_or(16);
 
-        emit_status(
-            app,
-            logger,
-            ConnectionStatus::Connecting,
-            attempt,
-            Some(err),
-        );
+        emit_status(app, logger, ConnectionStatus::Connecting);
         sleep(Duration::from_secs(backoff)).await;
         attempt += 1;
     }
@@ -204,7 +181,9 @@ async fn receive_loop(
                 connection.disconnect().await;
                 queue.close();
             }
-            ConnectionMessage::SendMessage(send_request) if !connection.segments_awaiting_ack.is_empty() => {
+            ConnectionMessage::SendMessage(send_request)
+                if !connection.segments_awaiting_ack.is_empty() =>
+            {
                 logger.log_backend(
                     LogLevel::Wrn,
                     file!(),
@@ -297,13 +276,7 @@ impl Connection {
                     line!(),
                     format!("socket write failed bytes={}: {}", message.len(), err),
                 );
-                emit_status(
-                    &self.app,
-                    &self.logger,
-                    ConnectionStatus::Error,
-                    0,
-                    Some(err.to_string()),
-                );
+                emit_status(&self.app, &self.logger, ConnectionStatus::Error);
                 Err(err.to_string())
             }
         }
@@ -318,13 +291,7 @@ impl Connection {
                     line!(),
                     "connection shutdown succeeded",
                 );
-                emit_status(
-                    &self.app,
-                    &self.logger,
-                    ConnectionStatus::Disconnected,
-                    0,
-                    None,
-                )
+                emit_status(&self.app, &self.logger, ConnectionStatus::Disconnected)
             }
             Err(err) => {
                 self.logger.log_backend(
@@ -333,13 +300,7 @@ impl Connection {
                     line!(),
                     format!("connection shutdown failed: {err}"),
                 );
-                emit_status(
-                    &self.app,
-                    &self.logger,
-                    ConnectionStatus::Error,
-                    0,
-                    Some(err.to_string()),
-                )
+                emit_status(&self.app, &self.logger, ConnectionStatus::Error)
             }
         }
     }
@@ -352,13 +313,7 @@ impl Connection {
             line!(),
             format!("disconnecting due to error: {error_message}"),
         );
-        emit_status(
-            &self.app,
-            &self.logger,
-            ConnectionStatus::Error,
-            0,
-            Some(error_message),
-        );
+        emit_status(&self.app, &self.logger, ConnectionStatus::Error);
     }
 
     pub fn set_auto_response(&mut self, cfg: AutoResponseConfig) {
@@ -432,18 +387,8 @@ impl Connection {
     }
 }
 
-fn emit_status(
-    app: &AppHandle,
-    logger: &AppLogger,
-    status: ConnectionStatus,
-    attempts: u32,
-    message: Option<String>,
-) {
-    let payload = StatusPayload {
-        status,
-        attempts,
-        message,
-    };
+fn emit_status(app: &AppHandle, logger: &AppLogger, status: ConnectionStatus) {
+    let payload = StatusPayload { status };
 
     if let Err(err) = app.emit(STATUS_EVENT, payload) {
         logger.log_backend(

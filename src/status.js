@@ -23,17 +23,35 @@ const STATUS_VARIANTS = {
     error: "danger",
 };
 
+window.status = {
+    _value: "disconnected",
+    _subscribers: new Set(),
+    get() {
+        return this._value;
+    },
+    set(val) {
+        this._value = val;
+        for (const callback of this._subscribers) {
+            callback(val);
+        }
+    },
+    subscribe(callback) {
+        this._subscribers.add(callback);
+        return () => this._subscribers.delete(callback);
+    },
+};
+
 window.addEventListener("DOMContentLoaded", async () => {
     await listen(STATUS_EVENT, (event) => applyStatus(event.payload));
 });
 
 function applyStatus(payload) {
-    const { status, attempts, message } = payload;
+    const { status } = payload;
     const statusEl = document.getElementById("status");
 
     statusEl.textContent = STATUS_LABELS[status];
     statusEl.className = STATUS_CLASSES[status];
     statusEl.dataset.variant = STATUS_VARIANTS[status];
 
-    window.isConnected.set(status === "connected");
+    window.status.set(status);
 }

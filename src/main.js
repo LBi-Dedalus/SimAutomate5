@@ -4,23 +4,6 @@ const { listen } = window.__TAURI__.event;
 const selectors = {
 };
 
-window.isConnected = {
-  _value: false,
-  _subscribers: new Set(),
-  get() {
-    return this._value;
-  },
-  set(val) {
-    this._value = val;
-    for (const callback of this._subscribers) {
-      callback(val);
-    }
-  },
-  subscribe(callback) {
-    this._subscribers.add(callback);
-    return () => this._subscribers.delete(callback);
-  },
-};
 const CONFIG_KEY = "simautomate:config";
 
 const STATUS_EVENT = "connection://status";
@@ -44,7 +27,9 @@ function initModeButtons() {
   const serverOptions = document.getElementById("server-options");
 
   clientModeBtn.addEventListener("click", () => {
-    if (window.isConnected.get()) return;
+    const disable = ["connecting", "connected"].includes(window.status.get());
+    if (disable) return;
+
     clientModeBtn.classList.remove("ghost");
     serverModeBtn.classList.add("ghost");
     clientOptions.classList.remove("hidden");
@@ -52,7 +37,9 @@ function initModeButtons() {
   });
 
   serverModeBtn.addEventListener("click", () => {
-    if (window.isConnected.get()) return;
+    const disable = ["connecting", "connected"].includes(window.status.get());
+    if (disable) return;
+
     serverModeBtn.classList.remove("ghost");
     clientModeBtn.classList.add("ghost");
     serverOptions.classList.remove("hidden");

@@ -13,7 +13,9 @@ function initModeButtons() {
     const serverOptions = document.getElementById("server-options");
 
     clientModeBtn.addEventListener("click", () => {
-        if (window.isConnected.get()) return;
+        const disable = ["connecting", "connected"].includes(window.status.get());
+        if (disable) return;
+
         clientModeBtn.classList.remove("ghost");
         serverModeBtn.classList.add("ghost");
         clientOptions.classList.remove("hidden");
@@ -21,7 +23,9 @@ function initModeButtons() {
     });
 
     serverModeBtn.addEventListener("click", () => {
-        if (window.isConnected.get()) return;
+        const disable = ["connecting", "connected"].includes(window.status.get());
+        if (disable) return;
+
         serverModeBtn.classList.remove("ghost");
         clientModeBtn.classList.add("ghost");
         serverOptions.classList.remove("hidden");
@@ -30,18 +34,19 @@ function initModeButtons() {
 }
 
 function lockFormsWhenConnected() {
-    window.isConnected.subscribe(connected => {
+    window.status.subscribe(status => {
+        const disable = ["connecting", "connected"].includes(status);
         const clientModeBtn = document.getElementById("client-mode");
         const serverModeBtn = document.getElementById("server-mode");
 
         const clientFormFields = clientModeBtn.querySelectorAll("input, select, textarea, button");
         for (const field of clientFormFields) {
-            field.disabled = connected;
+            field.disabled = disable;
         }
 
         const serverFormFields = serverModeBtn.querySelectorAll("input, select, textarea, button");
         for (const field of serverFormFields) {
-            field.disabled = connected;
+            field.disabled = disable;
         }
     });
 }

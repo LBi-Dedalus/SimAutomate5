@@ -2,8 +2,6 @@ use serde::{Deserialize, Serialize};
 
 pub const STATUS_EVENT: &str = "connection://status";
 pub const MESSAGE_EVENT: &str = "message://stream";
-pub const MAX_RETRIES: u32 = 6;
-pub const RETRY_DELAYS: [u64; 6] = [1, 2, 4, 8, 16, 32];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LogLevel {
@@ -100,13 +98,12 @@ pub struct MessagePayload {
 pub enum MessageDirection {
     Sent,
     Received,
+    System,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct StatusPayload {
     pub status: ConnectionStatus,
-    pub attempts: u32,
-    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
