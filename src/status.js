@@ -29,20 +29,11 @@ window.addEventListener("DOMContentLoaded", async () => {
 
 function applyStatus(payload) {
     const { status, attempts, message } = payload;
-    const label = statusLabel(status, attempts, message);
     const statusEl = document.getElementById("status");
 
-    statusEl.textContent = label;
+    statusEl.textContent = STATUS_LABELS[status];
     statusEl.className = STATUS_CLASSES[status];
     statusEl.dataset.variant = STATUS_VARIANTS[status];
 
     window.isConnected.set(status === "connected");
-}
-
-function statusLabel(status, attempts, message) {
-    const base = STATUS_LABELS[status] || "Unknown";
-
-    const attemptText = status === "connecting" && attempts > 1 ? ` (try ${attempts})` : "";
-    const detail = message ? ` — ${message}` : "";
-    return `⬤ ${base}${attemptText}${detail}`;
 }
