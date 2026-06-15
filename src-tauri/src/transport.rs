@@ -2,228 +2,83 @@ use chrono::Utc;
 use std::collections::VecDeque;
 use std::io;
 use std::net::SocketAddr;
-use tauri::async_runtime::spawn;
+use tauri::async_runtime::{spawn, Receiver, Sender};
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
+use tokio::sync::mpsc::error::SendError;
 use tokio::time::{sleep, timeout, Duration};
 
 use crate::auto_response;
 use crate::logger::AppLogger;
 use crate::models::{
-    AutoResponseConfig, ConnectRequest, ConnectionStatus, LogLevel, MessageDirection,
+    AutoResponseConfig, Command, ConnectRequest, ConnectionStatus, LogLevel, MessageDirection,
     MessagePayload, SendRequest, StatusPayload, MESSAGE_EVENT, STATUS_EVENT,
 };
 use crate::translate::{self, ControlToken};
 
-pub type ConnectionQueue = tokio::sync::mpsc::Sender<ConnectionMessage>;
-pub type ConnectionQueueReceiver = tokio::sync::mpsc::Receiver<ConnectionMessage>;
-
-pub enum ConnectionMessage {
-    Disconnect,
-    SendMessage(SendRequest),
-    SetAutoResponse(AutoResponseConfig),
-    MessageReceived(Result<Vec<u8>, io::Error>),
+pub struct ConnectionManager {
+    app: AppHandle,
+    logger: AppLogger,
+    segments_awaiting_ack: VecDeque<Vec<u8>>,
+    auto_response: AutoResponseConfig,
+    message_sender: Option<Sender<Vec<u8>>>,
+    disconnect_sender: Option<Sender<()>>,
 }
 
-pub async fn start(
-    app: &AppHandle,
-    req: ConnectRequest,
-    logger: AppLogger,
-    desired_auto_response: AutoResponseConfig,
-) -> Option<ConnectionQueue> {
-    logger.log_backend(
-        LogLevel::Inf,
-        file!(),
-        line!(),
-        format!("starting transport for {}:{}", req.ip, req.port),
-    );
+impl ConnectionManager {
+    pub fn new(app: AppHandle, logger: AppLogger) -> Self {
+        Self {
+            app: app,
+            logger: logger,
+            segments_awaiting_ack: VecDeque::new(),
+            auto_response: AutoResponseConfig::default(),
+            message_sender: None,
+            disconnect_sender: None,
+        }
+    }
 
-    let address: SocketAddr = match format!("{}:{}", req.ip, req.port).parse() {
-        Ok(addr) => addr,
-        Err(err) => {
-            emit_status(&app, &logger, ConnectionStatus::Error);
-            logger.log_backend(
-                LogLevel::Err,
+    pub fn connect(&mut self, req: ConnectRequest, command_sender: Sender<Command>) -> () {
+        if self.message_sender.is_some() {
+            self.logger.log_backend(
+                LogLevel::Wrn,
                 file!(),
                 line!(),
-                format!("invalid socket address for transport start: {err}"),
+                "connect message received while connection already active or connecting, ignoring",
             );
-            return None;
+            emit_status(&self.app, &self.logger, ConnectionStatus::Connected);
+            return;
         }
-    };
 
-    let stream = perform_connect(&app, &logger, address).await?;
-    let (reader, writer) = stream.into_split();
-    let (tx, rx) = tokio::sync::mpsc::channel::<ConnectionMessage>(100);
-
-    spawn(read_loop(reader, tx.clone()));
-    spawn(receive_loop(
-        writer,
-        rx,
-        app.clone(),
-        logger,
-        desired_auto_response,
-    ));
-
-    Some(tx.clone())
-}
-
-async fn perform_connect(
-    app: &AppHandle,
-    logger: &AppLogger,
-    addr: SocketAddr,
-) -> Option<TcpStream> {
-    let mut attempt: u32 = 1;
-    emit_status(app, logger, ConnectionStatus::Connecting);
-
-    loop {
-        logger.log_backend(
-            LogLevel::Inf,
-            file!(),
-            line!(),
-            format!("connect attempt={} address={}", attempt, addr),
-        );
-
-        let result = timeout(Duration::from_secs(1), TcpStream::connect(addr)).await;
-
-        let err = match result {
-            Ok(Ok(stream)) => {
-                emit_status(&app, logger, ConnectionStatus::Connected);
-                logger.log_backend(
-                    LogLevel::Inf,
+        let address: SocketAddr = match format!("{}:{}", req.ip, req.port).parse() {
+            Ok(addr) => addr,
+            Err(err) => {
+                emit_status(&self.app, &self.logger, ConnectionStatus::Error);
+                self.logger.log_backend(
+                    LogLevel::Err,
                     file!(),
                     line!(),
-                    format!("connect succeeded attempt={} address={}", attempt, addr),
+                    format!("invalid socket address for connect message: {err}"),
                 );
-                return Some(stream);
+                return;
             }
-            Ok(Err(err)) => err.to_string(),
-            Err(err) => err.to_string(),
         };
 
-        logger.log_backend(
-            LogLevel::Wrn,
-            file!(),
-            line!(),
-            format!(
-                "connect failed attempt={} address={} error={}",
-                attempt, addr, err
-            ),
-        );
+        let (tx, rx) = tauri::async_runtime::channel::<Vec<u8>>(10);
+        let (tx_dc, rx_dc) = tauri::async_runtime::channel(1);
+        spawn(connect_and_read(
+            self.app.clone(),
+            self.logger.clone(),
+            address,
+            command_sender,
+            rx,
+            rx_dc,
+        ));
 
-        if !retries_enabled || attempt >= MAX_RETRIES {
-            emit_status(&app, logger, ConnectionStatus::Error);
-            logger.log_backend(
-                LogLevel::Err,
-                file!(),
-                line!(),
-                format!(
-                    "connect giving up after attempts={} address={}",
-                    attempt, addr
-                ),
-            );
-            return None;
-        }
-
-        let backoff = RETRY_DELAYS
-            .get(attempt as usize - 1)
-            .copied()
-            .unwrap_or(16);
-
-        emit_status(app, logger, ConnectionStatus::Connecting);
-        sleep(Duration::from_secs(backoff)).await;
-        attempt += 1;
-    }
-}
-
-async fn read_loop(mut reader: tokio::net::tcp::OwnedReadHalf, tx: ConnectionQueue) {
-    let mut buffer = vec![0u8; 4096];
-    let mut continuation = true;
-
-    while continuation {
-        let len = reader.read(&mut buffer).await;
-        let res = len.map(|l| Vec::from_iter(buffer[..l].iter().copied()));
-        continuation = tx
-            .send(ConnectionMessage::MessageReceived(res))
-            .await
-            .is_ok();
-    }
-}
-
-async fn receive_loop(
-    writer: OwnedWriteHalf,
-    mut queue: ConnectionQueueReceiver,
-    app: AppHandle,
-    logger: AppLogger,
-    desired_auto_response: AutoResponseConfig,
-) {
-    logger.log_backend(LogLevel::Inf, file!(), line!(), "receive loop started");
-
-    let mut connection = Connection {
-        app,
-        writer,
-        logger: logger.clone(),
-        auto_response: desired_auto_response,
-        segments_awaiting_ack: VecDeque::new(),
-    };
-
-    while let Some(message) = queue.recv().await {
-        match message {
-            ConnectionMessage::Disconnect => {
-                logger.log_backend(
-                    LogLevel::Inf,
-                    file!(),
-                    line!(),
-                    "disconnect message received in queue",
-                );
-                connection.disconnect().await;
-                queue.close();
-            }
-            ConnectionMessage::SendMessage(send_request)
-                if !connection.segments_awaiting_ack.is_empty() =>
-            {
-                logger.log_backend(
-                    LogLevel::Wrn,
-                    file!(),
-                    line!(),
-                    "send message received while awaiting ACK, ignoring new message",
-                );
-            }
-            ConnectionMessage::SendMessage(send_request) => {
-                connection.send_user_message(&send_request).await;
-            }
-            ConnectionMessage::SetAutoResponse(auto_response_config) => {
-                connection.set_auto_response(auto_response_config);
-            }
-            ConnectionMessage::MessageReceived(message_res) => {
-                if let Err(err) = connection.handle_message(message_res).await {
-                    logger.log_backend(
-                        LogLevel::Err,
-                        file!(),
-                        line!(),
-                        format!("message handling failed: {err}"),
-                    );
-                    connection.disconnect_with_error(err).await;
-                    queue.close();
-                }
-            }
-        }
+        self.message_sender = Some(tx);
+        self.disconnect_sender = Some(tx_dc);
     }
 
-    logger.log_backend(LogLevel::Inf, file!(), line!(), "receive loop terminated");
-}
-
-struct Connection {
-    app: AppHandle,
-    writer: OwnedWriteHalf,
-    logger: AppLogger,
-    auto_response: AutoResponseConfig,
-    segments_awaiting_ack: VecDeque<Vec<u8>>,
-}
-
-impl Connection {
     pub async fn send_user_message(&mut self, payload: &SendRequest) {
         self.logger.log_backend(
             LogLevel::Inf,
@@ -249,84 +104,74 @@ impl Connection {
     }
 
     async fn send_message(&mut self, message: &[u8]) -> Result<(), String> {
-        match self.writer.write_all(message).await {
-            Ok(_) => {
-                self.logger.log_backend(
-                    LogLevel::Inf,
-                    file!(),
-                    line!(),
-                    format!("sending user message bytes={}", message.len()),
-                );
-
+        self.logger.log_backend(
+            LogLevel::Inf,
+            file!(),
+            line!(),
+            format!("sending user message bytes={}", message.len()),
+        );
+        match &self.message_sender {
+            None => {
                 emit_message(
                     &self.app,
                     &self.logger,
                     MessagePayload {
-                        direction: MessageDirection::Sent,
-                        content: translate::to_human_readable(message),
+                        direction: MessageDirection::System,
+                        content: "ERROR: Could not send the message, are you connected ?"
+                            .to_string(),
                         timestamp: now_ts(),
                     },
                 );
                 Ok(())
             }
-            Err(err) => {
-                self.logger.log_backend(
-                    LogLevel::Err,
-                    file!(),
-                    line!(),
-                    format!("socket write failed bytes={}: {}", message.len(), err),
-                );
-                emit_status(&self.app, &self.logger, ConnectionStatus::Error);
-                Err(err.to_string())
-            }
+            Some(sender) => match sender.send(message.to_vec()).await {
+                Err(err) => {
+                    let err: SendError<Vec<u8>> = err;
+                    self.logger.log_backend(
+                        LogLevel::Err,
+                        file!(),
+                        line!(),
+                        format!("socket write failed bytes={}: {}", message.len(), err),
+                    );
+                    emit_status(&self.app, &self.logger, ConnectionStatus::Error);
+                    Err(err.to_string())
+                }
+                Ok(_) => Ok(()),
+            },
         }
     }
 
     pub async fn disconnect(&mut self) {
-        match self.writer.shutdown().await {
-            Ok(_) => {
-                self.logger.log_backend(
-                    LogLevel::Inf,
-                    file!(),
-                    line!(),
-                    "connection shutdown succeeded",
-                );
-                emit_status(&self.app, &self.logger, ConnectionStatus::Disconnected)
-            }
-            Err(err) => {
-                self.logger.log_backend(
-                    LogLevel::Err,
-                    file!(),
-                    line!(),
-                    format!("connection shutdown failed: {err}"),
-                );
-                emit_status(&self.app, &self.logger, ConnectionStatus::Error)
-            }
-        }
-    }
-
-    pub async fn disconnect_with_error(&mut self, error_message: String) {
-        let _ = self.writer.shutdown().await;
-        self.logger.log_backend(
-            LogLevel::Err,
-            file!(),
-            line!(),
-            format!("disconnecting due to error: {error_message}"),
-        );
-        emit_status(&self.app, &self.logger, ConnectionStatus::Error);
-    }
-
-    pub fn set_auto_response(&mut self, cfg: AutoResponseConfig) {
         self.logger.log_backend(
             LogLevel::Inf,
             file!(),
             line!(),
-            format!(
-                "auto-response config updated enabled={} protocol={:?}",
-                cfg.enabled, cfg.protocol
-            ),
+            "disconnect message received in queue",
         );
-        self.auto_response = cfg;
+
+        match &mut self.disconnect_sender {
+            None => {
+                self.logger.log_backend(
+                    LogLevel::Inf,
+                    file!(),
+                    line!(),
+                    "no connection, disconnect successful",
+                );
+                emit_status(&self.app, &self.logger, ConnectionStatus::Disconnected);
+            }
+            Some(sender) => match sender.send(()).await {
+                Ok(()) => (),
+                Err(_) => {
+                    self.logger.log_backend(
+                        LogLevel::Err,
+                        file!(),
+                        line!(),
+                        "error while disconnecting",
+                    );
+                    emit_status(&self.app, &self.logger, ConnectionStatus::Error);
+                }
+            },
+        }
     }
 
     pub async fn handle_message(
@@ -384,6 +229,165 @@ impl Connection {
             })
             .await;
         }
+    }
+}
+
+async fn connect_and_read(
+    app: AppHandle,
+    logger: AppLogger,
+    addr: SocketAddr,
+    message_sender: Sender<Command>,
+    message_receiver: Receiver<Vec<u8>>,
+    mut dc_receiver: Receiver<()>,
+) -> () {
+    emit_status(&app, &logger, ConnectionStatus::Connecting);
+
+    let mut stream: Option<TcpStream> = None;
+    tokio::select! {
+        res = loop_till_connect(&app, &logger, addr) => {
+            match res {
+                Ok(tcp_stream) => { stream = Some(tcp_stream); },
+                Err(_) => { return (); },
+            }
+        }
+        _ = dc_receiver.recv() => {
+            emit_status(&app, &logger, ConnectionStatus::Disconnected);
+            logger.log_backend(
+                LogLevel::Inf,
+                file!(),
+                line!(),
+                "connect attempt interrupted",
+            );
+            return ();
+        }
+    }
+
+    let (mut reader, mut writer) = stream.unwrap().into_split();
+    emit_status(&app, &logger, ConnectionStatus::Connected);
+
+    tokio::select! {
+        _ = read_loop(&mut reader, message_sender) => {}
+        _ = send_loop(&app, &logger, &mut writer, message_receiver) => {
+            emit_status(&app, &logger, ConnectionStatus::Error);
+            logger.log_backend(
+                LogLevel::Inf,
+                file!(),
+                line!(),
+                "an error occurred while writing, disconnecting",
+            );
+        }
+        _ = dc_receiver.recv() => {
+            emit_status(&app, &logger, ConnectionStatus::Disconnected);
+            logger.log_backend(
+                LogLevel::Inf,
+                file!(),
+                line!(),
+                "disconnected successfully",
+            );
+        }
+    }
+
+    let _ = writer.shutdown().await;
+}
+
+async fn loop_till_connect(
+    app: &AppHandle,
+    logger: &AppLogger,
+    addr: SocketAddr,
+) -> Result<TcpStream, ()> {
+    let mut attempt = 1;
+    loop {
+        logger.log_backend(
+            LogLevel::Inf,
+            file!(),
+            line!(),
+            format!("connect attempt={} address={}", attempt, addr),
+        );
+
+        let result = timeout(Duration::from_secs(1), TcpStream::connect(addr)).await;
+
+        match result {
+            Ok(Ok(tcp_stream)) => {
+                emit_status(app, logger, ConnectionStatus::Connected);
+                logger.log_backend(
+                    LogLevel::Inf,
+                    file!(),
+                    line!(),
+                    format!("connect succeeded attempt={} address={}", attempt, addr),
+                );
+                return Ok(tcp_stream);
+            }
+            Ok(Err(err)) => {
+                logger.log_backend(
+                    LogLevel::Err,
+                    file!(),
+                    line!(),
+                    format!(
+                        "connect failed attempt={} address={} error={}",
+                        attempt,
+                        addr,
+                        err.to_string()
+                    ),
+                );
+                emit_status(&app, logger, ConnectionStatus::Error);
+                return Err(());
+            }
+            Err(_err) => {
+                logger.log_backend(
+                    LogLevel::Wrn,
+                    file!(),
+                    line!(),
+                    format!(
+                        "connect failed attempt={} address={}: time elapsed",
+                        attempt, addr
+                    ),
+                );
+            }
+        };
+
+        sleep(Duration::from_secs(1)).await;
+        attempt += 1;
+    }
+}
+
+async fn read_loop(reader: &mut tokio::net::tcp::OwnedReadHalf, tx: Sender<Command>) {
+    let mut buffer = vec![0u8; 4096];
+    let mut continuation = true;
+
+    while continuation {
+        let len = reader.read(&mut buffer).await;
+        let res = len.map(|l| Vec::from_iter(buffer[..l].iter().copied()));
+        continuation = tx.send(Command::MessageReceived(res)).await.is_ok();
+    }
+}
+
+async fn send_loop(
+    app: &AppHandle,
+    logger: &AppLogger,
+    writer: &mut tokio::net::tcp::OwnedWriteHalf,
+    mut rx: Receiver<Vec<u8>>,
+) {
+    while let Some(msg) = rx.recv().await {
+        let mut pos = 0;
+
+        while pos < msg.len() {
+            let result = writer.write(&msg[pos..]).await;
+            match result {
+                Ok(0) => return,
+                Ok(i) => pos += i,
+                Err(_) => return,
+            }
+        }
+
+        emit_message(
+            app,
+            logger,
+            MessagePayload {
+                direction: MessageDirection::Sent,
+                content: translate::to_human_readable(&msg),
+                timestamp: now_ts(),
+            },
+        );
     }
 }
 

@@ -2,6 +2,7 @@
 
 mod app_state;
 mod auto_response;
+mod command_manager;
 mod logger;
 mod message_builder;
 mod models;
@@ -19,50 +20,36 @@ use std::process::Command;
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
 
-use crate::transport::ConnectionMessage;
-
 #[tauri::command]
 async fn connect_socket(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, Mutex<AppState>>,
     req: ConnectRequest,
 ) -> Result<(), String> {
-    let mut state_val = state.lock().await;
+    let state_val = state.lock().await;
     let logger = state_val.logger.clone();
 
     logger.log_backend(
         LogLevel::Inf,
         file!(),
         line!(),
-        format!(
-            "connect requested ip={} port={} retries_enabled={}",
-            req.ip, req.port, req.retries_enabled
-        ),
+        format!("connect requested ip={} port={}", req.ip, req.port),
     );
 
-    if let Some(queue) = state_val.connection.as_ref() {
-        if let Err(err) = queue.send(ConnectionMessage::Disconnect).await {
-            logger.log_backend(
-                LogLevel::Wrn,
-                file!(),
-                line!(),
-                format!("failed to disconnect previous connection before reconnect: {err}"),
-            );
-        }
+    let result = state_val
+        .command_queue
+        .send(crate::models::Command::Connect(req))
+        .await;
+
+    if let Err(err) = &result {
+        logger.log_backend(
+            LogLevel::Wrn,
+            file!(),
+            line!(),
+            format!("connect queue send failed: {err}"),
+        );
     }
-
-    let desired_auto_response = state_val.desired_auto_response.clone();
-    state_val.connection = transport::start(&app, req, logger.clone(), desired_auto_response).await;
-    logger.log_backend(
-        LogLevel::Inf,
-        file!(),
-        line!(),
-        format!(
-            "connect command completed connected={}",
-            state_val.connection.is_some()
-        ),
-    );
-    Ok(())
+    result
 }
 
 #[tauri::command]
@@ -74,25 +61,21 @@ async fn disconnect_socket(
     let logger = state_val.logger.clone();
     logger.log_backend(LogLevel::Inf, file!(), line!(), "disconnect requested");
 
-    if let Some(queue) = state_val.connection.as_ref() {
-        if let Err(err) = queue.send(ConnectionMessage::Disconnect).await {
-            logger.log_backend(
-                LogLevel::Wrn,
-                file!(),
-                line!(),
-                format!("disconnect queue send failed: {err}"),
-            );
-        }
-    } else {
+    let result = state_val
+        .command_queue
+        .send(crate::models::Command::Disconnect)
+        .await;
+
+    if let Err(err) = &result {
         logger.log_backend(
             LogLevel::Wrn,
             file!(),
             line!(),
-            "disconnect requested with no active connection",
+            format!("disconnect queue send failed: {err}"),
         );
     }
 
-    Ok(())
+    result
 }
 
 #[tauri::command]
@@ -108,32 +91,27 @@ async fn send_message(
         LogLevel::Inf,
         file!(),
         line!(),
-        format!("send_message requested length={}", payload.message.chars().count()),
+        format!(
+            "send_message requested length={}",
+            payload.message.chars().count()
+        ),
     );
 
-    if let Some(queue) = state_val.connection.as_ref() {
-        queue
-            .send(ConnectionMessage::SendMessage(payload))
-            .await
-            .map_err(|err| {
-                logger.log_backend(
-                    LogLevel::Err,
-                    file!(),
-                    line!(),
-                    format!("send_message queue send failed: {err}"),
-                );
-                err.to_string()
-            })?;
-    } else {
+    let result = state_val
+        .command_queue
+        .send(crate::models::Command::SendMessage(payload))
+        .await;
+
+    if let Err(err) = &result {
         logger.log_backend(
             LogLevel::Wrn,
             file!(),
             line!(),
-            "send_message requested without active connection",
+            format!("send_message queue send failed: {err}"),
         );
     }
 
-    Ok(())
+    result
 }
 
 #[tauri::command]
@@ -157,27 +135,21 @@ async fn update_auto_response(
 
     state_val.desired_auto_response = config.clone();
 
-    if let Some(queue) = state_val.connection.as_ref() {
-        if let Err(err) = queue.send(ConnectionMessage::SetAutoResponse(config)).await {
-            logger.log_backend(
-                LogLevel::Wrn,
-                file!(),
-                line!(),
-                format!(
-                    "update_auto_response could not reach active connection (stored for next connection): {err}"
-                ),
-            );
-            state_val.connection = None;
-        }
-    } else {
-        logger.log_backend(
-            LogLevel::Inf,
-            file!(),
-            line!(),
-            "update_auto_response stored while disconnected",
-        );
-    }
+    // let result = state_val
+    //     .command_queue
+    //     .send(crate::models::Command::SendMessage(payload))
+    //     .await;
 
+    // if let Err(err) = &result {
+    //     logger.log_backend(
+    //         LogLevel::Wrn,
+    //         file!(),
+    //         line!(),
+    //         format!("update_auto_response queue send failed: {err}"),
+    //     );
+    // }
+
+    // result
     Ok(())
 }
 
@@ -193,7 +165,10 @@ async fn auto_build_message_cmd(
         LogLevel::Inf,
         file!(),
         line!(),
-        format!("auto_build_message requested input_length={}", req.input.chars().count()),
+        format!(
+            "auto_build_message requested input_length={}",
+            req.input.chars().count()
+        ),
     );
     auto_build(req).map_err(|err| {
         logger.log_backend(
@@ -262,8 +237,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let logger = AppLogger::new(&app.handle()).map_err(|err| err.to_string())?;
-            logger.log_backend(LogLevel::Inf, file!(), line!(), "backend logger initialized");
-            app.manage(Mutex::new(AppState::new(logger)));
+            logger.log_backend(
+                LogLevel::Inf,
+                file!(),
+                line!(),
+                "backend logger initialized",
+            );
+            app.manage(Mutex::new(AppState::new(&app.handle(), logger)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

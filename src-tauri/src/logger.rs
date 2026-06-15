@@ -118,6 +118,12 @@ impl AppLogger {
         )
         .with_context(|| format!("failed writing log line to {}", file_path.display()))?;
 
+        println!(
+            "{timestamp} | {} | {} | {cleaned_message}",
+            location,
+            level.as_str(),
+        );
+
         Ok(())
     }
 }

@@ -12,6 +12,7 @@
     <script type="module" src="./status.js" defer></script>
     <script type="module" src="./connection-options.js" defer></script>
     <script type="module" src="./messages.js" defer></script>
+    <script type="module" src="./connection.js" defer></script>
   </head>
   <body>
     <header class="hstack justify-between">
@@ -62,7 +63,9 @@
               <input type="number" placeholder="12345" name="port" required />
             </label>
 
-            <button id="connect-btn" data-variant="success">Connect</button>
+            <button id="client-connect-btn" data-variant="success">
+              Connect
+            </button>
           </form>
         </div>
 
@@ -82,7 +85,7 @@
               />
             </label>
 
-            <button id="connect-btn" data-variant="success">
+            <button id="server-connect-btn" data-variant="success">
               Start server
             </button>
           </form>

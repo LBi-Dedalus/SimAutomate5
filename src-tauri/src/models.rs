@@ -1,3 +1,5 @@
+use std::io;
+
 use serde::{Deserialize, Serialize};
 
 pub const STATUS_EVENT: &str = "connection://status";
@@ -47,7 +49,6 @@ impl Default for Protocol {
 pub struct ConnectRequest {
     pub ip: String,
     pub port: u16,
-    pub retries_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,4 +114,12 @@ pub enum ConnectionStatus {
     Connecting,
     Connected,
     Error,
+}
+
+pub enum Command {
+    Connect(ConnectRequest),
+    Disconnect,
+    SendMessage(SendRequest),
+    MessageReceived(Result<Vec<u8>, io::Error>),
+    Shutdown,
 }
