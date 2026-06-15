@@ -1,5 +1,3 @@
-use std::io;
-
 use serde::{Deserialize, Serialize};
 
 pub const STATUS_EVENT: &str = "connection://status";
@@ -89,17 +87,19 @@ pub struct BuildResponse {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MessagePayload {
-    pub direction: MessageDirection,
+    pub msg_type: MessageType,
     pub content: String,
     pub timestamp: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum MessageDirection {
+pub enum MessageType {
     Sent,
     Received,
-    System,
+    SystemInfo,
+    SystemWarn,
+    SystemError,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -114,12 +114,4 @@ pub enum ConnectionStatus {
     Connecting,
     Connected,
     Error,
-}
-
-pub enum Command {
-    Connect(ConnectRequest),
-    Disconnect,
-    SendMessage(SendRequest),
-    MessageReceived(Result<Vec<u8>, io::Error>),
-    Shutdown,
 }

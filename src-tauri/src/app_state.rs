@@ -1,20 +1,18 @@
-use tauri::AppHandle;
-
-use crate::command_manager::CommandQueue;
-use crate::logger::AppLogger;
+use crate::emitter::Emitter;
 use crate::models::AutoResponseConfig;
+use crate::transport::ConnectionManager;
 
 pub struct AppState {
-    pub command_queue: CommandQueue,
-    pub logger: AppLogger,
+    pub connection_manager: ConnectionManager,
+    pub emitter: Emitter,
     pub desired_auto_response: AutoResponseConfig,
 }
 
 impl AppState {
-    pub fn new(app: &AppHandle, logger: AppLogger) -> Self {
+    pub fn new(emitter: Emitter) -> Self {
         Self {
-            command_queue: CommandQueue::start(app, logger.clone()),
-            logger,
+            connection_manager: ConnectionManager::new(emitter.clone()),
+            emitter,
             desired_auto_response: AutoResponseConfig::default(),
         }
     }
@@ -22,6 +20,6 @@ impl AppState {
 
 impl Drop for AppState {
     fn drop(&mut self) {
-        self.command_queue.close();
+        self.connection_manager.disconnect();
     }
 }

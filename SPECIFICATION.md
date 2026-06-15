@@ -1,15 +1,18 @@
 # SPECIFICATION.md
 
 ## Project Overview
+
 This application is a Tauri-based desktop app with a Vanilla JS frontend. Its purpose is to send and receive messages with another application on the local network. Communication is direct via IP address and port; DNS resolution is not required.
 
 ## Functional Requirements
 
 ### Visual Theme
+
 - The UI uses a light, colorful, and professional theme by overriding Oat design tokens via CSS variables in `:root`.
 - Styling changes must remain token-driven (using Oat variables) to preserve consistency across controls and states.
 
 ### Logging
+
 - The application writes logs to dedicated files in the app log directory:
   - `backend.log` for backend operations and errors.
   - `frontend.log` for frontend operations and errors (forwarded through a Tauri command).
@@ -19,6 +22,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
 - The UI provides an `Open Logs` action that opens the log directory in the system file explorer.
 
 ### Configuration
+
 - User can enter the IP address and port of the remote application.
 - Both fields must be filled for the Connect button to be enabled.
 - The IP and port are configurable at any time.
@@ -26,8 +30,8 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
 - A toggle to enable/disable connection retries is shown on the left side, enabled by default.
 - Configuration (IP, port, retries toggle, protocol selection, auto-response toggle and fields, last message input) is persisted locally and restored on app launch.
 
-
 ### Connection
+
 - When Connect is clicked, the application attempts to open a TCP socket stream to the provided IP and port.
 - The connection attempt uses a timeout of 1 second.
 - There is an option to allow connection retries (toggle in the UI).
@@ -40,6 +44,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
 - On user-triggered disconnect, the socket write half is shutdown to close the connection cleanly; application shutdown does not need an explicit clean disconnect.
 
 ### Messaging UI
+
 - Message display area:
   - Received messages are shown in red.
   - Sent messages are shown in green.
@@ -55,6 +60,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
   - Outgoing messages normalize control characters to readable tokens (e.g., "<CR>", "<VT>") before sending.
 
 ### Automatic Responses
+
 - The application can automatically respond to incoming messages for ASTM and HL7 protocols.
 - There is a toggle to enable or disable automatic responses.
 - The auto-response toggle and its protocol-specific configuration are shown on the right side of the configuration bar, alongside the Protocol selector.
@@ -63,18 +69,20 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend. Its pu
   - **ASTM**: a textarea for the user to enter the response message to send automatically.
   - **HL7**: two inputs for message type (e.g. `ACK^O21`) and response code (e.g. `AA`). The program generates a response message based on this configuration and the received message.
 
-
 ## Message Builder
 
 ### Overview
+
 The application includes a single message textarea with an Autobuild helper to construct messages for ASTM and MLLP protocols.
 
 ### Features
+
 - Single textarea for entering message lines (also used for sending).
 - "Autobuild" button sends the current content to the backend for protocol-aware building.
 - Special/control characters are shown as human-readable tokens (e.g., "<STX>", "<CR>") for clarity.
 
 ### Build Logic
+
 - Autobuild behavior (backend detection):
   - If input starts with "H|", treat as ASTM and build ASTM output.
   - If input starts with "MSH|", treat as HL7 and build MLLP-wrapped output.
@@ -90,6 +98,7 @@ The application includes a single message textarea with an Autobuild helper to c
 - Tauri backend will handle TCP socket communication, including connection timeout and retry logic with exponential backoff.
 - Frontend will use Vanilla JS for UI logic, including the retry option toggle.
 - Communication between frontend and backend will use Tauri channels (event/message system) for sending and receiving messages, connection status, and errors.
+- TCP transport receive handling is owned by a shared backend message queue that emits received/sent messages, handles ACK-gated multi-segment sends, and triggers configured auto-responses.
 - Event names used for cross-layer communication:
   - Status: `connection://status` (payload: status, attempts, optional message).
   - Message stream: `message://stream` (payload: direction, protocol, content, timestamp, auto_response).
@@ -99,12 +108,10 @@ The application includes a single message textarea with an Autobuild helper to c
 - Backend must handle automatic response logic for ASTM and HL7, generating and sending responses as configured.
 - All features must be implemented from scratch.
 
-
 ## Message Format and Protocol Support
+
 - Messages are plain text to support ASTM and HL7 protocols, as well as other formats.
 - The app must support special characters (e.g., <STX>, <EOT>, <VT>, etc.) required by ASTM and HL7.
 - The app will automatically translate protocol strings such as "<VT>", "<STX>", and others to their corresponding character values when sending and displaying messages.
 
 ## Open Questions
-
-

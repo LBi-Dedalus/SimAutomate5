@@ -3,6 +3,7 @@
 ## Application Todo List
 
 ### UI Implementation
+
 - [x] Create configuration section for IP and port input
 - [x] Enable Connect button only when both fields are filled
 - [x] Add connection retries toggle (enabled by default) on the left side of config bar
@@ -32,6 +33,7 @@
 - [x] Forward frontend logs to dedicated `frontend.log` via Tauri command (`INF`/`WRN`/`ERR`, timestamp, location, message)
 
 ### Backend Implementation (Tauri)
+
 - [x] Implement TCP socket communication with 1s timeout
 - [x] Implement retry logic with exponential backoff (up to 5 times)
 - [x] Support sending and receiving plain text messages with special character translation
@@ -44,16 +46,20 @@
 - [x] Ensure user-triggered disconnect shuts down the socket cleanly
 - [x] Add dedicated `backend.log` file logging for backend operations/errors (`INF`/`WRN`/`ERR`, timestamp, location, message)
 - [x] Add rotating log files (5 MB per file, keep 5) for frontend and backend logs
+- [x] Refactor transport receive handling into a shared backend message queue for display emission, ACK sequencing, and auto-response dispatch
 
 ### Message Builder Logic
+
 - [x] Process input line by line for message building
 - [x] For MLLP: prepend <VT>, append <CR> to each line, append <FS><CR> after last <CR>
 - [x] For ASTM: convert each line to ASTM segment with segment number and checksum
 
 ### General
+
 - [x] Update SPECIFICATION.md as features are designed, implemented, or changed
 - [ ] Test all features and edge cases
 - [x] Document usage and protocols supported
 
 ---
-_Last updated: March 2, 2026_
+
+_Last updated: June 15, 2026_

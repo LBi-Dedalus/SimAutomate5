@@ -2,9 +2,10 @@
 
 mod app_state;
 mod auto_response;
-mod command_manager;
+mod emitter;
 mod logger;
 mod message_builder;
+mod message_queue;
 mod models;
 mod translate;
 mod transport;
@@ -16,9 +17,10 @@ use models::{
     AutoBuildRequest, AutoResponseConfig, BuildResponse, ConnectRequest, FrontendLogEntry,
     LogLevel, SendRequest,
 };
-use std::process::Command;
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
+
+use crate::emitter::Emitter;
 
 #[tauri::command]
 async fn connect_socket(
@@ -26,30 +28,19 @@ async fn connect_socket(
     state: State<'_, Mutex<AppState>>,
     req: ConnectRequest,
 ) -> Result<(), String> {
-    let state_val = state.lock().await;
-    let logger = state_val.logger.clone();
+    let mut state_val = state.lock().await;
+    let logger = state_val.emitter.clone();
 
-    logger.log_backend(
+    logger.only_log(
         LogLevel::Inf,
         file!(),
         line!(),
         format!("connect requested ip={} port={}", req.ip, req.port),
     );
 
-    let result = state_val
-        .command_queue
-        .send(crate::models::Command::Connect(req))
-        .await;
+    state_val.connection_manager.connect(req).await;
 
-    if let Err(err) = &result {
-        logger.log_backend(
-            LogLevel::Wrn,
-            file!(),
-            line!(),
-            format!("connect queue send failed: {err}"),
-        );
-    }
-    result
+    Ok(())
 }
 
 #[tauri::command]
@@ -57,25 +48,13 @@ async fn disconnect_socket(
     _app: AppHandle,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
-    let state_val = state.lock().await;
-    let logger = state_val.logger.clone();
-    logger.log_backend(LogLevel::Inf, file!(), line!(), "disconnect requested");
+    let mut state_val = state.lock().await;
+    let logger = state_val.emitter.clone();
+    logger.only_log(LogLevel::Inf, file!(), line!(), "disconnect requested");
 
-    let result = state_val
-        .command_queue
-        .send(crate::models::Command::Disconnect)
-        .await;
+    state_val.connection_manager.disconnect().await;
 
-    if let Err(err) = &result {
-        logger.log_backend(
-            LogLevel::Wrn,
-            file!(),
-            line!(),
-            format!("disconnect queue send failed: {err}"),
-        );
-    }
-
-    result
+    Ok(())
 }
 
 #[tauri::command]
@@ -84,10 +63,10 @@ async fn send_message(
     state: State<'_, Mutex<AppState>>,
     payload: SendRequest,
 ) -> Result<(), String> {
-    let state_val = state.lock().await;
-    let logger = state_val.logger.clone();
+    let mut state_val = state.lock().await;
+    let logger = state_val.emitter.clone();
 
-    logger.log_backend(
+    logger.only_log(
         LogLevel::Inf,
         file!(),
         line!(),
@@ -97,21 +76,12 @@ async fn send_message(
         ),
     );
 
-    let result = state_val
-        .command_queue
-        .send(crate::models::Command::SendMessage(payload))
+    state_val
+        .connection_manager
+        .send_user_message(&payload)
         .await;
 
-    if let Err(err) = &result {
-        logger.log_backend(
-            LogLevel::Wrn,
-            file!(),
-            line!(),
-            format!("send_message queue send failed: {err}"),
-        );
-    }
-
-    result
+    Ok(())
 }
 
 #[tauri::command]
@@ -121,9 +91,9 @@ async fn update_auto_response(
     config: AutoResponseConfig,
 ) -> Result<(), String> {
     let mut state_val = state.lock().await;
-    let logger = state_val.logger.clone();
+    let logger = state_val.emitter.clone();
 
-    logger.log_backend(
+    logger.only_log(
         LogLevel::Inf,
         file!(),
         line!(),
@@ -134,22 +104,11 @@ async fn update_auto_response(
     );
 
     state_val.desired_auto_response = config.clone();
+    state_val
+        .connection_manager
+        .update_auto_response(config)
+        .await;
 
-    // let result = state_val
-    //     .command_queue
-    //     .send(crate::models::Command::SendMessage(payload))
-    //     .await;
-
-    // if let Err(err) = &result {
-    //     logger.log_backend(
-    //         LogLevel::Wrn,
-    //         file!(),
-    //         line!(),
-    //         format!("update_auto_response queue send failed: {err}"),
-    //     );
-    // }
-
-    // result
     Ok(())
 }
 
@@ -159,9 +118,9 @@ async fn auto_build_message_cmd(
     req: AutoBuildRequest,
 ) -> Result<BuildResponse, String> {
     let state_val = state.lock().await;
-    let logger = state_val.logger.clone();
+    let logger = state_val.emitter.clone();
 
-    logger.log_backend(
+    logger.only_log(
         LogLevel::Inf,
         file!(),
         line!(),
@@ -171,7 +130,7 @@ async fn auto_build_message_cmd(
         ),
     );
     auto_build(req).map_err(|err| {
-        logger.log_backend(
+        logger.only_log(
             LogLevel::Err,
             file!(),
             line!(),
@@ -187,47 +146,7 @@ async fn log_frontend(
     entry: FrontendLogEntry,
 ) -> Result<(), String> {
     let state_val = state.lock().await;
-    state_val.logger.log_frontend(&entry);
-    Ok(())
-}
-
-#[tauri::command]
-async fn open_logs_folder(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    let state_val = state.lock().await;
-    let logger = state_val.logger.clone();
-    let log_dir = logger.log_directory();
-
-    logger.log_backend(
-        LogLevel::Inf,
-        file!(),
-        line!(),
-        format!("open_logs_folder requested path={}", log_dir.display()),
-    );
-
-    let mut command = if cfg!(target_os = "windows") {
-        let mut command = Command::new("explorer");
-        command.arg(&log_dir);
-        command
-    } else if cfg!(target_os = "macos") {
-        let mut command = Command::new("open");
-        command.arg(&log_dir);
-        command
-    } else {
-        let mut command = Command::new("xdg-open");
-        command.arg(&log_dir);
-        command
-    };
-
-    command.spawn().map_err(|err| {
-        logger.log_backend(
-            LogLevel::Err,
-            file!(),
-            line!(),
-            format!("failed to open logs folder {}: {err}", log_dir.display()),
-        );
-        err.to_string()
-    })?;
-
+    state_val.emitter.log_frontend(&entry);
     Ok(())
 }
 
@@ -236,14 +155,16 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let logger = AppLogger::new(&app.handle()).map_err(|err| err.to_string())?;
+            let handle = app.handle().clone();
+            let logger = AppLogger::new(&handle).map_err(|err| err.to_string())?;
             logger.log_backend(
                 LogLevel::Inf,
                 file!(),
                 line!(),
                 "backend logger initialized",
             );
-            app.manage(Mutex::new(AppState::new(&app.handle(), logger)));
+            let emitter = Emitter::new(handle, logger);
+            app.manage(Mutex::new(AppState::new(emitter)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -253,7 +174,6 @@ pub fn run() {
             auto_build_message_cmd,
             update_auto_response,
             log_frontend,
-            open_logs_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");
