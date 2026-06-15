@@ -7,24 +7,29 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 function appendMessage(payload) {
-  const { direction, content, timestamp } = payload;
+  const { msg_type, content, timestamp } = payload;
   const entry = document.createElement("div");
-  entry.className = `message ${direction === "sent" ? "sent" : "received"}`;
+  entry.className = `message text-small px-4 py-2`;
 
   const time = document.createElement("span");
   time.className = "text-muted";
   time.textContent = formatTime(timestamp);
   entry.appendChild(time);
 
-  const body = document.createElement("div");
+  const type = document.createElement("span");
+  type.className = msg_type;
+  type.textContent = formatType(msg_type);
+  entry.appendChild(type);
+
+  const body = document.createElement("span");
   body.className = "message-body";
   body.textContent = content.replaceAll("<CR>", "<CR>\n");
   entry.appendChild(body);
 
-  const messagesEl = document.getElementById("message");
+  const messagesEl = document.getElementById("messages");
   const noConnectionEl = document.getElementById("no-connection");
   if (noConnectionEl) {
-    noConnectionEl.remove();
+    noConnectionEl.classList.add("hidden");
   }
 
   messagesEl.appendChild(entry);
@@ -45,5 +50,22 @@ function formatTime(value) {
     });
   } catch (_) {
     return value;
+  }
+}
+
+function formatType(msg_type) {
+  switch (msg_type) {
+    case "systeminfo":
+      return "INF";
+    case "systemwarn":
+      return "WRN";
+    case "systemerror":
+      return "ERR";
+    case "received":
+      return "REC";
+    case "sent":
+      return "SND";
+    default:
+      return "???";
   }
 }

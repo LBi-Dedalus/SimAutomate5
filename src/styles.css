@@ -45,6 +45,7 @@ header {
 
 main {
   flex: 1;
+  min-height: 0;
 }
 
 label {
@@ -87,6 +88,15 @@ label {
 .hidden {
   display: none;
 }
+.text-muted {
+  color: var(--muted-foreground);
+}
+.text-small {
+  font-size: var(--text-8);
+}
+.gap-0 {
+  gap: 0;
+}
 
 /* ── App Specific Styles ─────────────────────────────────── */
 
@@ -94,13 +104,20 @@ label {
   border-right: 1px solid var(--border);
   background: var(--card);
   width: clamp(200px, 30%, 300px);
+  flex-shrink: 0;
 }
 #chat {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+  gap: 0;
 }
 #messages {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
+  padding: var(--space-2);
 }
 #no-connection {
   text-align: center;
@@ -110,10 +127,12 @@ label {
 }
 #message-form {
   border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
 #special-chars {
   border-left: 1px solid var(--border);
   padding: var(--space-2);
+  flex-shrink: 0;
 }
 #status {
   font-size: var(--text-7);
@@ -121,4 +140,47 @@ label {
 #connect-btn {
   padding-block: var(--space-1);
   font-size: var(--text-8);
+}
+.message {
+  font-size: var(--text-8);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border-bottom: 1px solid var(--muted);
+  flex: 0 0 auto;
+}
+.message-body {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.systemwarn,
+.systeminfo,
+.systemerror,
+.received,
+.sent {
+  padding-inline: var(--space-1);
+  border-radius: 4px;
+  display: inline-block;
+  margin-inline: var(--space-1);
+}
+.systemwarn {
+  background: var(--warning);
+}
+.systemerror {
+  background: var(--danger);
+}
+.received {
+  background: var(--accent);
+}
+.sent {
+  background: var(--secondary);
+}
+.systeminfo {
+  background: var(--faint);
 }

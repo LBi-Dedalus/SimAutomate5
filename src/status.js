@@ -32,7 +32,6 @@ window.connection_status = {
   set(val) {
     this._value = val;
     for (const callback of this._subscribers) {
-      console.log(callback);
       callback(val);
     }
   },
