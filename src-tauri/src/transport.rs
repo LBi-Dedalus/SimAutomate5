@@ -104,6 +104,17 @@ impl ConnectionManager {
             },
         }
     }
+
+    pub fn shutdown_now(&mut self) {
+        if let Connection::Started {
+            shutdown_sender, ..
+        } = std::mem::replace(&mut self.connection, Disconnected)
+        {
+            shutdown_sender
+                .try_send(())
+                .expect("Could not shut down the connection properly !");
+        }
+    }
 }
 
 async fn connect_and_read(

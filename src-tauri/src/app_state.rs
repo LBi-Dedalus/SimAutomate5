@@ -20,6 +20,6 @@ impl AppState {
 
 impl Drop for AppState {
     fn drop(&mut self) {
-        self.connection_manager.disconnect();
+        self.connection_manager.shutdown_now();
     }
 }
