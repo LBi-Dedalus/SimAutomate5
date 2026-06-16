@@ -105,6 +105,11 @@ label {
   background: var(--card);
   width: clamp(200px, 30%, 300px);
   flex-shrink: 0;
+
+  & button {
+    padding-block: var(--space-1);
+    font-size: var(--text-7);
+  }
 }
 #chat {
   flex: 1;
