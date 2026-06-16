@@ -10,10 +10,10 @@ const STATUS_LABELS = {
 };
 
 const STATUS_CLASSES = {
-  disconnected: "badge outline",
-  connecting: "badge",
-  connected: "badge",
-  error: "badge",
+  disconnected: "outline",
+  connecting: "warning",
+  connected: "success",
+  error: "error",
 };
 
 const STATUS_VARIANTS = {
@@ -50,7 +50,7 @@ function applyStatus(payload) {
   const statusEl = document.getElementById("status");
 
   statusEl.textContent = STATUS_LABELS[status];
-  statusEl.className = STATUS_CLASSES[status];
+  statusEl.className = "badge text-small " + STATUS_CLASSES[status];
   statusEl.dataset.variant = STATUS_VARIANTS[status];
 
   window.connection_status.set(status);

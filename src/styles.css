@@ -108,7 +108,7 @@ label {
 
   & button {
     padding-block: var(--space-1);
-    font-size: var(--text-7);
+    font-size: var(--text-8);
   }
 }
 #chat {
@@ -138,9 +138,6 @@ label {
   border-left: 1px solid var(--border);
   padding: var(--space-2);
   flex-shrink: 0;
-}
-#status {
-  font-size: var(--text-7);
 }
 #connect-btn {
   padding-block: var(--space-1);
