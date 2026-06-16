@@ -1,10 +1,56 @@
 const { listen } = window.__TAURI__.event;
+const { invoke } = window.__TAURI__.core;
 
 const MESSAGE_EVENT = "message://stream";
 
 document.addEventListener("DOMContentLoaded", async () => {
-  await listen(MESSAGE_EVENT, (event) => appendMessage(event.payload));
+  initMessageForm();
+  await initChat();
+  unlockMessageInputWhenConnected();
 });
+
+function initMessageForm() {
+  const messageForm = document.getElementById("message-form");
+  messageForm.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+
+    const message = messageForm.message.value;
+    try {
+      console.log("Sending message", message);
+      await invoke("send_message", { payload: { message } });
+    } catch (err) {
+      console.error("Failed to send message", err);
+    }
+  });
+}
+
+async function initChat() {
+  const clearButton = document.getElementById("clear-chat");
+  clearButton.addEventListener("click", () => {
+    const messagesEl = document.getElementById("messages");
+    const messages = messagesEl.querySelectorAll(".message");
+    messages.forEach((msgEl) => msgEl.remove());
+
+    const noConnectionEl = document.getElementById("no-connection");
+    if (noConnectionEl) {
+      noConnectionEl.classList.remove("hidden");
+    }
+  });
+
+  await listen(MESSAGE_EVENT, (event) => appendMessage(event.payload));
+}
+
+function unlockMessageInputWhenConnected() {
+  window.connection_status.subscribe((status) => {
+    const enable = ["connected"].includes(status);
+
+    const messageForm = document.getElementById("message-form");
+    const sendButton = messageForm.querySelector('button[type="submit"]');
+    if (sendButton) {
+      sendButton.disabled = !enable;
+    }
+  });
+}
 
 function appendMessage(payload) {
   const { msg_type, content, timestamp } = payload;

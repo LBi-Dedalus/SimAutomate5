@@ -95,7 +95,7 @@
       <div id="chat" class="vstack gap-0">
         <div class="title hstack justify-between w-100 py-2 px-4">
           <span>Messages</span>
-          <button class="small outline">Clear</button>
+          <button class="small outline" id="clear-chat">Clear</button>
         </div>
 
         <div id="messages" class="vstack gap-0">
@@ -109,13 +109,14 @@
           <textarea
             type="text"
             placeholder="Type a message..."
-            disabled
             required
             name="message"
           ></textarea>
           <div class="hstack gap-2 justify-end">
-            <button class="outline small" disabled>Clear</button>
-            <button data-variant="primary" class="small" disabled>Send</button>
+            <button class="outline small" type="reset">Clear</button>
+            <button data-variant="primary" class="small" disabled type="submit">
+              Send
+            </button>
           </div>
         </form>
       </div>
