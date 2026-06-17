@@ -18,9 +18,9 @@ function getAutoResponseConfig() {
   const autoResponseForm = autoResponseDialog.querySelector("form");
 
   const enabled = document.getElementById("autoresponse-activate").checked;
-  const astmMessage = autoResponseForm["astm_ack"].value;
-  const hl7Type = autoResponseForm["hl7_type"].value;
-  const hl7Code = autoResponseForm["hl7_code"].value;
+  const astmMessage = autoResponseForm["astm_ack"].value.trim() || null;
+  const hl7Type = autoResponseForm["hl7_type"].value.trim() || null;
+  const hl7Code = autoResponseForm["hl7_code"].value.trim() || null;
 
   return {
     enabled: enabled,

@@ -31,9 +31,10 @@ pub struct FrontendLogEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConnectRequest {
-    pub ip: String,
-    pub port: u16,
+#[serde(tag = "type")]
+pub enum ConnectRequest {
+    ClientConnectRequest { ip: String, port: u16 },
+    ServerStartRequest { port: u16 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -35,7 +35,7 @@ async fn connect_socket(
         LogLevel::Inf,
         file!(),
         line!(),
-        format!("connect requested ip={} port={}", req.ip, req.port),
+        format!("connect requested: {:?}", req),
     );
 
     state_val.connection_manager.connect(req).await;

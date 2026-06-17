@@ -1,6 +1,6 @@
 use tauri::async_runtime::{spawn, Receiver, Sender};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration};
 
 use crate::emitter::Emitter;
@@ -47,12 +47,24 @@ impl ConnectionManager {
                 let message_queue =
                     MessageQueue::shared(self.emitter.clone(), self.auto_response.clone());
 
-                spawn(connect_and_read(
-                    self.emitter.clone(),
-                    format!("{}:{}", req.ip, req.port),
-                    message_queue.clone(),
-                    rx_dc,
-                ));
+                match req {
+                    ConnectRequest::ClientConnectRequest { ip, port } => {
+                        spawn(connect_and_read(
+                            self.emitter.clone(),
+                            format!("{}:{}", ip, port),
+                            message_queue.clone(),
+                            rx_dc,
+                        ));
+                    }
+                    ConnectRequest::ServerStartRequest { port } => {
+                        spawn(start_server(
+                            self.emitter.clone(),
+                            port,
+                            message_queue.clone(),
+                            rx_dc,
+                        ));
+                    }
+                }
 
                 self.connection = Connection::Started {
                     message_queue,
@@ -182,6 +194,80 @@ async fn connect_and_read(
     let _ = writer.shutdown().await;
 }
 
+async fn start_server(
+    emitter: Emitter,
+    port: u16,
+    message_queue: SharedMessageQueue,
+    mut dc_receiver: Receiver<()>,
+) -> () {
+    emitter.info(
+        file!(),
+        line!(),
+        format!("Starting server on port {}...", port),
+    );
+    emitter.emit_status(ConnectionStatus::Connecting);
+    let addr = format!("127.0.0.1:{}", port);
+
+    let stream = tokio::select! {
+        res = listen_and_accept(&emitter, addr.clone()) => {
+            match res {
+                Ok(tcp_stream) => tcp_stream,
+                Err(_) => { return (); },
+            }
+        }
+        _ = dc_receiver.recv() => {
+            emitter.emit_status(ConnectionStatus::Disconnected);
+            emitter.info(
+                file!(),
+                line!(),
+                "Connect attempt interrupted !",
+            );
+            return ();
+        }
+    };
+
+    let (mut reader, mut writer) = stream.into_split();
+    emitter.info(
+        file!(),
+        line!(),
+        format!("Client connected, listening on {}...", &addr),
+    );
+    emitter.emit_status(ConnectionStatus::Connected);
+
+    tokio::select! {
+        result = read_loop(&mut reader, message_queue.clone()) => {
+            if let Err(err) = result {
+                emitter.emit_status(ConnectionStatus::Error);
+                emitter.error(
+                    file!(),
+                    line!(),
+                    format!("An error occurred while reading, disconnecting: {err}"),
+                );
+            }
+        }
+        result = send_loop(&mut writer, message_queue) => {
+            if let Err(err) = result {
+                emitter.emit_status(ConnectionStatus::Error);
+                emitter.error(
+                    file!(),
+                    line!(),
+                    format!("An error occurred while writing, disconnecting: {err}"),
+                );
+            }
+        }
+        _ = dc_receiver.recv() => {
+            emitter.emit_status(ConnectionStatus::Disconnected);
+            emitter.info(
+                file!(),
+                line!(),
+                "Disconnected successfully",
+            );
+        }
+    }
+
+    let _ = writer.shutdown().await;
+}
+
 async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream, ()> {
     let mut attempt = 1;
     loop {
@@ -232,6 +318,42 @@ async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream,
         sleep(Duration::from_secs(1)).await;
         attempt += 1;
     }
+}
+
+async fn listen_and_accept(emitter: &Emitter, addr: String) -> Result<TcpStream, ()> {
+    let listener = match TcpListener::bind(addr.clone()).await {
+        Ok(listener) => Ok(listener),
+        Err(err) => {
+            emitter.emit_status(ConnectionStatus::Error);
+            emitter.error(
+                file!(),
+                line!(),
+                format!("Error while starting server {}", err),
+            );
+            Err(())
+        }
+    }?;
+    let client = match listener.accept().await {
+        Ok(client) => Ok(client),
+        Err(err) => {
+            emitter.emit_status(ConnectionStatus::Error);
+            emitter.error(
+                file!(),
+                line!(),
+                format!("Error while accepting connection {}", err),
+            );
+            Err(())
+        }
+    }?;
+
+    emitter.emit_status(ConnectionStatus::Connected);
+    emitter.info(
+        file!(),
+        line!(),
+        format!("Client connected address={}", &client.1),
+    );
+
+    return Ok(client.0);
 }
 
 async fn read_loop(
