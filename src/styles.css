@@ -1,29 +1,29 @@
 /* ── Oat Theme Overrides ─────────────────────────────────── */
 
 :root {
-  --background: rgb(255 255 255);
-  --foreground: rgb(30 34 58);
-  --card: rgb(240 242 244);
-  --card-foreground: rgb(30 34 58);
-  --primary: rgb(59 130 246);
-  --primary-foreground: rgb(248 251 255);
-  --secondary: rgb(217 223 227);
-  --secondary-foreground: rgb(52 46 120);
-  --muted: rgb(237 239 252);
-  --muted-foreground: rgb(98 102 141);
-  --faint: rgb(243 244 255);
-  --faint-foreground: rgb(124 128 167);
-  --accent: rgb(234 230 255);
-  --accent-foreground: rgb(58 49 136);
-  --danger: rgb(186 73 118);
+  --background: rgb(245 247 250);
+  --foreground: rgb(15 23 42);
+  --card: rgb(255 255 255);
+  --card-foreground: rgb(15 23 42);
+  --primary: rgb(37 99 235);
+  --primary-foreground: rgb(248 250 252);
+  --secondary: rgb(226 232 240);
+  --secondary-foreground: rgb(30 41 59);
+  --muted: rgb(233 238 246);
+  --muted-foreground: rgb(67 81 103);
+  --faint: rgb(239 243 248);
+  --faint-foreground: rgb(94 108 132);
+  --accent: rgb(209 219 255);
+  --accent-foreground: rgb(30 64 175);
+  --danger: rgb(190 24 93);
   --danger-foreground: rgb(255 255 255);
-  --success: rgb(38 154 118);
+  --success: rgb(22 163 74);
   --success-foreground: rgb(255 255 255);
-  --warning: rgb(217 147 45);
-  --warning-foreground: rgb(41 33 12);
-  --border: rgb(209 208 239);
-  --input: rgb(195 196 232);
-  --ring: rgb(67 56 202);
+  --warning: rgb(245 158 11);
+  --warning-foreground: rgb(69 26 3);
+  --border: rgb(203 213 225);
+  --input: rgb(191 205 224);
+  --ring: rgb(37 99 235);
 }
 
 /* ── Style Redefinitions ─────────────────────────────────────── */
@@ -74,6 +74,9 @@ label {
 }
 .py-2 {
   padding-block: var(--space-2);
+}
+.py-1 {
+  padding-block: var(--space-1);
 }
 .title {
   border-bottom: 1px solid var(--border);
@@ -157,18 +160,23 @@ label {
 
   &.systemwarn {
     background: var(--warning);
+    color: var(--warning-foreground);
   }
   &.systemerror {
     background: var(--danger);
+    color: var(--danger-foreground);
   }
   &.received {
     background: var(--accent);
+    color: var(--accent-foreground);
   }
   &.sent {
-    background: var(--secondary);
+    background: var(--success);
+    color: var(--success-foreground);
   }
   &.systeminfo {
-    background: var(--faint);
+    background: var(--muted);
+    color: var(--muted-foreground);
   }
 
   & > .message-body {
@@ -178,7 +186,7 @@ label {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  & > .msg_type {
+  & > .msg_time {
     display: inline-block;
     margin-inline: var(--space-1);
   }

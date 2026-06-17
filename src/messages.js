@@ -56,7 +56,7 @@ function appendMessage(payload) {
   const { msg_type, content, timestamp } = payload;
 
   const entry = document.createElement("div");
-  entry.className = `message text-small px-4 py-2 ${msg_type}`;
+  entry.className = `message text-small px-4 py-1 ${msg_type}`;
 
   const type = document.createElement("div");
   type.className = "msg_type";
@@ -64,7 +64,7 @@ function appendMessage(payload) {
   entry.appendChild(type);
 
   const time = document.createElement("span");
-  time.className = "text-muted";
+  time.className = "msg_time";
   time.textContent = formatTime(timestamp);
   entry.appendChild(time);
 
