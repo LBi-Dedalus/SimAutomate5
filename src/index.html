@@ -14,6 +14,7 @@
     <script type="module" src="./messages.js" defer></script>
     <script type="module" src="./connection.js" defer></script>
     <script type="module" src="./special-chars.js" defer></script>
+    <script type="module" src="./autobuild.js" defer></script>
   </head>
   <body>
     <header class="hstack justify-between">
@@ -114,6 +115,14 @@
             name="message"
           ></textarea>
           <div class="hstack gap-2 justify-end">
+            <button
+              class="small"
+              commandfor="autobuild"
+              command="show-modal"
+              type="button"
+            >
+              Autobuild
+            </button>
             <button class="outline small" type="reset">Clear</button>
             <button data-variant="primary" class="small" disabled type="submit">
               Send
@@ -132,5 +141,41 @@
         <button class="small" data-variant="secondary" disabled>NAK</button>
       </div>
     </main>
+
+    <dialog id="autobuild" closedby="any">
+      <div>
+        <form method="dialog">
+          <textarea
+            type="text"
+            placeholder="Type a message..."
+            required
+            name="input"
+          ></textarea>
+          <textarea
+            type="text"
+            placeholder="Autobuilt message will appear here"
+            readonly
+            name="output"
+          ></textarea>
+
+          <div class="hstack gap-2 justify-end">
+            <button
+              class="outline small"
+              type="button"
+              commandfor="autobuild"
+              command="close"
+            >
+              Close
+            </button>
+            <button class="small" type="button" id="build-message">
+              Build
+            </button>
+            <button data-variant="primary" class="small" type="submit">
+              Build and copy to input
+            </button>
+          </div>
+        </form>
+      </div>
+    </dialog>
   </body>
 </html>

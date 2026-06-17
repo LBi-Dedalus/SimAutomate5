@@ -71,6 +71,7 @@ function appendMessage(payload) {
   const body = document.createElement("span");
   body.className = "message-body";
   body.textContent = content.replaceAll("<CR>", "<CR>\n");
+  body.title = content;
   entry.appendChild(body);
 
   const messagesEl = document.getElementById("messages");
