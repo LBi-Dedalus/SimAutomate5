@@ -4,6 +4,7 @@ window.addEventListener("DOMContentLoaded", init);
 
 function init() {
   initSpecialCharButtons();
+  unlockButtonsWhenConnected();
 }
 
 function initSpecialCharButtons() {
@@ -26,4 +27,16 @@ function initSpecialCharButtons() {
       }
     });
   }
+}
+
+function unlockButtonsWhenConnected() {
+  window.connection_status.subscribe((status) => {
+    const enable = ["connected"].includes(status);
+
+    const specialCharsDiv = document.getElementById("special-chars");
+    const specialCharsButtons = specialCharsDiv.querySelectorAll("button");
+    for (const button of specialCharsButtons) {
+      button.disabled = !enable;
+    }
+  });
 }
