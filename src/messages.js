@@ -54,18 +54,19 @@ function unlockMessageInputWhenConnected() {
 
 function appendMessage(payload) {
   const { msg_type, content, timestamp } = payload;
+
   const entry = document.createElement("div");
-  entry.className = `message text-small px-4 py-2`;
+  entry.className = `message text-small px-4 py-2 ${msg_type}`;
+
+  const type = document.createElement("div");
+  type.className = "msg_type";
+  type.textContent = formatType(msg_type);
+  entry.appendChild(type);
 
   const time = document.createElement("span");
   time.className = "text-muted";
   time.textContent = formatTime(timestamp);
   entry.appendChild(time);
-
-  const type = document.createElement("span");
-  type.className = msg_type;
-  type.textContent = formatType(msg_type);
-  entry.appendChild(type);
 
   const body = document.createElement("span");
   body.className = "message-body";

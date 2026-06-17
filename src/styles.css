@@ -153,36 +153,33 @@ label {
   overflow: hidden;
   border-bottom: 1px solid var(--muted);
   flex: 0 0 auto;
-}
-.message-body {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.systemwarn,
-.systeminfo,
-.systemerror,
-.received,
-.sent {
-  padding-inline: var(--space-1);
-  border-radius: 4px;
-  display: inline-block;
-  margin-inline: var(--space-1);
-}
-.systemwarn {
-  background: var(--warning);
-}
-.systemerror {
-  background: var(--danger);
-}
-.received {
-  background: var(--accent);
-}
-.sent {
-  background: var(--secondary);
-}
-.systeminfo {
-  background: var(--faint);
+  border-radius: 8px;
+
+  &.systemwarn {
+    background: var(--warning);
+  }
+  &.systemerror {
+    background: var(--danger);
+  }
+  &.received {
+    background: var(--accent);
+  }
+  &.sent {
+    background: var(--secondary);
+  }
+  &.systeminfo {
+    background: var(--faint);
+  }
+
+  & > .message-body {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  & > .msg_type {
+    display: inline-block;
+    margin-inline: var(--space-1);
+  }
 }
