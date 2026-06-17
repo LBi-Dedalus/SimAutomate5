@@ -70,10 +70,7 @@ async fn send_message(
         LogLevel::Inf,
         file!(),
         line!(),
-        format!(
-            "send_message requested length={}",
-            payload.message.chars().count()
-        ),
+        format!("send_message requested {:?}", payload.message),
     );
 
     state_val
@@ -97,10 +94,7 @@ async fn update_auto_response(
         LogLevel::Inf,
         file!(),
         line!(),
-        format!(
-            "update_auto_response requested enabled={} protocol={:?}",
-            config.enabled, config.protocol
-        ),
+        format!("update_auto_response requested: {:?}", config),
     );
 
     state_val.desired_auto_response = config.clone();
@@ -124,10 +118,7 @@ async fn auto_build_message_cmd(
         LogLevel::Inf,
         file!(),
         line!(),
-        format!(
-            "auto_build_message requested input_length={}",
-            req.input.chars().count()
-        ),
+        format!("auto_build_message requested {:?}", req.input),
     );
     auto_build(req).map_err(|err| {
         logger.only_log(

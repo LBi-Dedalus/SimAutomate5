@@ -13,7 +13,7 @@ const STATUS_CLASSES = {
   disconnected: "outline",
   connecting: "warning",
   connected: "success",
-  error: "error",
+  error: "danger",
 };
 
 const STATUS_VARIANTS = {

@@ -1,7 +1,7 @@
 use chrono::Utc;
 
-use crate::models::{AutoResponseConfig, Protocol};
-use crate::translate::ControlToken;
+use crate::models::AutoResponseConfig;
+use crate::translate::ControlToken::{self, STX, VT};
 
 /// Builds an automatic response message based on the provided configuration and incoming message.
 /// The response is generated in human-readable format.
@@ -10,44 +10,32 @@ pub fn build_auto_response(cfg: &AutoResponseConfig, incoming: &[u8]) -> Option<
         return None;
     }
 
-    match cfg.protocol {
-        Protocol::Astm => {
-            if do_not_respond_to(incoming) {
-                return None;
-            }
-            cfg.astm_message.as_ref().map(|msg| msg.clone())
-        }
-        Protocol::Hl7 => {
-            let msg_type = cfg.hl7_message_type.as_ref()?;
-            let code = cfg.hl7_response_code.as_ref()?;
-            let ack = generate_hl7_ack(incoming, msg_type, code);
-            Some(ack)
-        }
+    let first_char = incoming.first()?;
+
+    if *first_char == STX as u8 {
+        // ASTM message incoming
+        return cfg.astm_message.as_ref().map(|msg| msg.clone());
     }
-}
+    if *first_char == VT as u8 {
+        let msg_type = cfg.hl7_message_type.as_ref()?;
+        let code = cfg.hl7_response_code.as_ref()?;
+        let ack = generate_hl7_ack(incoming, msg_type, code)?;
+        return Some(ack);
+    }
 
-fn do_not_respond_to(incoming: &[u8]) -> bool {
-    let trimmed = incoming.trim_ascii();
-
-    matches!(
-        trimmed,
-        [byte] if *byte == ControlToken::ACK as u8
-            || *byte == ControlToken::NAK as u8
-            || *byte == ControlToken::EOT as u8
-    )
+    return None;
 }
 
 #[cfg(test)]
 mod tests {
     use super::build_auto_response;
-    use crate::models::{AutoResponseConfig, Protocol};
+    use crate::models::AutoResponseConfig;
     use crate::translate::ControlToken;
 
     #[test]
     fn astm_no_response_for_ack_nak_eot() {
         let cfg = AutoResponseConfig {
             enabled: true,
-            protocol: Protocol::Astm,
             astm_message: Some("<ACK>".to_string()),
             hl7_message_type: None,
             hl7_response_code: None,
@@ -62,7 +50,6 @@ mod tests {
     fn astm_no_response_for_ack_with_crlf() {
         let cfg = AutoResponseConfig {
             enabled: true,
-            protocol: Protocol::Astm,
             astm_message: Some("<ACK>".to_string()),
             hl7_message_type: None,
             hl7_response_code: None,
@@ -75,7 +62,6 @@ mod tests {
     fn astm_response_still_sent_for_regular_payload() {
         let cfg = AutoResponseConfig {
             enabled: true,
-            protocol: Protocol::Astm,
             astm_message: Some("<ACK>".to_string()),
             hl7_message_type: None,
             hl7_response_code: None,
@@ -88,15 +74,15 @@ mod tests {
     }
 }
 
-fn generate_hl7_ack(incoming: &[u8], msg_type: &str, code: &str) -> String {
+fn generate_hl7_ack(incoming: &[u8], msg_type: &str, code: &str) -> Option<String> {
     let timestamp = Utc::now().format("%Y%m%d%H%M%S").to_string();
-    let control_id = extract_control_id(incoming).unwrap_or("1".to_string());
+    let control_id = extract_control_id(incoming)?;
     let new_id = Utc::now().format("%s%f").to_string();
 
     let ack = format!(
         "MSH|^~\\&|SIMAUTO|SIM|REMOTE|REMOTE|{timestamp}||{msg_type}|{new_id}|P|2.5\rMSA|{code}|{control_id}\r",
     );
-    format!("<VT>{}<FS><CR>", ack.replace("\r", "<CR>"))
+    Some(format!("<VT>{}<FS><CR>", ack.replace("\r", "<CR>")))
 }
 
 fn extract_control_id(incoming: &[u8]) -> Option<String> {

@@ -15,6 +15,7 @@
     <script type="module" src="./connection.js" defer></script>
     <script type="module" src="./special-chars.js" defer></script>
     <script type="module" src="./autobuild.js" defer></script>
+    <script type="module" src="./autoresponse.js" defer></script>
   </head>
   <body>
     <header class="hstack justify-between">
@@ -35,16 +36,7 @@
         </button>
       </div>
 
-      <div class="hstack">
-        <span class="badge outline text-small" id="status">Disconnected</span>
-        <button
-          class="small"
-          commandfor="protocol-options"
-          command="show-modal"
-        >
-          Protocol Options
-        </button>
-      </div>
+      <span class="badge outline text-small" id="status">Disconnected</span>
     </header>
 
     <main class="flex">
@@ -65,9 +57,7 @@
               <input type="number" placeholder="12345" name="port" required />
             </label>
 
-            <button id="client-connect-btn" data-variant="success">
-              Connect
-            </button>
+            <button id="client-connect-btn">Connect</button>
           </form>
         </div>
 
@@ -87,17 +77,44 @@
               />
             </label>
 
-            <button id="server-connect-btn" data-variant="success">
-              Start server
-            </button>
+            <button id="server-connect-btn">Start server</button>
           </form>
+        </div>
+
+        <div id="autoresponse-options">
+          <div class="title py-2 px-4">
+            <span>Auto response</span>
+          </div>
+
+          <div class="vstack justify-between py-2 px-4">
+            <label>
+              Activate
+              <input
+                type="checkbox"
+                id="autoresponse-activate"
+                name="autoresponse-enabled"
+                role="switch"
+              />
+            </label>
+
+            <button
+              id="client-connect-btn"
+              data-variant="secondary"
+              commandfor="autoresponse"
+              command="show-modal"
+            >
+              Autoresponse options
+            </button>
+          </div>
         </div>
       </div>
 
       <div id="chat" class="vstack gap-0">
         <div class="title hstack justify-between w-100 py-2 px-4">
           <span>Messages</span>
-          <button class="small outline" id="clear-chat">Clear</button>
+          <button class="small" data-variant="secondary" id="clear-chat">
+            Clear
+          </button>
         </div>
 
         <div id="messages" class="vstack gap-0">
@@ -124,7 +141,9 @@
             >
               Autobuild
             </button>
-            <button class="outline small" type="reset">Clear</button>
+            <button class="small" data-variant="secondary" type="reset">
+              Clear
+            </button>
             <button data-variant="primary" class="small" disabled type="submit">
               Send
             </button>
@@ -174,6 +193,43 @@
             <button data-variant="primary" class="small" type="submit">
               Build and copy to input
             </button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+
+    <dialog id="autoresponse" closedby="any">
+      <div>
+        <form method="dialog">
+          <div class="hstack items-start">
+            <div>
+              <label>
+                ASTM ACK
+                <input type="text" name="astm_ack" value="&lt;ACK&gt;" />
+              </label>
+            </div>
+            <div>
+              <label>
+                HL7 Type
+                <input type="text" name="hl7_type" value="ACK^O21" />
+              </label>
+              <label>
+                HL7 Code
+                <input type="text" name="hl7_code" value="AA" />
+              </label>
+            </div>
+          </div>
+
+          <div class="hstack gap-2 justify-end pt-2">
+            <button
+              class="outline small"
+              type="button"
+              commandfor="autoresponse"
+              command="close"
+            >
+              Close
+            </button>
+            <button class="small" type="submit">Save</button>
           </div>
         </form>
       </div>

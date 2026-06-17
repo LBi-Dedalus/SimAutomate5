@@ -16,7 +16,7 @@ function hydrateConfig() {
     for (const key in data) {
       const field = document.querySelector(`[name="${key}"]`);
       if (!field) continue;
-      if (field.type === "checkbox") {
+      if (field.getAttribute("type") === "checkbox") {
         field.checked = data[key];
       } else {
         field.value = data[key];
@@ -38,7 +38,7 @@ function setupConfigPersistence() {
     field.addEventListener("change", (ev) =>
       persistConfig(
         field.name,
-        field.type === "checkbox" ? field.checked : field.value,
+        field.getAttribute("type") === "checkbox" ? field.checked : field.value,
       ),
     );
   }

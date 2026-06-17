@@ -30,19 +30,6 @@ pub struct FrontendLogEntry {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum Protocol {
-    Astm,
-    Hl7,
-}
-
-impl Default for Protocol {
-    fn default() -> Self {
-        Protocol::Astm
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectRequest {
     pub ip: String,
@@ -57,7 +44,6 @@ pub struct SendRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoResponseConfig {
     pub enabled: bool,
-    pub protocol: Protocol,
     pub astm_message: Option<String>,
     pub hl7_message_type: Option<String>,
     pub hl7_response_code: Option<String>,
@@ -67,7 +53,6 @@ impl AutoResponseConfig {
     pub const fn default() -> Self {
         AutoResponseConfig {
             enabled: false,
-            protocol: Protocol::Astm,
             astm_message: None,
             hl7_message_type: None,
             hl7_response_code: None,
