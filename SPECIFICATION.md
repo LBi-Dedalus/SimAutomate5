@@ -31,7 +31,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend and a R
 ### Configuration
 
 - Client mode accepts a host and port.
-- Server mode accepts a port and binds a local listener on `127.0.0.1`.
+- Server mode accepts a port and binds a listener on `0.0.0.0`.
 - The app exposes a simple mode selector for switching between client and server configuration.
 - Configuration fields are disabled while a connection is being established or while the app is connected.
 - The connection badge reflects one of four states: disconnected, connecting, connected, or error.
@@ -41,7 +41,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend and a R
 - Client connect attempts use a 1 second timeout.
 - When a client connection times out, the backend retries until the connection succeeds or the attempt is interrupted.
 - A user-triggered disconnect stops the current connection cleanly and updates the status to disconnected.
-- Server mode starts a local TCP listener and waits for a client to connect.
+- Server mode starts a TCP listener on all interfaces and waits for a client to connect.
 - The active connection owns the read/write loop until disconnect, EOF, or an error occurs.
 
 ### Messaging UI

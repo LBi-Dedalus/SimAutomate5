@@ -207,7 +207,7 @@ async fn start_server(
         format!("Starting server on port {}...", port),
     );
     emitter.emit_status(ConnectionStatus::Connecting);
-    let addr = format!("127.0.0.1:{}", port);
+    let addr = format!("0.0.0.0:{}", port);
 
     let stream = tokio::select! {
         res = listen_and_accept(&emitter, addr.clone()) => {

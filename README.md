@@ -5,7 +5,7 @@ SimAutomate5 is a Tauri desktop app for exchanging ASTM and HL7-style messages o
 ## Features
 
 - Client mode connects to a remote host and port over TCP.
-- Server mode starts a local listener on `127.0.0.1` for one client connection.
+- Server mode starts a listener on `0.0.0.0` for one client connection.
 - Live connection status indicator: Disconnected, Connecting, Connected, or Error.
 - Message panel that shows sent, received, and system messages with timestamps.
 - Message composer with:
