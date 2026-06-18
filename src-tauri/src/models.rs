@@ -64,6 +64,7 @@ impl AutoResponseConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoBuildRequest {
     pub input: String,
+    pub no_etb: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

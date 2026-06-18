@@ -165,18 +165,31 @@
     <dialog id="autobuild" closedby="any">
       <div>
         <form method="dialog">
-          <textarea
-            type="text"
-            placeholder="Type a message..."
-            required
-            name="input"
-          ></textarea>
-          <textarea
-            type="text"
-            placeholder="Autobuilt message will appear here"
-            readonly
-            name="output"
-          ></textarea>
+          <label>
+            Input:
+            <textarea
+              type="text"
+              placeholder="Type a message..."
+              required
+              name="input"
+            ></textarea>
+          </label>
+          <label>
+            Output:
+            <textarea
+              type="text"
+              placeholder="Autobuilt message will appear here"
+              readonly
+              name="output"
+            ></textarea>
+          </label>
+
+          <div class="hstack gap-2 py-2">
+            <label>
+              No ETB ?
+              <input type="checkbox" role="switch" name="no-etb" />
+            </label>
+          </div>
 
           <div class="hstack gap-2 justify-end">
             <button
