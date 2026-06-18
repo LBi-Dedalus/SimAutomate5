@@ -1,4 +1,5 @@
-const initialMessage = "\x02H|\\&^|...";
+const initialMessage =
+  "\x02H|^~\\&|27_78_200911104853.hps|A5-AUT-0020|||ORM|||||P|H2.2|20200911104853";
 
 Bun.listen({
   hostname: "127.0.0.1",

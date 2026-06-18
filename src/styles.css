@@ -161,7 +161,7 @@ label {
 .message {
   font-size: var(--text-8);
   display: flex;
-  align-items: center;
+  align-items: start;
   gap: var(--space-1);
   width: 100%;
   min-width: 0;
@@ -194,9 +194,6 @@ label {
   & > .message-body {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   & > .msg_time {
     display: inline-block;

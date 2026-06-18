@@ -5,7 +5,7 @@ use tokio::time::{sleep, timeout, Duration};
 
 use crate::emitter::Emitter;
 use crate::message_queue::{MessageQueue, SharedMessageQueue};
-use crate::models::{AutoResponseConfig, ConnectRequest, ConnectionStatus, SendRequest};
+use crate::models::{AutoResponseConfig, ConnectRequest, ConnectionStatus, LogLevel, SendRequest};
 use crate::transport::Connection::Disconnected;
 
 pub struct ConnectionManager {
@@ -273,7 +273,8 @@ async fn start_server(
 async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream, ()> {
     let mut attempt = 1;
     loop {
-        emitter.info(
+        emitter.only_log(
+            LogLevel::Inf,
             file!(),
             line!(),
             format!("connect attempt={} address={}", attempt, &addr),
@@ -284,7 +285,8 @@ async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream,
         match result {
             Ok(Ok(tcp_stream)) => {
                 emitter.emit_status(ConnectionStatus::Connected);
-                emitter.info(
+                emitter.only_log(
+                    LogLevel::Inf,
                     file!(),
                     line!(),
                     format!("connect succeeded attempt={} address={}", attempt, &addr),
@@ -295,12 +297,7 @@ async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream,
                 emitter.error(
                     file!(),
                     line!(),
-                    format!(
-                        "connect failed attempt={} address={} error={}",
-                        attempt,
-                        &addr,
-                        err.to_string()
-                    ),
+                    format!("Connection to {} failed: {}", &addr, err.to_string()),
                 );
                 emitter.emit_status(ConnectionStatus::Error);
                 return Err(());
@@ -309,10 +306,7 @@ async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream,
                 emitter.warn(
                     file!(),
                     line!(),
-                    format!(
-                        "connect failed attempt={} address={}: time elapsed",
-                        attempt, &addr
-                    ),
+                    format!("Connection to {} timed out: attempt={}", &addr, attempt,),
                 );
             }
         };
