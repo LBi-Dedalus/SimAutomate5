@@ -192,6 +192,7 @@ async fn connect_and_read(
     }
 
     let _ = writer.shutdown().await;
+    emitter.emit_disconnect().await;
 }
 
 async fn start_server(
@@ -266,6 +267,7 @@ async fn start_server(
     }
 
     let _ = writer.shutdown().await;
+    emitter.emit_disconnect().await;
 }
 
 async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream, ()> {

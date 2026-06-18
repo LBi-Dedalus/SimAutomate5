@@ -1,7 +1,9 @@
 use chrono::Utc;
-use tauri::{AppHandle, Emitter as _};
+use tauri::{AppHandle, Emitter as _, Manager, State};
+use tokio::sync::Mutex;
 
 use crate::{
+    app_state::AppState,
     logger::AppLogger,
     models::{
         ConnectionStatus, FrontendLogEntry, LogLevel, MessagePayload, MessageType, StatusPayload,
@@ -76,6 +78,12 @@ impl Emitter {
                 format!("failed to emit message event: {err}"),
             );
         }
+    }
+
+    pub async fn emit_disconnect(&self) {
+        let state: State<'_, Mutex<AppState>> = self.app.state();
+        let mut appstate = state.lock().await;
+        appstate.connection_manager.shutdown_now();
     }
 }
 
