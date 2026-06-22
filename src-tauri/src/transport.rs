@@ -1,6 +1,7 @@
 use tauri::async_runtime::{spawn, Receiver, Sender};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::watch;
 use tokio::time::{sleep, timeout, Duration};
 
 use crate::emitter::Emitter;
@@ -8,10 +9,21 @@ use crate::message_queue::{MessageQueue, SharedMessageQueue};
 use crate::models::{AutoResponseConfig, ConnectRequest, ConnectionStatus, LogLevel, SendRequest};
 use crate::transport::Connection::Disconnected;
 
+enum ConnectionMode {
+    Client,
+    Server,
+}
+
 pub struct ConnectionManager {
     emitter: Emitter,
     auto_response: AutoResponseConfig,
     connection: Connection,
+}
+
+pub struct ConnectionDetails {
+    addr: String,
+    mode: ConnectionMode,
+    status: watch::Receiver<ConnectionStatus>,
 }
 
 enum Connection {
@@ -19,6 +31,7 @@ enum Connection {
     Started {
         message_queue: SharedMessageQueue,
         shutdown_sender: Sender<()>,
+        details: ConnectionDetails,
     },
 }
 
@@ -33,35 +46,81 @@ impl ConnectionManager {
 
     pub async fn connect(&mut self, req: ConnectRequest) -> () {
         match &self.connection {
-            Connection::Started { .. } => {
-                self.emitter.warn(
-                    file!(),
-                    line!(),
-                    "Connect command received while connection already started, ignoring",
-                );
-                self.emitter.emit_status(ConnectionStatus::Connected);
+            Connection::Started { details, .. } => {
+                match *details.status.borrow() {
+                    ConnectionStatus::Disconnected | ConnectionStatus::Error => {
+                        self.emitter.error(
+                            file!(),
+                            line!(),
+                            format!("Incorrect connection state ! Try relaunching the app."),
+                        );
+                    }
+                    ConnectionStatus::Connecting => {
+                        let message = match details.mode {
+                            ConnectionMode::Client => format!(
+                                "Connect command received while connecting to {}, ignoring",
+                                details.addr
+                            ),
+                            ConnectionMode::Server => format!(
+                                "Connect command received while connecting on {}, ignoring",
+                                details.addr
+                            ),
+                        };
+                        self.emitter.warn(file!(), line!(), message);
+                    }
+                    ConnectionStatus::Connected => {
+                        let message = match details.mode {
+                            ConnectionMode::Client => format!(
+                                "Connect command received while already connected to {}, ignoring",
+                                details.addr
+                            ),
+                            ConnectionMode::Server => format!(
+                                "Connect command received while already connected on {}, ignoring",
+                                details.addr
+                            ),
+                        };
+                        self.emitter.warn(file!(), line!(), message);
+                    }
+                }
+                self.emitter.emit_status(details.status.borrow().clone());
                 return;
             }
             Disconnected => {
                 let (tx_dc, rx_dc) = tauri::async_runtime::channel(1);
                 let message_queue =
                     MessageQueue::shared(self.emitter.clone(), self.auto_response.clone());
+                let (status_tx, status_rx) = watch::channel(ConnectionStatus::Connecting);
+                let mut connection_details = ConnectionDetails {
+                    addr: "".to_string(),
+                    mode: ConnectionMode::Client,
+                    status: status_rx,
+                };
 
                 match req {
                     ConnectRequest::ClientConnectRequest { ip, port } => {
+                        let addr = format!("{}:{}", ip, port);
+                        connection_details.addr = addr.clone();
+                        connection_details.mode = ConnectionMode::Client;
+
                         spawn(connect_and_read(
                             self.emitter.clone(),
-                            format!("{}:{}", ip, port),
+                            addr,
                             message_queue.clone(),
                             rx_dc,
+                            status_tx,
                         ));
                     }
                     ConnectRequest::ServerStartRequest { port } => {
+                        let addr = format!("0.0.0.0:{}", port);
+                        connection_details.addr = addr;
+                        connection_details.mode = ConnectionMode::Server;
+
                         spawn(start_server(
                             self.emitter.clone(),
                             port,
                             message_queue.clone(),
                             rx_dc,
+                            status_tx,
                         ));
                     }
                 }
@@ -69,6 +128,7 @@ impl ConnectionManager {
                 self.connection = Connection::Started {
                     message_queue,
                     shutdown_sender: tx_dc,
+                    details: connection_details,
                 };
             }
         }
@@ -134,6 +194,7 @@ async fn connect_and_read(
     addr: String,
     message_queue: SharedMessageQueue,
     mut dc_receiver: Receiver<()>,
+    status_chan: watch::Sender<ConnectionStatus>,
 ) -> () {
     emitter.info(file!(), line!(), format!("Connecting to {}...", &addr));
     emitter.emit_status(ConnectionStatus::Connecting);
@@ -160,6 +221,7 @@ async fn connect_and_read(
     emitter.info(file!(), line!(), format!("Connected to {}...", &addr));
     emitter.emit_status(ConnectionStatus::Connected);
     emitter.emit_notification("Connected", &format!("Connected to {}", &addr));
+    status_chan.send_replace(ConnectionStatus::Connected);
 
     tokio::select! {
         result = read_loop(&mut reader, message_queue.clone()) => {
@@ -201,6 +263,7 @@ async fn start_server(
     port: u16,
     message_queue: SharedMessageQueue,
     mut dc_receiver: Receiver<()>,
+    status_chan: watch::Sender<ConnectionStatus>,
 ) -> () {
     emitter.info(
         file!(),
@@ -246,6 +309,7 @@ async fn start_server(
         "Connected",
         &format!("Accepted a connection from {} on {}", peer_addr, &addr),
     );
+    status_chan.send_replace(ConnectionStatus::Connected);
 
     tokio::select! {
         result = read_loop(&mut reader, message_queue.clone()) => {

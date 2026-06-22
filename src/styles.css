@@ -203,7 +203,6 @@ label {
   }
   & > .msg_time {
     display: inline-block;
-    margin-inline: var(--space-1);
-    transform: scale(0.9);
+    transform: scale(0.85);
   }
 }
