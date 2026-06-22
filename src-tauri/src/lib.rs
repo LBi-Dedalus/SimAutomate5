@@ -17,7 +17,7 @@ use models::{
     AutoBuildRequest, AutoResponseConfig, BuildResponse, ConnectRequest, FrontendLogEntry,
     LogLevel, SendRequest,
 };
-use tauri::{AppHandle, Manager, RunEvent::MainEventsCleared, State};
+use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
 
 use crate::emitter::Emitter;
@@ -168,10 +168,5 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, ev| {
-            if let MainEventsCleared = ev {
-                return;
-            }
-            println!("{:?}", ev);
-        });
+        .run(|_app, _ev| {});
 }

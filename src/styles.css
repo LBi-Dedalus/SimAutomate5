@@ -194,9 +194,16 @@ label {
   & > .message-body {
     flex: 1;
     min-width: 0;
+    word-break: break-word;
+    white-space: pre-line;
+
+    & > p {
+      margin-bottom: var(--space-1);
+    }
   }
   & > .msg_time {
     display: inline-block;
     margin-inline: var(--space-1);
+    transform: scale(0.9);
   }
 }

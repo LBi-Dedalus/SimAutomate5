@@ -68,9 +68,24 @@ function appendMessage(payload) {
   time.textContent = formatTime(timestamp);
   entry.appendChild(time);
 
-  const body = document.createElement("span");
+  const body = document.createElement("div");
   body.className = "message-body";
-  body.textContent = content.replaceAll("<CR>", "<CR>\n");
+  {
+    const contentLines = content.split("<CR>");
+    for (const lineIdx in contentLines) {
+      let line = contentLines[lineIdx];
+
+      if (Number(lineIdx) + 1 !== contentLines.length) {
+        line += "<CR>";
+      } else if (line === "") {
+        break;
+      }
+
+      const lineEl = document.createElement("p");
+      lineEl.textContent = line;
+      body.appendChild(lineEl);
+    }
+  }
   body.title = content;
   entry.appendChild(body);
 
@@ -110,7 +125,7 @@ function formatType(msg_type) {
     case "systemerror":
       return "ERR";
     case "received":
-      return "REC";
+      return "RCV";
     case "sent":
       return "SND";
     default:
