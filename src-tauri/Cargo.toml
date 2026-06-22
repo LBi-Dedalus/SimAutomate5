@@ -1,6 +1,6 @@
 [package]
 name = "simautomate5"
-version = "0.1.3"
+version = "0.1.4"
 description = "A Tauri App to simulate a device and connect via sockets"
 authors = ["Luc Billaud <luc.billaud@dedalus.eu>"]
 edition = "2021"
