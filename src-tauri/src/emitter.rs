@@ -1,5 +1,6 @@
 use chrono::Utc;
 use tauri::{AppHandle, Emitter as _, Manager, State};
+use tauri_plugin_notification::NotificationExt;
 use tokio::sync::Mutex;
 
 use crate::{
@@ -84,6 +85,16 @@ impl Emitter {
         let state: State<'_, Mutex<AppState>> = self.app.state();
         let mut appstate = state.lock().await;
         appstate.connection_manager.shutdown_now();
+    }
+
+    pub fn emit_notification(&self, title: &str, body: &str) {
+        self.app
+            .notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show()
+            .unwrap();
     }
 }
 

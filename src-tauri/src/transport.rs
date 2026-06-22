@@ -159,6 +159,7 @@ async fn connect_and_read(
     let (mut reader, mut writer) = stream.into_split();
     emitter.info(file!(), line!(), format!("Connected to {}...", &addr));
     emitter.emit_status(ConnectionStatus::Connected);
+    emitter.emit_notification("Connected", &format!("Connected to {}", &addr));
 
     tokio::select! {
         result = read_loop(&mut reader, message_queue.clone()) => {
@@ -227,13 +228,24 @@ async fn start_server(
         }
     };
 
+    let peer_addr = &stream
+        .peer_addr()
+        .map(|addr| addr.to_string())
+        .unwrap_or("unknown".to_string());
     let (mut reader, mut writer) = stream.into_split();
     emitter.info(
         file!(),
         line!(),
-        format!("Client connected, listening on {}...", &addr),
+        format!(
+            "Client from {} connected, listening on {}...",
+            peer_addr, &addr
+        ),
     );
     emitter.emit_status(ConnectionStatus::Connected);
+    emitter.emit_notification(
+        "Connected",
+        &format!("Accepted a connection from {} on {}", peer_addr, &addr),
+    );
 
     tokio::select! {
         result = read_loop(&mut reader, message_queue.clone()) => {
