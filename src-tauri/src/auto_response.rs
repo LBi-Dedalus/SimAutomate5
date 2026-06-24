@@ -12,7 +12,7 @@ pub fn build_auto_response(cfg: &AutoResponseConfig, incoming: &[u8]) -> Option<
 
     let first_char = incoming.first()?;
 
-    if *first_char == STX as u8 {
+    if *first_char == STX as u8 || *first_char == ENQ as u8 {
         // ASTM message incoming
         return cfg.astm_message.as_ref().map(|msg| msg.clone());
     }
