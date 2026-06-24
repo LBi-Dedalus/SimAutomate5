@@ -70,7 +70,11 @@ function appendMessage(payload) {
 
   const body = document.createElement("div");
   body.className = "message-body";
-  {
+  if (content.startsWith("<STX>")) {
+    const lineEl = document.createElement("p");
+    lineEl.textContent = content;
+    body.appendChild(lineEl);
+  } else {
     const contentLines = content.split("<CR>");
     for (const lineIdx in contentLines) {
       let line = contentLines[lineIdx];
