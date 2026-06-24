@@ -464,5 +464,6 @@ async fn send_loop(
         }
 
         message_queue.handle_sent_message(&msg);
+        sleep(Duration::from_millis(200)).await;
     }
 }

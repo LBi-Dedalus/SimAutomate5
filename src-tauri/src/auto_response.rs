@@ -1,7 +1,7 @@
 use chrono::Utc;
 
 use crate::models::AutoResponseConfig;
-use crate::translate::ControlToken::{self, STX, VT};
+use crate::translate::ControlToken::{self, ENQ, STX, VT};
 
 /// Builds an automatic response message based on the provided configuration and incoming message.
 /// The response is generated in human-readable format.
