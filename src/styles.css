@@ -179,12 +179,12 @@ label {
     color: var(--danger-foreground);
   }
   &.received {
-    background: var(--accent);
-    color: var(--accent-foreground);
+    background: var(--secondary);
+    color: var(--danger);
   }
   &.sent {
-    background: var(--success);
-    color: var(--success-foreground);
+    background: var(--secondary);
+    color: var(--success);
   }
   &.systeminfo {
     background: var(--muted);
