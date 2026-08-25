@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SimAutomate5 Code Review</title>
+  <style>
+    :root {
+      --ink: #17252b;
+      --muted: #5d6b6c;
+      --paper: #f7f5ef;
+      --panel: #fffdf8;
+      --line: #d8ded8;
+      --teal: #176b68;
+      --teal-soft: #dcefeb;
+      --orange: #b8582d;
+      --orange-soft: #f7e5d8;
+      --red: #a93232;
+      --red-soft: #f9dddd;
+      --gold: #946c16;
+      --gold-soft: #f6edc9;
+      --green: #286d4b;
+      --green-soft: #dff0e4;
+      --shadow: 0 12px 32px rgba(23, 37, 43, .08);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 0%, rgba(23, 107, 104, .10), transparent 34rem),
+        linear-gradient(135deg, #f1eee4 0%, var(--paper) 48%, #eaf1ed 100%);
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 68px 0 42px;
+      border-bottom: 1px solid rgba(23, 37, 43, .14);
+    }
+
+    .kicker {
+      margin: 0 0 12px;
+      color: var(--orange);
+      font-size: .78rem;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 820px;
+      font-size: clamp(2.3rem, 6vw, 5rem);
+      line-height: .98;
+    }
+
+    .dek {
+      max-width: 760px;
+      margin: 22px 0 0;
+      color: var(--muted);
+      font-size: 1.1rem;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 24px;
+      margin-top: 28px;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+
+    main { padding: 36px 0 80px; }
+
+    .summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(250px, .65fr);
+      gap: 24px;
+      align-items: stretch;
+      margin-bottom: 42px;
+    }
+
+    .panel {
+      background: rgba(255, 253, 248, .86);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .summary-copy { padding: 28px; }
+    .summary-copy h2 { font-size: 1.65rem; }
+    .summary-copy p { margin: 14px 0 0; }
+
+    .risk {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 24px;
+      background: var(--ink);
+      color: #f8f4e9;
+      border-color: var(--ink);
+    }
+
+    .risk-label {
+      color: #f3bf91;
+      font-size: .75rem;
+      font-weight: 700;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+
+    .risk strong {
+      display: block;
+      margin: 12px 0 16px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 1.8rem;
+      line-height: 1.05;
+    }
+
+    .risk p { margin: 0; color: #d4dfdc; }
+
+    .counts {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .count {
+      padding: 12px 10px;
+      border: 1px solid rgba(255, 255, 255, .15);
+      text-align: center;
+    }
+
+    .count b { display: block; font-size: 1.5rem; }
+    .count span { color: #cbd8d4; font-size: .72rem; text-transform: uppercase; }
+
+    section { margin-top: 42px; }
+    section > h2 { margin-bottom: 16px; font-size: 2rem; }
+
+    .finding {
+      position: relative;
+      margin: 18px 0;
+      padding: 25px 28px 26px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-left: 6px solid var(--teal);
+      border-radius: 8px;
+      box-shadow: 0 6px 18px rgba(23, 37, 43, .045);
+    }
+
+    .finding.high { border-left-color: var(--red); }
+    .finding.medium { border-left-color: var(--gold); }
+    .finding.low { border-left-color: var(--teal); }
+
+    .finding-head {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+
+    .finding h3 {
+      max-width: 820px;
+      font-size: 1.34rem;
+      line-height: 1.16;
+    }
+
+    .badge {
+      flex: 0 0 auto;
+      padding: 4px 9px;
+      border-radius: 3px;
+      font-size: .7rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .badge.high { color: var(--red); background: var(--red-soft); }
+    .badge.medium { color: var(--gold); background: var(--gold-soft); }
+    .badge.low { color: var(--teal); background: var(--teal-soft); }
+
+    .finding p { margin: 13px 0 0; }
+
+    .finding dl {
+      display: grid;
+      grid-template-columns: 104px minmax(0, 1fr);
+      gap: 8px 18px;
+      margin: 18px 0 0;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      font-size: .94rem;
+    }
+
+    .finding dt { color: var(--muted); font-weight: 700; }
+    .finding dd { margin: 0; }
+
+    code {
+      padding: 2px 5px;
+      color: #244d4b;
+      background: #edf3ef;
+      border-radius: 3px;
+      font-family: Consolas, "Liberation Mono", monospace;
+      font-size: .88em;
+      overflow-wrap: anywhere;
+    }
+
+    .toc {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 24px;
+      padding: 20px 24px;
+    }
+
+    .toc a {
+      color: var(--teal);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    .toc a::after {
+      content: "  " attr(data-level);
+      color: var(--muted);
+      font-size: .75rem;
+      text-decoration: none;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 24px;
+    }
+
+    .info { padding: 24px; }
+    .info h3 { font-size: 1.3rem; }
+    .info ul { margin: 14px 0 0; padding-left: 20px; }
+    .info li + li { margin-top: 8px; }
+
+    .status {
+      display: inline-block;
+      padding: 3px 8px;
+      color: var(--green);
+      background: var(--green-soft);
+      border-radius: 3px;
+      font-size: .76rem;
+      font-weight: 700;
+    }
+
+    footer {
+      padding: 24px 0 56px;
+      color: var(--muted);
+      font-size: .85rem;
+      border-top: 1px solid rgba(23, 37, 43, .14);
+    }
+
+    @media (max-width: 760px) {
+      .wrap { width: min(100% - 24px, 1120px); }
+      header { padding-top: 42px; }
+      .summary, .two-col { grid-template-columns: 1fr; }
+      .finding { padding: 21px 19px 22px; }
+      .finding-head { display: block; }
+      .badge { display: inline-block; margin-top: 12px; }
+      .finding dl { grid-template-columns: 1fr; gap: 3px; }
+      .finding dd { margin-bottom: 9px; }
+      .toc { grid-template-columns: 1fr; padding: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <p class="kicker">Engineering Review / 2026-08-25</p>
+      <h1>SimAutomate5 code review</h1>
+      <p class="dek">A findings-first review of the Tauri desktop application that exchanges ASTM and HL7-style traffic over TCP.</p>
+      <div class="meta">
+        <span><strong>Scope:</strong> Rust backend, Vanilla JS frontend, transport, queue, logging, auto-response, configuration</span>
+        <span><strong>Findings:</strong> 10</span>
+        <span><strong>Application source changed:</strong> no</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="summary">
+      <div class="panel summary-copy">
+        <h2>Executive summary</h2>
+        <p>The most important risks are operational rather than cosmetic. TCP chunks are treated as complete messages, and automatic responses share an ACK-gated queue with ordinary traffic. Independently, connection tasks can leave stale manager state or clean up a newer connection after a reconnect.</p>
+        <p>These defects can cause dropped or malformed messages, protocol deadlocks, and connections that appear active but no longer process traffic. The application is not ready for unattended use until the four high-severity findings are addressed.</p>
+      </div>
+      <div class="panel risk">
+        <div>
+          <span class="risk-label">Overall risk</span>
+          <strong>High: reliability and protocol handling are coupled</strong>
+          <p>The existing test suite covers auto-response construction but not the transport, lifecycle, or queue paths where the largest failures occur.</p>
+        </div>
+        <div class="counts">
+          <div class="count"><b>4</b><span>High</span></div>
+          <div class="count"><b>4</b><span>Medium</span></div>
+          <div class="count"><b>2</b><span>Low</span></div>
+        </div>
+      </div>
+    </div>
+
+    <section aria-labelledby="contents-heading">
+      <h2 id="contents-heading">Review contents</h2>
+      <nav class="panel toc" aria-label="Review contents">
+        <a href="#finding-1" data-level="HIGH">TCP framing</a>
+        <a href="#finding-2" data-level="HIGH">ACK gate deadlock</a>
+        <a href="#finding-3" data-level="HIGH">Stale failed state</a>
+        <a href="#finding-4" data-level="HIGH">Reconnect cleanup race</a>
+        <a href="#finding-5" data-level="MEDIUM">Notification panic</a>
+        <a href="#finding-6" data-level="MEDIUM">Unbounded traffic</a>
+        <a href="#finding-7" data-level="MEDIUM">Control-token injection</a>
+        <a href="#finding-8" data-level="MEDIUM">Unicode corruption</a>
+        <a href="#finding-9" data-level="LOW">Frontend exceptions</a>
+        <a href="#finding-10" data-level="LOW">Editable server port</a>
+      </nav>
+    </section>
+
+    <section aria-labelledby="findings-heading">
+      <h2 id="findings-heading">Findings</h2>
+
+      <article class="finding high" id="finding-1">
+        <div class="finding-head">
+          <h3>1. TCP read boundaries are incorrectly treated as message boundaries</h3>
+          <span class="badge high">High</span>
+        </div>
+        <p>The read loop passes each arbitrary TCP read directly to message handling. TCP is a byte stream: one MLLP or ASTM message may be split across reads, and multiple messages may arrive in a single read. Exact ACK detection can miss coalesced ACKs, while auto-response parsing can fail when the MSH or control ID is split across chunks.</p>
+        <dl>
+          <dt>Evidence</dt>
+          <dd><code>src-tauri/src/transport.rs:438-443</code> reads into a fixed buffer and immediately calls <code>handle_received_message</code> with the chunk; no receive buffer or MLLP/ASTM frame parser is present.</dd>
+          <dt>Impact</dt>
+          <dd>Valid traffic can be dropped, misclassified, or displayed as fragments. ACK-gated sending can then stall indefinitely.</dd>
+          <dt>Remediation</dt>
+          <dd>Maintain a per-connection receive buffer, parse complete MLLP and ASTM frames, dispatch every complete frame, and retain incomplete trailing bytes for the next read. Add split-frame and coalesced-frame tests.</dd>
+        </dl>
+      </article>
+
+      <article class="finding high" id="finding-2">
+        <div class="finding-head">
+          <h3>2. Automatic responses can deadlock behind the outbound ASTM ACK gate</h3>
+          <span class="badge high">High</span>
+        </div>
+        <p>The sender refuses to release any queued message while <code>waiting_for_ack</code> is true. Automatic responses are appended to that same ordinary queue. If the peer is waiting for an automatic ACK while this application is waiting for an ACK to its own frame, the required response cannot be sent. Ordinary pending user messages can also delay a protocol response.</p>
+        <dl>
+          <dt>Evidence</dt>
+          <dd><code>src-tauri/src/message_queue.rs:71</code> blocks release while waiting for an ACK; <code>src-tauri/src/message_queue.rs:152</code> enqueues generated responses through the same path.</dd>
+          <dt>Impact</dt>
+          <dd>Protocol peers can wait on each other indefinitely, especially under simultaneous traffic or when an ASTM segment requires an ACK.</dd>
+          <dt>Remediation</dt>
+          <dd>Give protocol control responses a priority queue or an independent send path that bypasses the user-message ACK gate. Test simultaneous inbound and outbound protocol traffic.</dd>
+        </dl>
+      </article>
+
+      <article class="finding high" id="finding-3">
+        <div class="finding-head">
+          <h3>3. Failed connection attempts leave the manager in a permanently stale Started state</h3>
+          <span class="badge high">High</span>
+        </div>
+        <p>The manager stores <code>Connection::Started</code> before the spawned task has connected. Client connection failure and server bind or accept failure return from the task without clearing that manager state or updating its shared status channel to a terminal error. A later Connect command can therefore be rejected as already connecting or already connected.</p>
+        <dl>
+          <dt>Evidence</dt>
+          <dd><code>src-tauri/src/transport.rs:128</code> stores the started connection; failure paths return at <code>src-tauri/src/transport.rs:206</code> and <code>src-tauri/src/transport.rs:280</code>. The next connect consults the stale state at <code>src-tauri/src/transport.rs:50</code>.</dd>
+          <dt>Impact</dt>
+          <dd>The UI can remain stuck until an extra disconnect cycle, and users cannot reliably retry after a connection or bind error.</dd>
+          <dt>Remediation</dt>
+          <dd>Use one cleanup path for every terminal task outcome. Clear the manager's active connection and update the watch status to <code>Error</code> or <code>Disconnected</code> before returning.</dd>
+        </dl>
+      </article>
+
+      <article class="finding high" id="finding-4">
+        <div class="finding-head">
+          <h3>4. Reconnecting can cause the old task to shut down the new connection</h3>
+          <span class="badge high">High</span>
+        </div>
+        <p>Disconnect replaces the manager state and sends a shutdown request without waiting for the old task to finish. When that task later emits its disconnect event, the emitter unconditionally calls <code>shutdown_now</code> on the connection currently stored in the manager. A reconnect that wins the timing race can therefore be terminated by stale cleanup from the previous connection.</p>
+        <dl>
+          <dt>Evidence</dt>
+          <dd><code>src-tauri/src/transport.rs:161</code> replaces state and signals the old task; <code>src-tauri/src/emitter.rs:87</code> shuts down whatever connection is current when old-task cleanup runs.</dd>
+          <dt>Impact</dt>
+          <dd>Intermittent reconnect failures, unexpected disconnects, and difficult-to-reproduce loss of an otherwise healthy new session.</dd>
+          <dt>Remediation</dt>
+          <dd>Await the old task before establishing a new one, or attach a generation or connection ID to cleanup and only clear the state owned by that task.</dd>
+        </dl>
+      </article>
+
+      <article class="finding medium" id="finding-5">
+        <div class="finding-head">
+          <h3>5. Notification failure can panic the connection task</h3>
+          <span class="badge medium">Medium</span>
+        </div>
+        <p>The successful connection path calls the desktop notification integration, and the fallible notification result is unwrapped. Denied permission or an unavailable OS notification service can panic the detached connection task immediately after the socket connects. The manager can then retain stale state while its read and write loops are gone.</p>
+        <dl>
+          <dt>Evidence</dt>
+          <dd><code>src-tauri/src/transport.rs:223</code> calls notification after reporting Connected; <code>src-tauri/src/emitter.rs:97</code> ends the notification chain with <code>unwrap()</code>.</dd>
+          <dt>Impact</dt>
+          <dd>A nonessential UI integration can terminate network processing and compound the stale-state defect.</dd>
+          <dt>Remediation</dt>
+          <dd>Handle notification errors as warnings and continue the connection. Keep optional desktop integration outside the failure domain of the network task.</dd>
+        </dl>
+      </article>
+
+      <article class="finding medium" id="finding-6">
+        <div class="finding-head">
+          <h3>6. Network-triggered responses and frontend history are unbounded</h3>
+          <span class="badge medium">Medium</span>
+        </div>
+        <p>The outbound queue has no capacity limit, and every generated automatic response is appended to it. In server mode the listener is intentionally exposed on all interfaces, so a reachable peer can send valid messages faster than the sender drains them. The frontend also appends every received message indefinitely.</p>
+        <dl>
+          <dt>Evidence</dt>
+          <dd><code>src-tauri/src/message_queue.rs:60</code> grows <code>pending_messages</code> without a bound; <code>src-tauri/src/message_queue.rs:152</code> adds each automatic response; <code>src-tauri/src/transport.rs:274</code> binds <code>0.0.0.0</code>; <code>src/messages.js:102</code> appends history without a retention policy.</dd>
+          <dt>Impact</dt>
+          <dd>Memory growth can degrade or terminate the desktop process during sustained or adversarial traffic.</dd>
+          <dt>Remediation</dt>
+          <dd>Bound outbound queue and visible history sizes, define overflow behavior, and apply protocol-aware backpressure or rate limiting.</dd>
+        </dl>
+      </article>
+
+      <article class="finding medium" id="finding-7">
+        <div class="finding-head">
+          <h3>7. Remote HL7 control IDs can inject application control tokens into generated ACKs</h3>
+          <span class="badge medium">Medium</span>
+        </div>
+        <p>The incoming MSH-10 control ID is interpolated into a human-readable ACK template. The complete response is then passed through the token decoder. A remote control ID containing a literal token such as <code>&lt;FS&gt;</code> or <code>&lt;CR&gt;</code> is converted into a framing byte, allowing the peer to alter the generated response structure.</p>
+        <dl>
+          <dt>Evidence</dt>
+          <dd><code>src-tauri/src/auto_response.rs:141</code> copies the remote control ID into the response; <code>src-tauri/src/message_queue.rs:61</code> sends the response through <code>translate::to_bytes</code>.</dd>
+          <dt>Impact</dt>
+          <dd>Malformed ACK framing or message splitting can be induced by crafted but syntactically accepted remote data.</dd>
+          <dt>Remediation</dt>
+          <dd>Construct response bytes structurally, or validate and escape field data before inserting it into the tokenized representation.</dd>
+        </dl>
+      </article>
+
+      <article class="finding medium" id="finding-8">
+        <div class="finding-head">
+          <h3>8. Non-ASCII message content is silently corrupted</h3>
+          <span class="badge medium">Medium</span>
+        </div>
+        <p>Ordinary Rust characters are narrowed to one byte during encoding, while received bytes are converted directly to characters rather than decoded as UTF-8. Accented names and other non-ASCII text therefore cannot round-trip correctly. The documentation describes plain text but does not state an ASCII-only contract.</p>
+        <dl>
+          <dt>Evidence</dt>
+          <dd><code>src-tauri/src/translate.rs:95</code> casts each character to <code>u8</code>; <code>src-tauri/src/translate.rs:110</code> casts each byte to <code>char</code>.</dd>
+          <dt>Impact</dt>
+          <dd>Message content can be silently changed in transit or in the UI, creating data integrity problems.</dd>
+          <dt>Remediation</dt>
+          <dd>Preserve UTF-8 bytes consistently, or explicitly reject and document non-ASCII input if the supported protocols are intentionally ASCII-only. Add round-trip tests.</dd>
+        </dl>
+      </article>
+
+      <article class="finding low" id="finding-9">
+        <div class="finding-head">
+          <h3>9. Every rendered message raises a JavaScript exception</h3>
+          <span class="badge low">Low</span>
+        </div>
+        <p>The message is appended before the final logging call, so display generally succeeds, but each event then references undefined <code>direction</code> and <code>logInfo</code>. This creates a runtime exception for every rendered message and means frontend logging never runs.</p>
+        <dl>
+          <dt>Evidence</dt>
+          <dd><code>src/messages.js:105</code> calls <code>logInfo(... direction ...)</code>; neither symbol is defined elsewhere in the workspace according to the review search.</dd>
+          <dt>Impact</dt>
+          <dd>Browser console noise and lost diagnostic logging make real frontend failures harder to detect.</dd>
+          <dt>Remediation</dt>
+          <dd>Use the existing message type value and implement the <code>log_frontend</code> bridge, or remove the call until a defined helper is available.</dd>
+        </dl>
+      </article>
+
+      <article class="finding low" id="finding-10">
+        <div class="finding-head">
+          <h3>10. Server connection fields are not disabled while connected</h3>
+          <span class="badge low">Low</span>
+        </div>
+        <p>The code correctly queries the client form, but the server field query is made on <code>serverModeBtn</code>, the mode button, rather than on the selected <code>serverForm</code>. The selector therefore finds no fields, leaving the server port editable during connection attempts and active connections.</p>
+        <dl>
+          <dt>Evidence</dt>
+          <dd><code>src/connection-options.js:57</code> calls <code>serverModeBtn.querySelectorAll(...)</code> after creating <code>serverForm</code>.</dd>
+          <dt>Impact</dt>
+          <dd>The UI can imply a port change is active when the backend is still listening on the original port, violating the stated configuration contract.</dd>
+          <dt>Remediation</dt>
+          <dd>Query <code>serverForm.querySelectorAll(...)</code> and add a UI test covering both client and server mode while connecting and connected.</dd>
+        </dl>
+      </article>
+    </section>
+
+    <section aria-labelledby="assumptions-heading">
+      <h2 id="assumptions-heading">Assumptions and residual risk</h2>
+      <div class="two-col">
+        <div class="panel info">
+          <h3>Contract-dependent items</h3>
+          <ul>
+            <li>Binding the server to <code>0.0.0.0</code> is explicitly required by the specification, so the unauthenticated cleartext listener was treated as an accepted deployment risk rather than a separate finding. It should be restricted to an isolated test network or protected with host and firewall controls.</li>
+            <li>Raw protocol payloads are intentionally logged because this application is used for internal debugging. That choice is accepted for the stated deployment context and was removed from the actionable findings; it would need to be revisited before shared, unattended, or sensitive-data use.</li>
+            <li>The non-ASCII finding assumes documented plain-text inputs are expected to support Unicode. If the protocol contract is ASCII-only, validation and documentation should make that explicit.</li>
+          </ul>
+        </div>
+        <div class="panel info">
+          <h3>Defense in depth</h3>
+          <ul>
+            <li><code>src-tauri/tauri.conf.json:21</code> disables CSP. This was not counted as an independently exploitable finding because the current frontend uses <code>textContent</code> for message data and no direct untrusted HTML sink was found.</li>
+            <li>A strict local CSP would still reduce the impact of future injection regressions and should be considered after the protocol and lifecycle issues are fixed.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="verification-heading">
+      <h2 id="verification-heading">Verification and coverage</h2>
+      <div class="two-col">
+        <div class="panel info">
+          <h3>Checks</h3>
+          <ul>
+            <li><span class="status">Passed</span> <code>cargo test --all-targets</code>: 6 passed, 0 failed. All six tests are in <code>auto_response</code>.</li>
+            <li><span class="status">Passed</span> <code>node --check</code> for the frontend JavaScript files.</li>
+            <li><span class="status">Observed</span> No JavaScript test or lint script is defined in <code>package.json</code>.</li>
+            <li><span class="status">Observed</span> <code>cargo clippy --all-targets -- -D warnings</code> reports existing dead-code and lint diagnostics: 32 for the library target and 33 for the test target.</li>
+          </ul>
+        </div>
+        <div class="panel info">
+          <h3>Coverage gaps</h3>
+          <ul>
+            <li>No automated tests cover TCP framing, split or coalesced frames, queue priority, ACK ordering, retry state, reconnect races, notification failure, bounded memory, or configuration disabling.</li>
+            <li>Recommended next test slice: extract a frame parser and queue state machine into testable units, then add integration tests using fragmented and coalesced reads plus connection failure and reconnect scenarios.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="priority-heading">
+      <h2 id="priority-heading">Suggested order of repair</h2>
+      <div class="panel info">
+        <ol>
+          <li>Stop logging raw message content and add a redaction regression test.</li>
+          <li>Implement protocol-aware receive framing and test split/coalesced traffic.</li>
+          <li>Separate control responses from the user queue and test ACK ordering.</li>
+          <li>Centralize connection task cleanup, make cleanup generation-aware, and make notification failure nonfatal.</li>
+          <li>Add bounded queues/history and explicit input encoding rules, then address the frontend and configuration defects.</li>
+        </ol>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">Prepared from the SimAutomate5 workspace. This report is a static code review; findings should be confirmed with targeted regression tests before release.</div>
+  </footer>
+</body>
+</html>
