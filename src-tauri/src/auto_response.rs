@@ -1,7 +1,7 @@
 use chrono::Utc;
 
 use crate::models::AutoResponseConfig;
-use crate::translate::ControlToken::{self, ENQ, STX, VT};
+use crate::translate::ControlToken::{ENQ, STX, VT};
 
 /// Builds an automatic response message based on the provided configuration and incoming message.
 /// The response is generated in human-readable format.
@@ -68,9 +68,56 @@ mod tests {
         };
 
         assert_eq!(
-            build_auto_response(&cfg, b"<STX>1H|\\^&|...").as_deref(),
+            build_auto_response(&cfg, b"\x021H|\\^&|...").as_deref(),
             Some("<ACK>")
         );
+    }
+
+    #[test]
+    fn hl7_response_uses_configured_type_and_code() {
+        let cfg = AutoResponseConfig {
+            enabled: true,
+            astm_message: None,
+            hl7_message_type: Some("ACK^O21".to_string()),
+            hl7_response_code: Some("AA".to_string()),
+        };
+        let incoming = b"\x0bMSH|^~\\&|REMOTE|LAB|SIMAUTO|SIM|20260825120000||OML^O21|CONTROL-123|P|2.5\rPID|1\r\x1c\r";
+
+        let response = build_auto_response(&cfg, incoming).expect("an HL7 ACK response");
+
+        assert!(response.starts_with("<VT>MSH|^~\\&|"));
+        assert!(response.contains("||ACK^O21|"));
+        assert!(response.contains("<CR>MSA|AA|CONTROL-123<CR>"));
+        assert!(response.ends_with("<FS><CR>"));
+    }
+
+    #[test]
+    fn hl7_response_preserves_incoming_control_id() {
+        let cfg = AutoResponseConfig {
+            enabled: true,
+            astm_message: None,
+            hl7_message_type: Some("ACK".to_string()),
+            hl7_response_code: Some("AE".to_string()),
+        };
+        let incoming =
+            b"\x0bMSH|^~\\&|REMOTE|LAB|SIMAUTO|SIM|20260825120000||ADT^A01|abc-987|P|2.5\r\x1c\r";
+
+        let response = build_auto_response(&cfg, incoming).expect("an HL7 ACK response");
+
+        assert!(response.contains("MSA|AE|abc-987<CR>"));
+    }
+
+    #[test]
+    fn hl7_response_is_suppressed_when_disabled() {
+        let cfg = AutoResponseConfig {
+            enabled: false,
+            astm_message: None,
+            hl7_message_type: Some("ACK".to_string()),
+            hl7_response_code: Some("AA".to_string()),
+        };
+        let incoming = b"\x0bMSH|^~\\&|REMOTE|LAB|SIMAUTO|SIM|20260825120000||ADT^A01|CONTROL-123|P|2.5\r\x1c\r";
+
+        assert!(build_auto_response(&cfg, incoming).is_none());
     }
 }
 
@@ -86,14 +133,11 @@ fn generate_hl7_ack(incoming: &[u8], msg_type: &str, code: &str) -> Option<Strin
 }
 
 fn extract_control_id(incoming: &[u8]) -> Option<String> {
-    let text = String::from_utf8_lossy(incoming).to_string();
-    let bytes = text
-        .bytes()
-        .filter(|b| *b <= (ControlToken::US as u8) || *b == b'\n')
-        .collect::<Vec<u8>>();
-    let res = unsafe { str::from_utf8_unchecked(&bytes) };
-
-    let msh = res.lines().find(|line| line.starts_with("MSH"))?;
+    let msh = incoming
+        .split(|byte| *byte == b'\r' || *byte == b'\n')
+        .map(|segment| segment.strip_prefix(&[VT as u8]).unwrap_or(segment))
+        .find(|segment| segment.starts_with(b"MSH"))?;
+    let msh = str::from_utf8(msh).ok()?;
     let fields: Vec<&str> = msh.split('|').collect();
     fields.get(9).map(|f| f.to_string())
 }
