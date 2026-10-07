@@ -99,7 +99,8 @@ impl MessageQueue {
         );
 
         let visible = translate::to_human_readable(&message);
-        self.emitter.emit_message(MessageType::Received, visible);
+        self.emitter
+            .emit_message_with_raw(MessageType::Received, visible, message.clone());
 
         if is_ack(&message) {
             self.handle_ack().await?;
@@ -135,8 +136,11 @@ impl MessageQueue {
     }
 
     pub(crate) fn handle_sent_message(&self, msg: &[u8]) {
-        self.emitter
-            .emit_message(MessageType::Sent, translate::to_human_readable(msg));
+        self.emitter.emit_message_with_raw(
+            MessageType::Sent,
+            translate::to_human_readable(msg),
+            msg.to_vec(),
+        );
     }
 
     async fn send_auto_response(&self, message: &[u8]) {

@@ -8,15 +8,23 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend and a R
 
 ### UI and Theme
 
-- The UI is built with semantic HTML, Oat CSS classes, and project-specific styling.
-- The header exposes a client/server mode switch and a live connection status badge.
-- The active connection mode cannot be changed while a connection attempt is in progress or while connected.
+- The UI is built with semantic HTML, Oat CSS classes, and project-specific styling (light content area, dark sidebar, teal accents).
+- A labelled left navigation switches between Home, Session, Templates, Auto reply and the Autobuild dialog. The sidebar footer shows the live connection status badge.
+- Home offers quick connect (Client/Server, host/port; there is no protocol selector), recent endpoints and a template shortcut list.
+- Session shows one conversation (bubbles plus system lines), the composer with control-character buttons, and an always-docked message inspector (Parsed/Raw/Hex of the selected message).
+- Only one session exists; multiple sessions and auto-reply templates are not available.
+- The active connection mode cannot be changed while a connection attempt is in progress, while listening, or while connected.
 
 ### Persistence
 
-- The current form state is persisted in browser storage under `simautomate:config`.
-- Persisted values are restored when the app loads.
-- Auto-response settings are updated from the UI and survive reloads through the same persistence mechanism.
+- Existing form preferences (`host`, `port`, `server-port`, `autoresponse-enabled`, `astm_ack`, `hl7_type`, `hl7_code`, `message`, `input`, `output`, `no-etb`) are persisted in browser storage under `simautomate:config`. Only fields marked `data-persist` are stored.
+- Recent endpoints are stored in browser storage under `simautomate:recent-endpoints` (max 8, deduplicated by mode + lower-cased host + port; server endpoints have no host). An endpoint is recorded only after the connection was actually established (client `connected`, server `listening`). Corrupt stored data is ignored and reported in the UI.
+- Templates are stored in `config.json` in the Tauri app config directory (`app_config_dir()`), under the root key `templates`: an array of `{ id, name, description, payload, variables: [{ name, default }] }`. Other root keys are preserved on save.
+  - Built-in templates (HL7 QRY^A19, HL7 ACK^O21, ASTM ENQ, ASTM EOT) are offered only when the file or the `templates` key is absent. They are not written until the user saves, and an empty list stays empty.
+  - A malformed config file or malformed template list is reported as an error and is never overwritten.
+  - Writes are atomic (temp file in the same directory, then rename); the directory is created when needed.
+- Templates use `{{NAME}}` variables, distinct from `<CR>`-style control tokens. `{{NOW}}` (yyyyMMddHHmmss) and `{{CONTROL_ID}}` are resolved once when the template is loaded in the composer or sent; other variables use the values entered in the editor. Unresolved variables block loading and sending. A real line break in a payload is sent as separate frames (existing `enqueue_message` behaviour), so built-in HL7 templates are single-line.
+- Unsaved template edits are protected: leaving the editor, selecting another template, or creating a new one asks to save or discard.
 
 ### Logging
 
@@ -34,14 +42,15 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend and a R
 - Server mode accepts a port and binds a listener on `0.0.0.0`.
 - The app exposes a simple mode selector for switching between client and server configuration.
 - Configuration fields are disabled while a connection is being established or while the app is connected.
-- The connection badge reflects one of four states: disconnected, connecting, connected, or error.
+- The connection badge reflects one of five states: disconnected, connecting, listening (server bound, waiting for a client), connected, or error.
 
 ### Connection
 
 - Client connect attempts use a 1 second timeout.
 - When a client connection times out, the backend retries until the connection succeeds or the attempt is interrupted.
 - A user-triggered disconnect stops the current connection cleanly and updates the status to disconnected.
-- Server mode starts a TCP listener on all interfaces and waits for a client to connect.
+- Server mode starts a TCP listener on all interfaces, emits `listening` once bound, and emits `connected` once when a client is accepted.
+- A failed or interrupted attempt releases the transport so a new attempt (including from the recent list) can start immediately.
 - The active connection owns the read/write loop until disconnect, EOF, or an error occurs.
 
 ### Messaging UI
@@ -117,6 +126,8 @@ The application includes an Autobuild helper for constructing ASTM and MLLP mess
   - `auto_build_message_cmd`
   - `update_auto_response`
   - `log_frontend`
+  - `load_templates`
+  - `save_templates`
 - Backend to frontend events:
   - `connection://status`
   - `message://stream`

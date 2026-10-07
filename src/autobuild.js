@@ -1,3 +1,5 @@
+import { showView } from "./nav.js";
+
 const { invoke } = window.__TAURI__.core;
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -28,5 +30,8 @@ function initAutobuildForm() {
     });
     autobuildOutputTextarea.value = output;
     messageTextarea.value = output;
+    messageTextarea.dispatchEvent(new Event("change", { bubbles: true }));
+    // The dialog is reachable from any view: show the composer that received the text.
+    showView("session");
   });
 }

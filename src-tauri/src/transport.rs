@@ -18,6 +18,7 @@ pub struct ConnectionManager {
     emitter: Emitter,
     auto_response: AutoResponseConfig,
     connection: Connection,
+    next_id: u64,
 }
 
 pub struct ConnectionDetails {
@@ -29,10 +30,17 @@ pub struct ConnectionDetails {
 enum Connection {
     Disconnected,
     Started {
+        /// Identifies the connection task that owns this slot.
+        id: u64,
         message_queue: SharedMessageQueue,
         shutdown_sender: Sender<()>,
         details: ConnectionDetails,
     },
+}
+
+/// A finished task may only free the manager slot if it still owns it.
+fn owns_slot(current: Option<u64>, task_id: u64) -> bool {
+    current == Some(task_id)
 }
 
 impl ConnectionManager {
@@ -41,6 +49,19 @@ impl ConnectionManager {
             emitter: emitter.clone(),
             auto_response: AutoResponseConfig::default(),
             connection: Disconnected,
+            next_id: 1,
+        }
+    }
+
+    /// Frees the slot after the connection task `id` ended (failure, EOF or disconnect),
+    /// so that a new connection attempt can be started.
+    pub fn release(&mut self, id: u64) {
+        let current = match &self.connection {
+            Connection::Started { id, .. } => Some(*id),
+            Disconnected => None,
+        };
+        if owns_slot(current, id) {
+            self.connection = Disconnected;
         }
     }
 
@@ -68,6 +89,16 @@ impl ConnectionManager {
                         };
                         self.emitter.warn(file!(), line!(), message);
                     }
+                    ConnectionStatus::Listening => {
+                        self.emitter.warn(
+                            file!(),
+                            line!(),
+                            format!(
+                                "Connect command received while already listening on {}, ignoring",
+                                details.addr
+                            ),
+                        );
+                    }
                     ConnectionStatus::Connected => {
                         let message = match details.mode {
                             ConnectionMode::Client => format!(
@@ -86,6 +117,8 @@ impl ConnectionManager {
                 return;
             }
             Disconnected => {
+                let id = self.next_id;
+                self.next_id += 1;
                 let (tx_dc, rx_dc) = tauri::async_runtime::channel(1);
                 let message_queue =
                     MessageQueue::shared(self.emitter.clone(), self.auto_response.clone());
@@ -103,6 +136,7 @@ impl ConnectionManager {
                         connection_details.mode = ConnectionMode::Client;
 
                         spawn(connect_and_read(
+                            id,
                             self.emitter.clone(),
                             addr,
                             message_queue.clone(),
@@ -116,6 +150,7 @@ impl ConnectionManager {
                         connection_details.mode = ConnectionMode::Server;
 
                         spawn(start_server(
+                            id,
                             self.emitter.clone(),
                             port,
                             message_queue.clone(),
@@ -126,6 +161,7 @@ impl ConnectionManager {
                 }
 
                 self.connection = Connection::Started {
+                    id,
                     message_queue,
                     shutdown_sender: tx_dc,
                     details: connection_details,
@@ -190,6 +226,7 @@ impl ConnectionManager {
 }
 
 async fn connect_and_read(
+    id: u64,
     emitter: Emitter,
     addr: String,
     message_queue: SharedMessageQueue,
@@ -203,7 +240,11 @@ async fn connect_and_read(
         res = loop_till_connect(&emitter, addr.clone()) => {
             match res {
                 Ok(tcp_stream) => tcp_stream,
-                Err(_) => { return (); },
+                Err(_) => {
+                    // The failure was reported (Error status): free the slot so a retry is possible.
+                    emitter.emit_disconnect(id).await;
+                    return ();
+                },
             }
         }
         _ = dc_receiver.recv() => {
@@ -213,6 +254,7 @@ async fn connect_and_read(
                 line!(),
                 "Connect attempt interrupted !",
             );
+            emitter.emit_disconnect(id).await;
             return ();
         }
     };
@@ -255,10 +297,11 @@ async fn connect_and_read(
     }
 
     let _ = writer.shutdown().await;
-    emitter.emit_disconnect().await;
+    emitter.emit_disconnect(id).await;
 }
 
 async fn start_server(
+    id: u64,
     emitter: Emitter,
     port: u16,
     message_queue: SharedMessageQueue,
@@ -273,11 +316,20 @@ async fn start_server(
     emitter.emit_status(ConnectionStatus::Connecting);
     let addr = format!("0.0.0.0:{}", port);
 
-    let stream = tokio::select! {
-        res = listen_and_accept(&emitter, addr.clone()) => {
+    let listener = tokio::select! {
+        res = TcpListener::bind(addr.clone()) => {
             match res {
-                Ok(tcp_stream) => tcp_stream,
-                Err(_) => { return (); },
+                Ok(listener) => listener,
+                Err(err) => {
+                    emitter.emit_status(ConnectionStatus::Error);
+                    emitter.error(
+                        file!(),
+                        line!(),
+                        format!("Error while starting server {}", err),
+                    );
+                    emitter.emit_disconnect(id).await;
+                    return ();
+                }
             }
         }
         _ = dc_receiver.recv() => {
@@ -287,9 +339,55 @@ async fn start_server(
                 line!(),
                 "Connect attempt interrupted !",
             );
+            emitter.emit_disconnect(id).await;
             return ();
         }
     };
+
+    // The port is really bound: only now is the server ready.
+    emitter.info(
+        file!(),
+        line!(),
+        format!("Server listening on {}, waiting for a client...", &addr),
+    );
+    status_chan.send_replace(ConnectionStatus::Listening);
+    emitter.emit_status(ConnectionStatus::Listening);
+
+    let stream = tokio::select! {
+        res = listener.accept() => {
+            match res {
+                Ok((tcp_stream, client_addr)) => {
+                    emitter.info(
+                        file!(),
+                        line!(),
+                        format!("Client connected address={}", &client_addr),
+                    );
+                    tcp_stream
+                }
+                Err(err) => {
+                    emitter.emit_status(ConnectionStatus::Error);
+                    emitter.error(
+                        file!(),
+                        line!(),
+                        format!("Error while accepting connection {}", err),
+                    );
+                    emitter.emit_disconnect(id).await;
+                    return ();
+                }
+            }
+        }
+        _ = dc_receiver.recv() => {
+            emitter.emit_status(ConnectionStatus::Disconnected);
+            emitter.info(
+                file!(),
+                line!(),
+                "Server stopped while waiting for a client",
+            );
+            emitter.emit_disconnect(id).await;
+            return ();
+        }
+    };
+    drop(listener);
 
     let peer_addr = &stream
         .peer_addr()
@@ -343,7 +441,7 @@ async fn start_server(
     }
 
     let _ = writer.shutdown().await;
-    emitter.emit_disconnect().await;
+    emitter.emit_disconnect(id).await;
 }
 
 async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream, ()> {
@@ -360,7 +458,6 @@ async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream,
 
         match result {
             Ok(Ok(tcp_stream)) => {
-                emitter.emit_status(ConnectionStatus::Connected);
                 emitter.only_log(
                     LogLevel::Inf,
                     file!(),
@@ -390,42 +487,6 @@ async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream,
         sleep(Duration::from_secs(1)).await;
         attempt += 1;
     }
-}
-
-async fn listen_and_accept(emitter: &Emitter, addr: String) -> Result<TcpStream, ()> {
-    let listener = match TcpListener::bind(addr.clone()).await {
-        Ok(listener) => Ok(listener),
-        Err(err) => {
-            emitter.emit_status(ConnectionStatus::Error);
-            emitter.error(
-                file!(),
-                line!(),
-                format!("Error while starting server {}", err),
-            );
-            Err(())
-        }
-    }?;
-    let client = match listener.accept().await {
-        Ok(client) => Ok(client),
-        Err(err) => {
-            emitter.emit_status(ConnectionStatus::Error);
-            emitter.error(
-                file!(),
-                line!(),
-                format!("Error while accepting connection {}", err),
-            );
-            Err(())
-        }
-    }?;
-
-    emitter.emit_status(ConnectionStatus::Connected);
-    emitter.info(
-        file!(),
-        line!(),
-        format!("Client connected address={}", &client.1),
-    );
-
-    return Ok(client.0);
 }
 
 async fn read_loop(
@@ -465,5 +526,19 @@ async fn send_loop(
 
         message_queue.handle_sent_message(&msg);
         sleep(Duration::from_millis(200)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::owns_slot;
+
+    #[test]
+    fn only_the_owning_task_frees_the_connection_slot() {
+        assert!(owns_slot(Some(3), 3));
+        // A stale task must not free a newer connection.
+        assert!(!owns_slot(Some(4), 3));
+        // Nothing to free once the slot is already empty.
+        assert!(!owns_slot(None, 3));
     }
 }

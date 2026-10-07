@@ -64,12 +64,22 @@ impl Emitter {
     }
 
     pub fn emit_message(&self, msg_type: MessageType, content: String) {
+        self.emit_payload(msg_type, content, None);
+    }
+
+    /// Emits a Sent/Received event that also carries the exact wire bytes.
+    pub fn emit_message_with_raw(&self, msg_type: MessageType, content: String, raw: Vec<u8>) {
+        self.emit_payload(msg_type, content, Some(raw));
+    }
+
+    fn emit_payload(&self, msg_type: MessageType, content: String, raw: Option<Vec<u8>>) {
         if let Err(err) = self.app.emit(
             MESSAGE_EVENT,
             MessagePayload {
                 content: content,
                 msg_type: msg_type,
                 timestamp: now_ts(),
+                raw,
             },
         ) {
             self.logger.log_backend(
@@ -81,10 +91,12 @@ impl Emitter {
         }
     }
 
-    pub async fn emit_disconnect(&self) {
+    /// Called by a finished connection task: frees the manager slot, but only if it
+    /// still belongs to that task (`id`), so a stale task cannot kill a newer connection.
+    pub async fn emit_disconnect(&self, id: u64) {
         let state: State<'_, Mutex<AppState>> = self.app.state();
         let mut appstate = state.lock().await;
-        appstate.connection_manager.shutdown_now();
+        appstate.connection_manager.release(id);
     }
 
     pub fn emit_notification(&self, title: &str, body: &str) {

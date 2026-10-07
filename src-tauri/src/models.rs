@@ -77,6 +77,9 @@ pub struct MessagePayload {
     pub msg_type: MessageType,
     pub content: String,
     pub timestamp: String,
+    /// Exact wire bytes of a Sent/Received event, when known. Absent for system events.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -99,6 +102,38 @@ pub struct StatusPayload {
 pub enum ConnectionStatus {
     Disconnected,
     Connecting,
+    /// Server mode only: the port is bound and the server waits for a client.
+    Listening,
     Connected,
     Error,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn listening_status_serializes_lowercase() {
+        let json = serde_json::to_string(&StatusPayload {
+            status: ConnectionStatus::Listening,
+        })
+        .unwrap();
+        assert_eq!(json, r#"{"status":"listening"}"#);
+    }
+
+    #[test]
+    fn message_payload_omits_absent_raw_and_keeps_present_raw() {
+        let mut payload = MessagePayload {
+            msg_type: MessageType::SystemInfo,
+            content: "hi".to_string(),
+            timestamp: "t".to_string(),
+            raw: None,
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(!json.contains("raw"));
+
+        payload.raw = Some(vec![0x0b, 0x41]);
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains(r#""raw":[11,65]"#));
+    }
 }

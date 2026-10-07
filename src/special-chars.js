@@ -1,4 +1,6 @@
-const { invoke } = window.__TAURI__.core;
+import { tokenPayload } from "./control-chars.js";
+import { sendMessage } from "./messages.js";
+import { logError } from "./log.js";
 
 window.addEventListener("DOMContentLoaded", init);
 
@@ -12,19 +14,19 @@ function initSpecialCharButtons() {
   const specialCharsButtons = specialCharsDiv.querySelectorAll("button");
 
   for (const button of specialCharsButtons) {
-    button.addEventListener("click", async (ev) => {
-      const charToSend = ev.target.textContent;
-      const formatted = charToSend
-        .split(".")
-        .map((ch) => `<${ch.toUpperCase()}>`)
-        .join("");
-
-      try {
-        console.log("Sending char", formatted);
-        await invoke("send_message", { payload: { message: formatted } });
-      } catch (err) {
-        console.error("Failed to send char", err);
+    button.addEventListener("click", async () => {
+      // The payload comes from data-token, never from the (decorated) label text.
+      const formatted = tokenPayload(button.dataset.token);
+      if (formatted === null) {
+        console.error("Unknown control token", button.dataset.token);
+        logError(
+          `Unknown control token on button: ${button.dataset.token}`,
+          "special-chars.js:click",
+        );
+        return;
       }
+      console.log("Sending char", formatted);
+      await sendMessage(formatted);
     });
   }
 }

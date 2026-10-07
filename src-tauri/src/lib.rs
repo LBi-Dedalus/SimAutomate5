@@ -2,6 +2,7 @@
 
 mod app_state;
 mod auto_response;
+mod config_store;
 mod emitter;
 mod logger;
 mod message_builder;
@@ -11,6 +12,7 @@ mod translate;
 mod transport;
 
 use app_state::AppState;
+use config_store::{ConfigLock, LoadedTemplates, Template};
 use logger::AppLogger;
 use message_builder::auto_build;
 use models::{
@@ -141,6 +143,35 @@ async fn log_frontend(
     Ok(())
 }
 
+#[tauri::command]
+async fn load_templates(
+    app: AppHandle,
+    lock: State<'_, ConfigLock>,
+) -> Result<LoadedTemplates, String> {
+    let _guard = lock.0.lock().await;
+    let path = resolve_config_path(&app)?;
+    config_store::load_templates_from(&path)
+}
+
+#[tauri::command]
+async fn save_templates(
+    app: AppHandle,
+    lock: State<'_, ConfigLock>,
+    templates: Vec<Template>,
+) -> Result<(), String> {
+    let _guard = lock.0.lock().await;
+    let path = resolve_config_path(&app)?;
+    config_store::save_templates_to(&path, &templates)
+}
+
+fn resolve_config_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|err| format!("Cannot resolve the config directory: {err}"))?;
+    Ok(config_store::config_path(&dir))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -157,6 +188,7 @@ pub fn run() {
             );
             let emitter = Emitter::new(handle, logger);
             app.manage(Mutex::new(AppState::new(emitter)));
+            app.manage(ConfigLock(Mutex::new(())));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -166,6 +198,8 @@ pub fn run() {
             auto_build_message_cmd,
             update_auto_response,
             log_frontend,
+            load_templates,
+            save_templates,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

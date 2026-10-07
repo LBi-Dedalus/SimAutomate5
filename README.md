@@ -6,8 +6,11 @@ SimAutomate5 is a Tauri desktop app for exchanging ASTM and HL7-style messages o
 
 - Client mode connects to a remote host and port over TCP.
 - Server mode starts a listener on `0.0.0.0` for one client connection.
-- Live connection status indicator: Disconnected, Connecting, Connected, or Error.
-- Message panel that shows sent, received, and system messages with timestamps.
+- Live connection status indicator: Disconnected, Connecting, Listening (server), Connected, or Error.
+- Labelled left navigation: Home, Session, Templates, Auto reply, Autobuild.
+- Home quick connect (Client/Server, host/port) with recent endpoints (browser storage) and template shortcuts.
+- Session view with conversation bubbles for sent, received, and system messages with timestamps, plus a docked message inspector (Parsed HL7 / Raw / Hex of the selected message; parsing is best effort per received chunk) and "Save as template".
+- Templates: list with search and an always-docked editor (create, edit, delete, `{{VARIABLES}}`, exact preview, load in composer, send). Templates are stored in `config.json` in the app config directory; built-ins are offered only when no templates have been saved yet.
 - Message composer with:
   - Send for the current full message.
   - Clear to reset the input.
@@ -31,11 +34,11 @@ SimAutomate5 is a Tauri desktop app for exchanging ASTM and HL7-style messages o
 2. Choose a mode:
    - Client: enter host and port, then connect.
    - Server: enter a port, then start the server.
-3. If needed, open the auto-response dialog and configure ASTM or HL7 response values.
-4. Type a message in the composer.
+3. If needed, open **Auto reply** in the sidebar and configure ASTM or HL7 response values.
+4. Type a message in the Session composer (or load a template).
 5. Use **Autobuild** if you want the backend to format ASTM or HL7/MLLP content.
 6. Click **Send** to transmit the message.
-7. Use **Clear** in the message panel to clear the history, or **Clear** in the composer to reset the input.
+7. Use **Clear** in the Session header to clear the conversation, or **Clear** in the composer to reset the input.
 
 ## Development Setup
 
@@ -71,6 +74,16 @@ deno task tauri build
 cd src-tauri
 cargo check
 ```
+
+### Tests
+
+```bash
+node --test tests/templates.test.js tests/recent.test.js tests/inspector.test.js
+cd src-tauri
+cargo test
+```
+
+Multiple sessions and auto-reply templates are not available yet.
 
 ### Manual socket test helpers
 

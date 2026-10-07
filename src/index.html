@@ -7,159 +7,417 @@
     <link rel="stylesheet" href="./oat.min.css" />
     <script src="./oat.min.js" defer></script>
     <link rel="stylesheet" href="./styles.css" />
+    <!-- config.js must stay first: it hydrates the persisted fields before other modules read them. -->
     <script type="module" src="./config.js" defer></script>
     <script type="module" src="./status.js" defer></script>
-    <script type="module" src="./connection-options.js" defer></script>
+    <script type="module" src="./nav.js" defer></script>
     <script type="module" src="./messages.js" defer></script>
     <script type="module" src="./connection.js" defer></script>
     <script type="module" src="./special-chars.js" defer></script>
     <script type="module" src="./autobuild.js" defer></script>
     <script type="module" src="./autoresponse.js" defer></script>
+    <script type="module" src="./templates.js" defer></script>
   </head>
   <body>
-    <header class="hstack justify-between">
-      <div>
-        <button
-          class="small semibold px-4"
-          data-variant="secondary"
-          id="client-mode"
-        >
-          Client
-        </button>
-        <button
-          class="small ghost semibold px-4"
-          data-variant="secondary"
-          id="server-mode"
-        >
-          Server
-        </button>
-      </div>
+    <div id="app">
+      <aside id="sidebar">
+        <div class="brand"><i></i>SimAutomate</div>
 
-      <span class="badge outline text-small" id="status">Disconnected</span>
-    </header>
-
-    <main class="flex">
-      <div id="connection-options">
-        <div id="client-options">
-          <div class="title py-2 px-4">
-            <span>Client - Connect to server</span>
-          </div>
-
-          <form class="vstack justify-between py-2 px-4">
-            <label>
-              Host
-              <input type="text" placeholder="localhost" name="host" required />
-            </label>
-
-            <label>
-              Port
-              <input type="number" placeholder="12345" name="port" required />
-            </label>
-
-            <button id="client-connect-btn">Connect</button>
-          </form>
-        </div>
-
-        <div id="server-options" class="hidden">
-          <div class="title py-2 px-4">
-            <span>Server - Start server</span>
-          </div>
-
-          <form class="vstack justify-between py-2 px-4">
-            <label>
-              Port
-              <input
-                type="number"
-                placeholder="12345"
-                name="server-port"
-                required
-              />
-            </label>
-
-            <button id="server-connect-btn">Start server</button>
-          </form>
-        </div>
-
-        <div id="autoresponse-options">
-          <div class="title py-2 px-4">
-            <span>Auto response</span>
-          </div>
-
-          <div class="vstack justify-between py-2 px-4">
-            <label>
-              Activate
-              <input
-                type="checkbox"
-                id="autoresponse-activate"
-                name="autoresponse-enabled"
-                role="switch"
-              />
-            </label>
-
-            <button
-              id="client-connect-btn"
-              data-variant="secondary"
-              commandfor="autoresponse"
-              command="show-modal"
-            >
-              Autoresponse options
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div id="chat" class="vstack gap-0">
-        <div class="title hstack justify-between w-100 py-2 px-4">
-          <span>Messages</span>
-          <button class="small" data-variant="secondary" id="clear-chat">
-            Clear
+        <nav id="nav" aria-label="Main">
+          <button type="button" class="nav-item on" data-view="home">
+            <b aria-hidden="true">⌂</b>Home
           </button>
+          <button type="button" class="nav-item" data-view="session">
+            <b aria-hidden="true">◉</b>Session
+          </button>
+          <button type="button" class="nav-item" data-view="templates">
+            <b aria-hidden="true">▤</b>Templates
+            <em id="templates-count" class="nav-badge hidden"></em>
+          </button>
+          <button type="button" class="nav-item" data-view="autoreply">
+            <b aria-hidden="true">↺</b>Auto reply
+            <em id="autoreply-badge" class="nav-badge hidden">ON</em>
+          </button>
+          <button
+            type="button"
+            class="nav-item"
+            commandfor="autobuild"
+            command="show-modal"
+          >
+            <b aria-hidden="true">⚒</b>Autobuild
+          </button>
+        </nav>
+
+        <h6 class="side-h"><span>Recent servers</span></h6>
+        <div id="side-recent" class="side-list"></div>
+        <p id="side-recent-empty" class="side-empty">None yet</p>
+
+        <div class="side-foot">
+          <span class="pill off" id="status" data-status-pill><i></i>Disconnected</span>
+          <span id="side-endpoint" class="side-endpoint"></span>
         </div>
+      </aside>
 
-        <div id="messages" class="vstack gap-0">
-          <div id="no-connection">
-            <span>No connection</span><br />
-            <span>Configure and connect to a server.</span>
+      <div id="views">
+        <!-- ───────────── Home ───────────── -->
+        <section id="view-home" class="view" data-view-panel="home">
+          <div class="scroll">
+           <div class="home">
+            <div class="hero">
+              <h2>Start a session</h2>
+              <p>
+                Connect to a remote system, or open a local server and wait for
+                a client.
+              </p>
+
+              <form id="connect-form" class="cbox" novalidate>
+                <div class="field">
+                  <span class="lbl">Mode</span>
+                  <div class="seg" role="group" aria-label="Mode">
+                    <button type="button" id="client-mode" class="on">
+                      Client
+                    </button>
+                    <button type="button" id="server-mode">Server</button>
+                  </div>
+                </div>
+
+                <label class="field grow" id="client-host-field">
+                  <span class="lbl">Host</span>
+                  <input
+                    type="text"
+                    placeholder="localhost"
+                    name="host"
+                    data-persist
+                    required
+                  />
+                </label>
+
+                <label class="field port" id="client-port-field">
+                  <span class="lbl">Port</span>
+                  <input
+                    type="number"
+                    placeholder="12345"
+                    name="port"
+                    data-persist
+                    required
+                  />
+                </label>
+
+                <label class="field grow hidden" id="server-port-field">
+                  <span class="lbl">Port</span>
+                  <input
+                    type="number"
+                    placeholder="12345"
+                    name="server-port"
+                    data-persist
+                  />
+                </label>
+
+                <button id="connect-btn" class="btn" type="submit" data-variant="primary">
+                  Connect
+                </button>
+              </form>
+              <p id="connect-hint" class="hint">
+                Server mode listens on all interfaces (0.0.0.0) and accepts one
+                client.
+              </p>
+              <p id="connect-error" class="inline-error hidden" role="alert"></p>
+            </div>
+
+            <div class="sh">
+              <b>Recent servers</b>
+              <button type="button" class="link-btn hidden" id="recent-clear">
+                Clear list
+              </button>
+            </div>
+            <p id="recent-note" class="inline-error hidden" role="alert"></p>
+            <p id="recent-empty" class="empty-note">
+              Endpoints you connected to (or listened on) successfully appear
+              here.
+            </p>
+            <div id="recent-list" class="cards"></div>
+
+            <div class="sh">
+              <b>Templates</b>
+              <button type="button" class="link-btn" data-nav="templates">
+                Open library →
+              </button>
+            </div>
+            <p id="home-templates-empty" class="empty-note hidden">
+              No template yet.
+            </p>
+            <div id="home-templates" class="cards"></div>
+           </div>
           </div>
-        </div>
+        </section>
 
-        <form id="message-form" class="py-2 px-4 vstack gap-2">
-          <textarea
-            type="text"
-            placeholder="Type a message..."
-            required
-            name="message"
-          ></textarea>
-          <div class="hstack gap-2 justify-end">
-            <button
-              class="small"
-              commandfor="autobuild"
-              command="show-modal"
-              type="button"
-              data-variant="secondary"
-            >
-              Autobuild
+        <!-- ───────────── Session ───────────── -->
+        <section id="view-session" class="view hidden" data-view-panel="session">
+          <header class="vh">
+            <h4>
+              <span id="session-title">No connection</span>
+              <span id="session-mode" class="mbadge hidden"></span>
+            </h4>
+            <span class="pill off" data-status-pill><i></i>Disconnected</span>
+            <span id="session-stats" class="stats hidden"></span>
+            <div class="sp"></div>
+            <button class="btn sm gh" type="button" id="clear-chat">Clear</button>
+            <button class="btn sm dg hidden" type="button" id="session-disconnect">
+              Disconnect
             </button>
-            <button class="small" data-variant="secondary" type="reset">
-              Clear
+          </header>
+
+          <div class="split">
+            <div class="convo">
+              <div id="messages">
+                <div id="no-connection" class="empty-state">
+                  <div class="es-ic" aria-hidden="true">◉</div>
+                  <b class="es-off">No connection</b>
+                  <p class="es-off">
+                    Connect to a system or start a server from Home. Messages
+                    then appear here as a conversation.
+                  </p>
+                  <button type="button" class="btn sm es-off" data-nav="home">
+                    Go to Home
+                  </button>
+                  <b class="es-on">No message yet</b>
+                  <p class="es-on">
+                    Type a message below, send a control character, or load a
+                    template.
+                  </p>
+                </div>
+              </div>
+
+              <form id="message-form" class="comp">
+                <div id="special-chars" class="ins" aria-label="Send a control character">
+                  <span class="ins-label">Send</span>
+                  <button type="button" class="kk q" data-token="ENQ" title="Send &lt;ENQ&gt; now" disabled>ENQ</button>
+                  <button type="button" class="kk q" data-token="EOT" title="Send &lt;EOT&gt; now" disabled>EOT</button>
+                  <button type="button" class="kk q" data-token="ACK" title="Send &lt;ACK&gt; now" disabled>ACK</button>
+                  <button type="button" class="kk q" data-token="NAK" title="Send &lt;NAK&gt; now" disabled>NAK</button>
+                  <button type="button" class="kk" data-token="VT" title="Send &lt;VT&gt; now" disabled>VT</button>
+                  <button type="button" class="kk" data-token="FS.CR" title="Send &lt;FS&gt;&lt;CR&gt; now" disabled>FS·CR</button>
+                  <button type="button" class="kk" data-token="CR" title="Send &lt;CR&gt; now" disabled>CR</button>
+                </div>
+                <textarea
+                  type="text"
+                  placeholder="Type a message… control characters as tokens, e.g. <VT>MSH|…<CR><FS><CR>"
+                  required
+                  name="message"
+                  data-persist
+                  spellcheck="false"
+                ></textarea>
+                <div class="cf">
+                  <span class="h">Tokens such as &lt;CR&gt; are sent as control characters.</span>
+                  <button class="btn sm gh" type="reset">Clear</button>
+                  <button
+                    class="btn sm"
+                    commandfor="autobuild"
+                    command="show-modal"
+                    type="button"
+                  >
+                    ⚒ Autobuild
+                  </button>
+                  <button class="btn p" disabled type="submit">Send ➤</button>
+                </div>
+              </form>
+            </div>
+
+            <aside id="inspector" aria-label="Message inspector">
+              <div class="ih">
+                <div class="r1">
+                  <span id="insp-dir" class="mbadge hidden"></span>
+                  <b id="insp-title">Message inspector</b>
+                </div>
+                <div id="insp-meta" class="r2"></div>
+                <div id="insp-tabs" class="itabs" role="tablist"></div>
+              </div>
+              <div id="insp-body" class="ib">
+                <p class="empty-note">
+                  Select a message in the conversation to inspect it.
+                </p>
+              </div>
+              <div class="ia">
+                <button type="button" class="btn sm" id="insp-copy" disabled>
+                  Copy
+                </button>
+                <button type="button" class="btn sm" id="insp-save-template" disabled>
+                  Save as template
+                </button>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <!-- ───────────── Templates ───────────── -->
+        <section id="view-templates" class="view hidden" data-view-panel="templates">
+          <header class="vh">
+            <h4>Templates <small id="tpl-count-label"></small></h4>
+            <div class="sp"></div>
+            <button type="button" class="btn sm p" id="tpl-new">＋ New</button>
+          </header>
+
+          <div id="tpl-banner" class="banner hidden" role="status" aria-live="polite">
+            <span id="tpl-banner-text"></span>
+            <button type="button" class="btn sm hidden" id="tpl-banner-retry">
+              Retry
             </button>
-            <button data-variant="primary" class="small" disabled type="submit">
-              Send
+            <button type="button" class="btn sm gh" id="tpl-banner-close">
+              Dismiss
             </button>
           </div>
-        </form>
-      </div>
 
-      <div id="special-chars" class="vstack">
-        <button class="small" data-variant="secondary" disabled>ENQ</button>
-        <button class="small" data-variant="secondary" disabled>EOT</button>
-        <button class="small" data-variant="secondary" disabled>VT</button>
-        <button class="small" data-variant="secondary" disabled>FS.CR</button>
-        <button class="small" data-variant="secondary" disabled>CR</button>
-        <button class="small" data-variant="secondary" disabled>ACK</button>
-        <button class="small" data-variant="secondary" disabled>NAK</button>
+          <div id="tpl-guard" class="banner warn hidden" role="alertdialog" aria-live="assertive">
+            <span id="tpl-guard-text">Unsaved changes.</span>
+            <button type="button" class="btn sm p" id="tpl-guard-save">
+              Save
+            </button>
+            <button type="button" class="btn sm" id="tpl-guard-discard">
+              Discard
+            </button>
+            <button type="button" class="btn sm gh" id="tpl-guard-cancel">
+              Cancel
+            </button>
+          </div>
+
+          <div class="split">
+            <div class="tlist">
+              <input
+                type="search"
+                id="tpl-search"
+                placeholder="⌕  Search templates"
+                autocomplete="off"
+              />
+              <div id="tpl-list" class="tcards"></div>
+              <button type="button" class="tcard new" id="tpl-new-card">
+                ＋ New template
+                <span>· or save one from a session message</span>
+              </button>
+            </div>
+
+            <section class="dock" id="tpl-editor">
+              <div id="tpl-empty" class="empty-state">
+                <div class="es-ic" aria-hidden="true">▤</div>
+                <b>No template selected</b>
+                <p>Pick a template in the list, or create a new one.</p>
+              </div>
+
+              <div id="tpl-form" class="tpl-form hidden">
+                <div class="ih">
+                  <div class="r1">
+                    <input id="tpl-name" class="title-input" type="text" placeholder="Template name" aria-label="Template name" autocomplete="off" />
+                    <span id="tpl-dirty" class="dirty hidden">● Unsaved changes</span>
+                    <span id="tpl-saved" class="saved hidden">● Saved</span>
+                  </div>
+                  <div class="r2">
+                    <span id="tpl-kind" class="tag"></span>
+                    <span id="tpl-var-count"></span>
+                    <input id="tpl-desc" class="desc-input" type="text" placeholder="Add a description…" aria-label="Description" autocomplete="off" />
+                  </div>
+                </div>
+
+                <div class="bd">
+                  <div class="col">
+                    <div class="tbar">
+                      <span>Insert</span>
+                      <button type="button" class="k" data-insert="VT">VT</button>
+                      <button type="button" class="k" data-insert="FS.CR">FS·CR</button>
+                      <button type="button" class="k" data-insert="CR">CR</button>
+                      <button type="button" class="k" data-insert="ENQ">ENQ</button>
+                      <button type="button" class="k" data-insert="EOT">EOT</button>
+                      <button type="button" class="k" data-insert="ACK">ACK</button>
+                      <button type="button" class="k" data-insert="NAK">NAK</button>
+                      <button type="button" class="k v" id="tpl-insert-var" title="Insert a {{VARIABLE}} placeholder">{{ }} variable</button>
+                      <span id="tpl-cursor" class="pos"></span>
+                    </div>
+                    <div class="ed-wrap">
+                      <div id="tpl-payload-hl" class="ed-hl" aria-hidden="true"></div>
+                      <textarea
+                        id="tpl-payload"
+                        class="code-input"
+                        spellcheck="false"
+                        placeholder="Payload, e.g. <VT>MSH|^~\&|…|{{NOW}}||QRY^A19|{{CONTROL_ID}}|P|2.4<CR><FS><CR>"
+                        aria-label="Payload"
+                      ></textarea>
+                    </div>
+
+                    <span class="lbl">Preview with current values</span>
+                    <div id="tpl-preview" class="raw"></div>
+                    <div id="tpl-validity" class="validity"></div>
+                  </div>
+
+                  <div class="vars">
+                    <span class="lbl" id="tpl-vars-label">Variables</span>
+                    <div id="tpl-vars"></div>
+                    <p class="hint">
+                      <code>{{NOW}}</code> and <code>{{CONTROL_ID}}</code> are
+                      filled in on load or send.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="ia">
+                  <button type="button" class="btn sm gh dg" id="tpl-delete">
+                    Delete
+                  </button>
+                  <span class="sp"></span>
+                  <button type="button" class="btn sm" id="tpl-load">
+                    Load in composer
+                  </button>
+                  <button type="button" class="btn sm" id="tpl-save">
+                    Save
+                  </button>
+                  <button type="button" class="btn sm p" id="tpl-send" disabled>
+                    Send now ➤
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <!-- ───────────── Auto reply ───────────── -->
+        <section id="view-autoreply" class="view hidden" data-view-panel="autoreply">
+          <header class="vh">
+            <h4>Auto reply</h4>
+          </header>
+          <div class="scroll">
+            <form id="autoresponse-form" class="card form-card">
+              <p class="sub">
+                Automatically answer incoming ASTM and HL7 messages while a
+                connection is open.
+              </p>
+              <label class="switch-row">
+                <span>Activate</span>
+                <input
+                  type="checkbox"
+                  id="autoresponse-activate"
+                  name="autoresponse-enabled"
+                  data-persist
+                  role="switch"
+                />
+              </label>
+              <label class="field">
+                <span class="lbl">ASTM ACK</span>
+                <input type="text" name="astm_ack" data-persist value="&lt;ACK&gt;" />
+              </label>
+              <label class="field">
+                <span class="lbl">HL7 Type</span>
+                <input type="text" name="hl7_type" data-persist value="ACK^O21" />
+              </label>
+              <label class="field">
+                <span class="lbl">HL7 Code</span>
+                <input type="text" name="hl7_code" data-persist value="AA" />
+              </label>
+              <div class="form-actions">
+                <button class="btn p" type="submit">Save</button>
+                <span id="autoresponse-status" class="hint" role="status"></span>
+              </div>
+            </form>
+          </div>
+        </section>
       </div>
-    </main>
+    </div>
 
     <dialog id="autobuild" closedby="any">
       <div>
@@ -171,6 +429,7 @@
               placeholder="Type a message..."
               required
               name="input"
+              data-persist
             ></textarea>
           </label>
           <label>
@@ -180,13 +439,14 @@
               placeholder="Autobuilt message will appear here"
               readonly
               name="output"
+              data-persist
             ></textarea>
           </label>
 
           <div class="hstack gap-2 py-2">
             <label>
               No ETB ?
-              <input type="checkbox" role="switch" name="no-etb" />
+              <input type="checkbox" role="switch" name="no-etb" data-persist />
             </label>
           </div>
 
@@ -205,43 +465,6 @@
             <button data-variant="primary" class="small" type="submit">
               Build and copy to input
             </button>
-          </div>
-        </form>
-      </div>
-    </dialog>
-
-    <dialog id="autoresponse" closedby="any">
-      <div>
-        <form method="dialog">
-          <div class="hstack items-start mb-2" style="flex-wrap: nowrap">
-            <div>
-              <label>
-                ASTM ACK
-                <input type="text" name="astm_ack" value="&lt;ACK&gt;" />
-              </label>
-            </div>
-            <div>
-              <label>
-                HL7 Type
-                <input type="text" name="hl7_type" value="ACK^O21" />
-              </label>
-              <label>
-                HL7 Code
-                <input type="text" name="hl7_code" value="AA" />
-              </label>
-            </div>
-          </div>
-
-          <div class="hstack gap-2 justify-end pt-2">
-            <button
-              class="outline small"
-              type="button"
-              commandfor="autoresponse"
-              command="close"
-            >
-              Close
-            </button>
-            <button class="small" type="submit">Save</button>
           </div>
         </form>
       </div>

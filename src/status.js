@@ -5,29 +5,31 @@ const STATUS_EVENT = "connection://status";
 const STATUS_LABELS = {
   disconnected: "Disconnected",
   connecting: "Connecting",
+  listening: "Listening",
   connected: "Connected",
   error: "Error",
 };
 
-const STATUS_CLASSES = {
-  disconnected: "outline",
-  connecting: "warning",
-  connected: "success",
-  error: "danger",
+// Pill modifier per status; "connected" uses the default (green) pill.
+const STATUS_PILL_CLASSES = {
+  disconnected: "off",
+  connecting: "wait",
+  listening: "wait",
+  connected: "",
+  error: "err",
 };
 
-const STATUS_VARIANTS = {
-  disconnected: "",
-  connecting: "warning",
-  connected: "success",
-  error: "danger",
-};
+// A connection attempt, a listening server or a live connection owns the forms.
+const BUSY_STATUSES = ["connecting", "listening", "connected"];
 
 window.connection_status = {
   _value: "disconnected",
   _subscribers: new Set(),
   get() {
     return this._value;
+  },
+  isBusy() {
+    return BUSY_STATUSES.includes(this._value);
   },
   set(val) {
     this._value = val;
@@ -47,11 +49,13 @@ window.addEventListener("DOMContentLoaded", async () => {
 
 function applyStatus(payload) {
   const { status } = payload;
-  const statusEl = document.getElementById("status");
+  const label = STATUS_LABELS[status] ?? status;
+  const cls = STATUS_PILL_CLASSES[status] ?? "off";
 
-  statusEl.textContent = STATUS_LABELS[status];
-  statusEl.className = "badge text-small " + STATUS_CLASSES[status];
-  statusEl.dataset.variant = STATUS_VARIANTS[status];
+  for (const pill of document.querySelectorAll("[data-status-pill]")) {
+    pill.className = cls ? `pill ${cls}` : "pill";
+    pill.replaceChildren(document.createElement("i"), document.createTextNode(label));
+  }
 
   window.connection_status.set(status);
 }
