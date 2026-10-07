@@ -8,6 +8,7 @@ mod logger;
 mod message_builder;
 mod message_queue;
 mod models;
+mod session_commands;
 mod translate;
 mod transport;
 
@@ -19,93 +20,78 @@ use models::{
     AutoBuildRequest, AutoResponseConfig, BuildResponse, ConnectRequest, FrontendLogEntry,
     LogLevel, SendRequest,
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, RunEvent, State};
 use tokio::sync::Mutex;
 
 use crate::emitter::Emitter;
 
+/// Starts connection attempt `attempt` of the session `session_id` (created on first use).
+/// The frontend chooses both, registers them before invoking, and ignores events of older attempts.
 #[tauri::command]
 async fn connect_socket(
-    _app: AppHandle,
     state: State<'_, Mutex<AppState>>,
+    session_id: String,
+    attempt: u64,
     req: ConnectRequest,
 ) -> Result<(), String> {
-    let mut state_val = state.lock().await;
-    let logger = state_val.emitter.clone();
-
-    logger.only_log(
-        LogLevel::Inf,
-        file!(),
-        line!(),
-        format!("connect requested: {:?}", req),
-    );
-
-    state_val.connection_manager.connect(req).await;
-
-    Ok(())
+    log_request(&state, "connect", &session_id).await;
+    session_commands::connect(&state, &session_id, attempt, req).await
 }
 
+/// Stops one session, which stays registered and can be reconnected.
 #[tauri::command]
 async fn disconnect_socket(
-    _app: AppHandle,
     state: State<'_, Mutex<AppState>>,
+    session_id: String,
 ) -> Result<(), String> {
-    let mut state_val = state.lock().await;
-    let logger = state_val.emitter.clone();
-    logger.only_log(LogLevel::Inf, file!(), line!(), "disconnect requested");
+    log_request(&state, "disconnect", &session_id).await;
+    session_commands::stop(&state, &session_id, false).await
+}
 
-    state_val.connection_manager.disconnect().await;
-
-    Ok(())
+/// Stops one session and forgets it.
+#[tauri::command]
+async fn close_session(
+    state: State<'_, Mutex<AppState>>,
+    session_id: String,
+) -> Result<(), String> {
+    log_request(&state, "close", &session_id).await;
+    session_commands::stop(&state, &session_id, true).await
 }
 
 #[tauri::command]
 async fn send_message(
-    _app: AppHandle,
     state: State<'_, Mutex<AppState>>,
+    session_id: String,
+    attempt: u64,
     payload: SendRequest,
 ) -> Result<(), String> {
-    let mut state_val = state.lock().await;
-    let logger = state_val.emitter.clone();
-
-    logger.only_log(
-        LogLevel::Inf,
-        file!(),
-        line!(),
-        format!("send_message requested {:?}", payload.message),
-    );
-
-    state_val
-        .connection_manager
-        .send_user_message(&payload)
-        .await;
-
-    Ok(())
+    log_request(&state, "send_message", &session_id).await;
+    session_commands::send(&state, &session_id, attempt, &payload).await
 }
 
+/// The auto-response configuration is global: it applies to every current and future session.
 #[tauri::command]
 async fn update_auto_response(
-    _app: AppHandle,
     state: State<'_, Mutex<AppState>>,
     config: AutoResponseConfig,
 ) -> Result<(), String> {
-    let mut state_val = state.lock().await;
-    let logger = state_val.emitter.clone();
-
-    logger.only_log(
+    state.lock().await.emitter.only_log(
         LogLevel::Inf,
         file!(),
         line!(),
-        format!("update_auto_response requested: {:?}", config),
+        format!("update_auto_response requested enabled={}", config.enabled),
     );
-
-    state_val.desired_auto_response = config.clone();
-    state_val
-        .connection_manager
-        .update_auto_response(config)
-        .await;
-
+    session_commands::update_auto_response(&state, config).await;
     Ok(())
+}
+
+async fn log_request(state: &Mutex<AppState>, what: &str, session_id: &str) {
+    state.lock().await.emitter.only_log(
+        LogLevel::Inf,
+        file!(),
+        line!(),
+        format!("{what} requested session={session_id}"),
+    );
 }
 
 #[tauri::command]
@@ -120,7 +106,10 @@ async fn auto_build_message_cmd(
         LogLevel::Inf,
         file!(),
         line!(),
-        format!("auto_build_message requested {:?}", req.input),
+        format!(
+            "auto_build_message requested chars={}",
+            req.input.chars().count()
+        ),
     );
     auto_build(req).map_err(|err| {
         logger.only_log(
@@ -194,6 +183,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             connect_socket,
             disconnect_socket,
+            close_session,
             send_message,
             auto_build_message_cmd,
             update_auto_response,
@@ -203,5 +193,14 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, _ev| {});
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                // Best effort and never blocking: a busy lock is released by AppState's Drop.
+                if let Some(state) = app.try_state::<Mutex<AppState>>() {
+                    if let Ok(mut state) = state.try_lock() {
+                        state.connection_manager.shutdown_now();
+                    }
+                }
+            }
+        });
 }

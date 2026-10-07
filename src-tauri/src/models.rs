@@ -74,6 +74,10 @@ pub struct BuildResponse {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MessagePayload {
+    /// Session that produced the event; the frontend must never guess it.
+    pub session_id: String,
+    /// Connection attempt of the session that produced the event.
+    pub attempt: u64,
     pub msg_type: MessageType,
     pub content: String,
     pub timestamp: String,
@@ -94,10 +98,12 @@ pub enum MessageType {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct StatusPayload {
+    pub session_id: String,
+    pub attempt: u64,
     pub status: ConnectionStatus,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConnectionStatus {
     Disconnected,
@@ -115,15 +121,22 @@ mod tests {
     #[test]
     fn listening_status_serializes_lowercase() {
         let json = serde_json::to_string(&StatusPayload {
+            session_id: "s1".to_string(),
+            attempt: 2,
             status: ConnectionStatus::Listening,
         })
         .unwrap();
-        assert_eq!(json, r#"{"status":"listening"}"#);
+        assert_eq!(
+            json,
+            r#"{"session_id":"s1","attempt":2,"status":"listening"}"#
+        );
     }
 
     #[test]
     fn message_payload_omits_absent_raw_and_keeps_present_raw() {
         let mut payload = MessagePayload {
+            session_id: "s1".to_string(),
+            attempt: 1,
             msg_type: MessageType::SystemInfo,
             content: "hi".to_string(),
             timestamp: "t".to_string(),
@@ -131,6 +144,8 @@ mod tests {
         };
         let json = serde_json::to_string(&payload).unwrap();
         assert!(!json.contains("raw"));
+        assert!(json.contains(r#""session_id":"s1""#));
+        assert!(json.contains(r#""attempt":1"#));
 
         payload.raw = Some(vec![0x0b, 0x41]);
         let json = serde_json::to_string(&payload).unwrap();

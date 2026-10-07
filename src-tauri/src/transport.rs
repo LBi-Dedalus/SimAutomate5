@@ -1,319 +1,414 @@
-use tauri::async_runtime::{spawn, Receiver, Sender};
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::watch;
+use tokio::sync::{oneshot, watch};
+use tokio::task::{AbortHandle, JoinHandle};
 use tokio::time::{sleep, timeout, Duration};
 
 use crate::emitter::Emitter;
 use crate::message_queue::{MessageQueue, SharedMessageQueue};
-use crate::models::{AutoResponseConfig, ConnectRequest, ConnectionStatus, LogLevel, SendRequest};
-use crate::transport::Connection::Disconnected;
+use crate::models::{AutoResponseConfig, ConnectRequest, ConnectionStatus, LogLevel};
 
-enum ConnectionMode {
-    Client,
-    Server,
+/// Longest a stop request waits for a connection task to release its socket.
+const STOP_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_SESSION_ID_LEN: usize = 64;
+
+/// Checks that a frontend supplied session id is usable (and safe to log).
+pub fn validate_session_id(session_id: &str) -> Result<(), String> {
+    if session_id.is_empty() || session_id.len() > MAX_SESSION_ID_LEN {
+        return Err(format!(
+            "Invalid session id: it must contain 1 to {MAX_SESSION_ID_LEN} characters"
+        ));
+    }
+    if !session_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("Invalid session id: only letters, digits, '-' and '_' are allowed".into());
+    }
+    Ok(())
 }
 
+fn is_terminal(status: ConnectionStatus) -> bool {
+    matches!(
+        status,
+        ConnectionStatus::Disconnected | ConnectionStatus::Error
+    )
+}
+
+fn status_label(status: ConnectionStatus) -> &'static str {
+    match status {
+        ConnectionStatus::Disconnected => "disconnected",
+        ConnectionStatus::Connecting => "connecting",
+        ConnectionStatus::Listening => "listening",
+        ConnectionStatus::Connected => "connected",
+        ConnectionStatus::Error => "in error",
+    }
+}
+
+/// A connection attempt that is (or was until recently) executing.
+struct Running {
+    attempt: u64,
+    message_queue: SharedMessageQueue,
+    shutdown: oneshot::Sender<()>,
+    /// Always holds the latest status; terminal statuses are published before the
+    /// matching event is emitted, so "terminal" here means all resources are released.
+    status: watch::Receiver<ConnectionStatus>,
+    join: JoinHandle<()>,
+    emitter: Emitter,
+}
+
+enum SessionState {
+    Idle,
+    Running(Running),
+    /// A stop/close is waiting for the task outside the global lock; nothing may start meanwhile.
+    Stopping,
+}
+
+struct Session {
+    /// Highest attempt number ever used; the frontend must always use a higher one.
+    last_attempt: u64,
+    state: SessionState,
+}
+
+/// Registry of the independent sessions. Every method is quick and never waits for a
+/// transport task, so the caller can keep it behind the global lock; waiting for a task
+/// to finish is done by `StopTicket::run`, outside of that lock.
 pub struct ConnectionManager {
     emitter: Emitter,
     auto_response: AutoResponseConfig,
-    connection: Connection,
-    next_id: u64,
+    sessions: HashMap<String, Session>,
 }
 
-pub struct ConnectionDetails {
-    addr: String,
-    mode: ConnectionMode,
-    status: watch::Receiver<ConnectionStatus>,
+/// Returned by `begin_stop`: tears one session down without holding the global lock.
+pub struct StopTicket {
+    session_id: String,
+    remove: bool,
+    running: Option<Running>,
 }
 
-enum Connection {
-    Disconnected,
-    Started {
-        /// Identifies the connection task that owns this slot.
-        id: u64,
-        message_queue: SharedMessageQueue,
-        shutdown_sender: Sender<()>,
-        details: ConnectionDetails,
-    },
-}
-
-/// A finished task may only free the manager slot if it still owns it.
-fn owns_slot(current: Option<u64>, task_id: u64) -> bool {
-    current == Some(task_id)
+impl StopTicket {
+    /// Signals the task and waits (bounded) until it released its socket and port.
+    pub async fn run(&mut self) {
+        let Some(mut running) = self.running.take() else {
+            return;
+        };
+        let _ = running.shutdown.send(());
+        match timeout(STOP_TIMEOUT, &mut running.join).await {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => running.emitter.error(
+                file!(),
+                line!(),
+                format!("The connection task ended abnormally: {err}"),
+            ),
+            Err(_) => {
+                running.join.abort();
+                running.emitter.error(
+                    file!(),
+                    line!(),
+                    "The connection did not stop in time and was aborted",
+                );
+            }
+        }
+    }
 }
 
 impl ConnectionManager {
     pub fn new(emitter: Emitter) -> Self {
         Self {
-            emitter: emitter.clone(),
+            emitter,
             auto_response: AutoResponseConfig::default(),
-            connection: Disconnected,
-            next_id: 1,
+            sessions: HashMap::new(),
         }
     }
 
-    /// Frees the slot after the connection task `id` ended (failure, EOF or disconnect),
-    /// so that a new connection attempt can be started.
-    pub fn release(&mut self, id: u64) {
-        let current = match &self.connection {
-            Connection::Started { id, .. } => Some(*id),
-            Disconnected => None,
+    /// Starts connection attempt `attempt` of `session_id` (creating the session on first use).
+    /// Fails, without side effects, when that session is busy or the arguments are invalid.
+    pub fn connect(
+        &mut self,
+        session_id: &str,
+        attempt: u64,
+        req: ConnectRequest,
+    ) -> Result<(), String> {
+        validate_session_id(session_id)?;
+        validate_request(&req)?;
+        if attempt == 0 {
+            return Err("Invalid attempt: it must be greater than zero".into());
+        }
+
+        if let Some(session) = self.sessions.get(session_id) {
+            match &session.state {
+                SessionState::Stopping => {
+                    return Err("This session is being stopped, try again in a moment".into())
+                }
+                SessionState::Running(running) => {
+                    let status = *running.status.borrow();
+                    if !is_terminal(status) {
+                        return Err(format!(
+                            "This session is already {}; disconnect it first",
+                            status_label(status)
+                        ));
+                    }
+                }
+                SessionState::Idle => {}
+            }
+            if attempt <= session.last_attempt {
+                return Err(format!(
+                    "Stale connection attempt {attempt} (latest is {})",
+                    session.last_attempt
+                ));
+            }
+        }
+
+        let emitter = self.emitter.scoped(session_id, attempt);
+        let message_queue = MessageQueue::shared(emitter.clone(), self.auto_response.clone());
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let (status_tx, status_rx) = watch::channel(ConnectionStatus::Connecting);
+        let join = tokio::spawn(run_connection(
+            emitter.clone(),
+            req,
+            message_queue.clone(),
+            shutdown_rx,
+            Arc::new(status_tx),
+        ));
+
+        let session = self
+            .sessions
+            .entry(session_id.to_string())
+            .or_insert(Session {
+                last_attempt: 0,
+                state: SessionState::Idle,
+            });
+        // A previous, already terminated task is simply dropped: it has nothing left to release.
+        session.last_attempt = attempt;
+        session.state = SessionState::Running(Running {
+            attempt,
+            message_queue,
+            shutdown: shutdown_tx,
+            status: status_rx,
+            join,
+            emitter,
+        });
+        Ok(())
+    }
+
+    /// Queue of the given attempt, only if it is really connected: nothing is ever buffered
+    /// for a session that is connecting, listening or disconnected.
+    pub fn send_target(
+        &self,
+        session_id: &str,
+        attempt: u64,
+    ) -> Result<SharedMessageQueue, String> {
+        validate_session_id(session_id)?;
+        let session = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| "Unknown session".to_string())?;
+        match &session.state {
+            SessionState::Running(running) if running.attempt == attempt => {
+                let status = *running.status.borrow();
+                if status == ConnectionStatus::Connected {
+                    Ok(running.message_queue.clone())
+                } else {
+                    Err(format!(
+                        "Cannot send: the session is {}, not connected",
+                        status_label(status)
+                    ))
+                }
+            }
+            SessionState::Running(_) => {
+                Err("Cannot send: this connection attempt is not the current one".into())
+            }
+            SessionState::Idle => Err("Cannot send: the session is disconnected".into()),
+            SessionState::Stopping => Err("Cannot send: the session is being stopped".into()),
+        }
+    }
+
+    /// Starts stopping a session (`remove`: close it for good). The caller must then drop the
+    /// global lock, `run` the ticket and call `finish_stop`.
+    pub fn begin_stop(&mut self, session_id: &str, remove: bool) -> Result<StopTicket, String> {
+        validate_session_id(session_id)?;
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| "Unknown session".to_string())?;
+        if matches!(session.state, SessionState::Stopping) {
+            return Err("This session is already being stopped".into());
+        }
+        let running = match std::mem::replace(&mut session.state, SessionState::Stopping) {
+            SessionState::Running(running) => Some(running),
+            _ => None,
         };
-        if owns_slot(current, id) {
-            self.connection = Disconnected;
+        Ok(StopTicket {
+            session_id: session_id.to_string(),
+            remove,
+            running,
+        })
+    }
+
+    pub fn finish_stop(&mut self, ticket: &StopTicket) {
+        if ticket.remove {
+            self.sessions.remove(&ticket.session_id);
+        } else if let Some(session) = self.sessions.get_mut(&ticket.session_id) {
+            session.state = SessionState::Idle;
         }
     }
 
-    pub async fn connect(&mut self, req: ConnectRequest) -> () {
-        match &self.connection {
-            Connection::Started { details, .. } => {
-                match *details.status.borrow() {
-                    ConnectionStatus::Disconnected | ConnectionStatus::Error => {
-                        self.emitter.error(
-                            file!(),
-                            line!(),
-                            format!("Incorrect connection state ! Try relaunching the app."),
-                        );
-                    }
-                    ConnectionStatus::Connecting => {
-                        let message = match details.mode {
-                            ConnectionMode::Client => format!(
-                                "Connect command received while connecting to {}, ignoring",
-                                details.addr
-                            ),
-                            ConnectionMode::Server => format!(
-                                "Connect command received while connecting on {}, ignoring",
-                                details.addr
-                            ),
-                        };
-                        self.emitter.warn(file!(), line!(), message);
-                    }
-                    ConnectionStatus::Listening => {
-                        self.emitter.warn(
-                            file!(),
-                            line!(),
-                            format!(
-                                "Connect command received while already listening on {}, ignoring",
-                                details.addr
-                            ),
-                        );
-                    }
-                    ConnectionStatus::Connected => {
-                        let message = match details.mode {
-                            ConnectionMode::Client => format!(
-                                "Connect command received while already connected to {}, ignoring",
-                                details.addr
-                            ),
-                            ConnectionMode::Server => format!(
-                                "Connect command received while already connected on {}, ignoring",
-                                details.addr
-                            ),
-                        };
-                        self.emitter.warn(file!(), line!(), message);
-                    }
-                }
-                self.emitter.emit_status(details.status.borrow().clone());
-                return;
-            }
-            Disconnected => {
-                let id = self.next_id;
-                self.next_id += 1;
-                let (tx_dc, rx_dc) = tauri::async_runtime::channel(1);
-                let message_queue =
-                    MessageQueue::shared(self.emitter.clone(), self.auto_response.clone());
-                let (status_tx, status_rx) = watch::channel(ConnectionStatus::Connecting);
-                let mut connection_details = ConnectionDetails {
-                    addr: "".to_string(),
-                    mode: ConnectionMode::Client,
-                    status: status_rx,
-                };
-
-                match req {
-                    ConnectRequest::ClientConnectRequest { ip, port } => {
-                        let addr = format!("{}:{}", ip, port);
-                        connection_details.addr = addr.clone();
-                        connection_details.mode = ConnectionMode::Client;
-
-                        spawn(connect_and_read(
-                            id,
-                            self.emitter.clone(),
-                            addr,
-                            message_queue.clone(),
-                            rx_dc,
-                            status_tx,
-                        ));
-                    }
-                    ConnectRequest::ServerStartRequest { port } => {
-                        let addr = format!("0.0.0.0:{}", port);
-                        connection_details.addr = addr;
-                        connection_details.mode = ConnectionMode::Server;
-
-                        spawn(start_server(
-                            id,
-                            self.emitter.clone(),
-                            port,
-                            message_queue.clone(),
-                            rx_dc,
-                            status_tx,
-                        ));
-                    }
-                }
-
-                self.connection = Connection::Started {
-                    id,
-                    message_queue,
-                    shutdown_sender: tx_dc,
-                    details: connection_details,
-                };
-            }
-        }
-    }
-
-    pub async fn send_user_message(&mut self, payload: &SendRequest) {
-        match &self.connection {
-            Disconnected => self.emitter.error(
-                file!(),
-                line!(),
-                "Could not send the message, are you connected ?",
-            ),
-            Connection::Started { message_queue, .. } => {
-                message_queue.send_user_message(payload).await;
-            }
-        }
-    }
-
+    /// The configuration is global: it is applied to every running session and to the future ones.
     pub async fn update_auto_response(&mut self, config: AutoResponseConfig) {
         self.auto_response = config.clone();
-
-        if let Connection::Started { message_queue, .. } = &self.connection {
-            message_queue.update_auto_response(config).await;
-        }
-    }
-
-    pub async fn disconnect(&mut self) {
-        self.emitter.info(file!(), line!(), "Disconnecting...");
-
-        match std::mem::replace(&mut self.connection, Disconnected) {
-            Disconnected => {
-                self.emitter
-                    .info(file!(), line!(), "No connection, disconnect successful");
-                self.emitter.emit_status(ConnectionStatus::Disconnected);
+        for session in self.sessions.values() {
+            if let SessionState::Running(running) = &session.state {
+                running
+                    .message_queue
+                    .update_auto_response(config.clone())
+                    .await;
             }
-            Connection::Started {
-                shutdown_sender, ..
-            } => match shutdown_sender.send(()).await {
-                Ok(()) => (),
-                Err(_) => {
-                    self.emitter
-                        .error(file!(), line!(), "Error while disconnecting");
-                    self.emitter.emit_status(ConnectionStatus::Error);
-                }
-            },
         }
     }
 
+    /// Best-effort, non-blocking stop of every transport (application exit).
     pub fn shutdown_now(&mut self) {
-        if let Connection::Started {
-            shutdown_sender, ..
-        } = std::mem::replace(&mut self.connection, Disconnected)
-        {
-            shutdown_sender
-                .try_send(())
-                .expect("Could not shut down the connection properly !");
+        for (_, session) in self.sessions.drain() {
+            if let SessionState::Running(running) = session.state {
+                let _ = running.shutdown.send(());
+            }
         }
     }
 }
 
-async fn connect_and_read(
-    id: u64,
-    emitter: Emitter,
-    addr: String,
-    message_queue: SharedMessageQueue,
-    mut dc_receiver: Receiver<()>,
-    status_chan: watch::Sender<ConnectionStatus>,
-) -> () {
-    emitter.info(file!(), line!(), format!("Connecting to {}...", &addr));
-    emitter.emit_status(ConnectionStatus::Connecting);
-
-    let stream = tokio::select! {
-        res = loop_till_connect(&emitter, addr.clone()) => {
-            match res {
-                Ok(tcp_stream) => tcp_stream,
-                Err(_) => {
-                    // The failure was reported (Error status): free the slot so a retry is possible.
-                    emitter.emit_disconnect(id).await;
-                    return ();
-                },
+fn validate_request(req: &ConnectRequest) -> Result<(), String> {
+    match req {
+        ConnectRequest::ClientConnectRequest { ip, port } => {
+            if ip.trim().is_empty() {
+                return Err("The host is required".into());
+            }
+            if *port == 0 {
+                return Err("The port must be between 1 and 65535".into());
             }
         }
-        _ = dc_receiver.recv() => {
-            emitter.emit_status(ConnectionStatus::Disconnected);
-            emitter.info(
+        ConnectRequest::ServerStartRequest { port } => {
+            if *port == 0 {
+                return Err("The port must be between 1 and 65535".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Aborts the wrapped task when dropped (the connection task is isolated in its own task).
+struct AbortOnDrop(AbortHandle);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// Runs one attempt to completion. It never touches the application state: its only outputs are
+/// scoped events and the watch channel, and it always ends by publishing a terminal status,
+/// whatever happens (including a panic of the transport code).
+async fn run_connection(
+    emitter: Emitter,
+    req: ConnectRequest,
+    message_queue: SharedMessageQueue,
+    shutdown: oneshot::Receiver<()>,
+    status: Arc<watch::Sender<ConnectionStatus>>,
+) {
+    emitter.emit_status(ConnectionStatus::Connecting);
+
+    let inner = tokio::spawn(connection_task(
+        emitter.clone(),
+        req,
+        message_queue,
+        shutdown,
+        status.clone(),
+    ));
+    let _guard = AbortOnDrop(inner.abort_handle());
+    let terminal = match inner.await {
+        Ok(terminal) => terminal,
+        Err(err) => {
+            emitter.error(
                 file!(),
                 line!(),
-                "Connect attempt interrupted !",
+                format!("The connection task failed unexpectedly: {err}"),
             );
-            emitter.emit_disconnect(id).await;
-            return ();
+            ConnectionStatus::Error
+        }
+    };
+    // Published first: once the frontend sees the terminal event, a reconnect is accepted.
+    status.send_replace(terminal);
+    emitter.emit_status(terminal);
+}
+
+async fn connection_task(
+    emitter: Emitter,
+    req: ConnectRequest,
+    message_queue: SharedMessageQueue,
+    mut shutdown: oneshot::Receiver<()>,
+    status: Arc<watch::Sender<ConnectionStatus>>,
+) -> ConnectionStatus {
+    match req {
+        ConnectRequest::ClientConnectRequest { ip, port } => {
+            client_task(
+                &emitter,
+                format!("{}:{}", ip.trim(), port),
+                message_queue,
+                &mut shutdown,
+                &status,
+            )
+            .await
+        }
+        ConnectRequest::ServerStartRequest { port } => {
+            server_task(&emitter, port, message_queue, &mut shutdown, &status).await
+        }
+    }
+}
+
+async fn client_task(
+    emitter: &Emitter,
+    addr: String,
+    message_queue: SharedMessageQueue,
+    shutdown: &mut oneshot::Receiver<()>,
+    status: &watch::Sender<ConnectionStatus>,
+) -> ConnectionStatus {
+    emitter.info(file!(), line!(), format!("Connecting to {}...", &addr));
+
+    let stream = tokio::select! {
+        res = loop_till_connect(emitter, addr.clone()) => {
+            match res {
+                Ok(tcp_stream) => tcp_stream,
+                Err(_) => return ConnectionStatus::Error,
+            }
+        }
+        _ = &mut *shutdown => {
+            emitter.info(file!(), line!(), "Connect attempt interrupted !");
+            return ConnectionStatus::Disconnected;
         }
     };
 
-    let (mut reader, mut writer) = stream.into_split();
     emitter.info(file!(), line!(), format!("Connected to {}...", &addr));
+    status.send_replace(ConnectionStatus::Connected);
     emitter.emit_status(ConnectionStatus::Connected);
     emitter.emit_notification("Connected", &format!("Connected to {}", &addr));
-    status_chan.send_replace(ConnectionStatus::Connected);
 
-    tokio::select! {
-        result = read_loop(&mut reader, message_queue.clone()) => {
-            if let Err(err) = result {
-                emitter.emit_status(ConnectionStatus::Error);
-                emitter.error(
-                    file!(),
-                    line!(),
-                    format!("An error occurred while reading, disconnecting: {err}"),
-                );
-            }
-        }
-        result = send_loop(&mut writer, message_queue) => {
-            if let Err(err) = result {
-                emitter.emit_status(ConnectionStatus::Error);
-                emitter.error(
-                    file!(),
-                    line!(),
-                    format!("An error occurred while writing, disconnecting: {err}"),
-                );
-            }
-        }
-        _ = dc_receiver.recv() => {
-            emitter.emit_status(ConnectionStatus::Disconnected);
-            emitter.info(
-                file!(),
-                line!(),
-                "Disconnected successfully",
-            );
-        }
-    }
-
-    let _ = writer.shutdown().await;
-    emitter.emit_disconnect(id).await;
+    run_connected(emitter, stream, message_queue, shutdown).await
 }
 
-async fn start_server(
-    id: u64,
-    emitter: Emitter,
+async fn server_task(
+    emitter: &Emitter,
     port: u16,
     message_queue: SharedMessageQueue,
-    mut dc_receiver: Receiver<()>,
-    status_chan: watch::Sender<ConnectionStatus>,
-) -> () {
+    shutdown: &mut oneshot::Receiver<()>,
+    status: &watch::Sender<ConnectionStatus>,
+) -> ConnectionStatus {
     emitter.info(
         file!(),
         line!(),
         format!("Starting server on port {}...", port),
     );
-    emitter.emit_status(ConnectionStatus::Connecting);
     let addr = format!("0.0.0.0:{}", port);
 
     let listener = tokio::select! {
@@ -321,26 +416,18 @@ async fn start_server(
             match res {
                 Ok(listener) => listener,
                 Err(err) => {
-                    emitter.emit_status(ConnectionStatus::Error);
                     emitter.error(
                         file!(),
                         line!(),
                         format!("Error while starting server {}", err),
                     );
-                    emitter.emit_disconnect(id).await;
-                    return ();
+                    return ConnectionStatus::Error;
                 }
             }
         }
-        _ = dc_receiver.recv() => {
-            emitter.emit_status(ConnectionStatus::Disconnected);
-            emitter.info(
-                file!(),
-                line!(),
-                "Connect attempt interrupted !",
-            );
-            emitter.emit_disconnect(id).await;
-            return ();
+        _ = &mut *shutdown => {
+            emitter.info(file!(), line!(), "Connect attempt interrupted !");
+            return ConnectionStatus::Disconnected;
         }
     };
 
@@ -350,7 +437,7 @@ async fn start_server(
         line!(),
         format!("Server listening on {}, waiting for a client...", &addr),
     );
-    status_chan.send_replace(ConnectionStatus::Listening);
+    status.send_replace(ConnectionStatus::Listening);
     emitter.emit_status(ConnectionStatus::Listening);
 
     let stream = tokio::select! {
@@ -365,35 +452,31 @@ async fn start_server(
                     tcp_stream
                 }
                 Err(err) => {
-                    emitter.emit_status(ConnectionStatus::Error);
                     emitter.error(
                         file!(),
                         line!(),
                         format!("Error while accepting connection {}", err),
                     );
-                    emitter.emit_disconnect(id).await;
-                    return ();
+                    return ConnectionStatus::Error;
                 }
             }
         }
-        _ = dc_receiver.recv() => {
-            emitter.emit_status(ConnectionStatus::Disconnected);
+        _ = &mut *shutdown => {
             emitter.info(
                 file!(),
                 line!(),
                 "Server stopped while waiting for a client",
             );
-            emitter.emit_disconnect(id).await;
-            return ();
+            return ConnectionStatus::Disconnected;
         }
     };
+    // Only one client is served: free the port as soon as it is accepted.
     drop(listener);
 
-    let peer_addr = &stream
+    let peer_addr = stream
         .peer_addr()
         .map(|addr| addr.to_string())
         .unwrap_or("unknown".to_string());
-    let (mut reader, mut writer) = stream.into_split();
     emitter.info(
         file!(),
         line!(),
@@ -402,46 +485,60 @@ async fn start_server(
             peer_addr, &addr
         ),
     );
+    status.send_replace(ConnectionStatus::Connected);
     emitter.emit_status(ConnectionStatus::Connected);
     emitter.emit_notification(
         "Connected",
         &format!("Accepted a connection from {} on {}", peer_addr, &addr),
     );
-    status_chan.send_replace(ConnectionStatus::Connected);
 
-    tokio::select! {
+    run_connected(emitter, stream, message_queue, shutdown).await
+}
+
+/// Exchanges data until EOF, an I/O error or a shutdown request.
+async fn run_connected(
+    emitter: &Emitter,
+    stream: TcpStream,
+    message_queue: SharedMessageQueue,
+    shutdown: &mut oneshot::Receiver<()>,
+) -> ConnectionStatus {
+    let (mut reader, mut writer) = stream.into_split();
+
+    let terminal = tokio::select! {
         result = read_loop(&mut reader, message_queue.clone()) => {
-            if let Err(err) = result {
-                emitter.emit_status(ConnectionStatus::Error);
-                emitter.error(
-                    file!(),
-                    line!(),
-                    format!("An error occurred while reading, disconnecting: {err}"),
-                );
+            match result {
+                Err(err) => {
+                    emitter.error(
+                        file!(),
+                        line!(),
+                        format!("An error occurred while reading, disconnecting: {err}"),
+                    );
+                    ConnectionStatus::Error
+                }
+                Ok(()) => ConnectionStatus::Disconnected,
             }
         }
         result = send_loop(&mut writer, message_queue) => {
-            if let Err(err) = result {
-                emitter.emit_status(ConnectionStatus::Error);
-                emitter.error(
-                    file!(),
-                    line!(),
-                    format!("An error occurred while writing, disconnecting: {err}"),
-                );
+            match result {
+                Err(err) => {
+                    emitter.error(
+                        file!(),
+                        line!(),
+                        format!("An error occurred while writing, disconnecting: {err}"),
+                    );
+                    ConnectionStatus::Error
+                }
+                Ok(()) => ConnectionStatus::Disconnected,
             }
         }
-        _ = dc_receiver.recv() => {
-            emitter.emit_status(ConnectionStatus::Disconnected);
-            emitter.info(
-                file!(),
-                line!(),
-                "Disconnected successfully",
-            );
+        _ = &mut *shutdown => {
+            emitter.info(file!(), line!(), "Disconnected successfully");
+            ConnectionStatus::Disconnected
         }
-    }
+    };
 
     let _ = writer.shutdown().await;
-    emitter.emit_disconnect(id).await;
+    terminal
 }
 
 async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream, ()> {
@@ -472,7 +569,6 @@ async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream,
                     line!(),
                     format!("Connection to {} failed: {}", &addr, err.to_string()),
                 );
-                emitter.emit_status(ConnectionStatus::Error);
                 return Err(());
             }
             Err(_err) => {
@@ -526,19 +622,5 @@ async fn send_loop(
 
         message_queue.handle_sent_message(&msg);
         sleep(Duration::from_millis(200)).await;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::owns_slot;
-
-    #[test]
-    fn only_the_owning_task_frees_the_connection_slot() {
-        assert!(owns_slot(Some(3), 3));
-        // A stale task must not free a newer connection.
-        assert!(!owns_slot(Some(4), 3));
-        // Nothing to free once the slot is already empty.
-        assert!(!owns_slot(None, 3));
     }
 }

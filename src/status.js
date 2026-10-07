@@ -1,6 +1,6 @@
-const { listen } = window.__TAURI__.event;
-
-const STATUS_EVENT = "connection://status";
+// "The" connection status as seen by the rest of the UI is the status of the SELECTED
+// session: sessions.js calls `set` whenever the selection or its status changes.
+// Background sessions keep their own status in the session store.
 
 const STATUS_LABELS = {
   disconnected: "Disconnected",
@@ -19,7 +19,7 @@ const STATUS_PILL_CLASSES = {
   error: "err",
 };
 
-// A connection attempt, a listening server or a live connection owns the forms.
+// A connection attempt, a listening server or a live connection is "busy".
 const BUSY_STATUSES = ["connecting", "listening", "connected"];
 
 window.connection_status = {
@@ -33,6 +33,7 @@ window.connection_status = {
   },
   set(val) {
     this._value = val;
+    renderPills(val);
     for (const callback of this._subscribers) {
       callback(val);
     }
@@ -43,12 +44,7 @@ window.connection_status = {
   },
 };
 
-window.addEventListener("DOMContentLoaded", async () => {
-  await listen(STATUS_EVENT, (event) => applyStatus(event.payload));
-});
-
-function applyStatus(payload) {
-  const { status } = payload;
+function renderPills(status) {
   const label = STATUS_LABELS[status] ?? status;
   const cls = STATUS_PILL_CLASSES[status] ?? "off";
 
@@ -56,6 +52,4 @@ function applyStatus(payload) {
     pill.className = cls ? `pill ${cls}` : "pill";
     pill.replaceChildren(document.createElement("i"), document.createTextNode(label));
   }
-
-  window.connection_status.set(status);
 }

@@ -543,6 +543,158 @@ button[data-variant="primary"]:hover:not(:disabled) {
   color: #64748b;
 }
 
+/* Sessions list + recent list share one scrolling area, so both stay reachable on small windows. */
+#side-lists {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-bottom: 8px;
+  /* Keeps the active row clear of the sticky "Sessions" header after scrollIntoView. */
+  scroll-padding-top: 40px;
+  scrollbar-width: thin;
+  scrollbar-color: #35566b transparent;
+}
+
+/* The Sessions heading and its "new session" action stay reachable while rows scroll. */
+#side-lists > .side-h:first-child {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ink);
+}
+
+/* Short windows (700×450): free vertical room for the lists and the composer. */
+@media (max-height: 520px) {
+  .brand {
+    padding: 8px 16px;
+  }
+
+  .nav-item {
+    padding: 4px 10px;
+  }
+
+  .side-h {
+    padding-top: 10px;
+  }
+
+  .side-foot {
+    padding: 8px 16px;
+  }
+
+  #message-form textarea {
+    min-height: 40px;
+  }
+}
+
+#side-lists .side-list {
+  overflow: visible;
+}
+
+.side-add {
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: var(--side2);
+  color: #5eead4;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.side-add:hover {
+  background: #23506a;
+}
+
+.ses-item {
+  display: flex;
+  align-items: center;
+  margin: 0 10px;
+  border-radius: 8px;
+}
+
+.ses-item:hover,
+.ses-item.on {
+  background: var(--side2);
+}
+
+.ses-item .ses {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  background: transparent;
+}
+
+.ses-item .ses i[data-st] {
+  background: #475569;
+}
+
+.ses-item .ses i[data-st="connected"] {
+  background: var(--gn);
+}
+
+.ses-item .ses i[data-st="connecting"],
+.ses-item .ses i[data-st="listening"] {
+  background: #f59e0b;
+}
+
+.ses-item .ses i[data-st="error"] {
+  background: #ef4444;
+}
+
+.ses-x {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  margin-right: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ses-x:hover {
+  background: #23506a;
+  color: #fca5a5;
+}
+
+.ub {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--tl2);
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.msgs {
+  display: contents;
+}
+
+#close-confirm {
+  max-width: 420px;
+  border: 1px solid var(--bd);
+  border-radius: 16px;
+  box-shadow: 0 20px 40px -12px rgba(15, 42, 58, 0.35);
+}
+
+#close-confirm ul {
+  margin: 8px 0 14px;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--mu);
+}
+
 .side-foot {
   margin-top: auto;
   display: flex;
@@ -1146,9 +1298,14 @@ button[data-variant="primary"]:hover:not(:disabled) {
 
 .cf {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
   padding: 0 10px 10px 12px;
+}
+
+.cf .btn {
+  flex-shrink: 0;
 }
 
 .cf .h {

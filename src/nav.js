@@ -16,12 +16,23 @@ export function currentView() {
   return current;
 }
 
-/** Shows a view; returns false when a leave guard kept the user on the current view. */
-export function showView(name, { force = false } = {}) {
-  if (name === current) return true;
+/**
+ * Shows a view; returns false when a leave guard kept the user on the current view.
+ * `onActivate` runs once the view is really shown, also when a guard deferred the
+ * navigation and the user later let it proceed (and never if the user cancelled).
+ */
+export function showView(name, { force = false, onActivate } = {}) {
+  if (name === current) {
+    onActivate?.();
+    return true;
+  }
+  const run = () => {
+    activate(name);
+    onActivate?.();
+  };
   const guard = guards.get(current);
-  if (!force && guard && !guard(() => activate(name))) return false;
-  activate(name);
+  if (!force && guard && !guard(run)) return false;
+  run();
   return true;
 }
 

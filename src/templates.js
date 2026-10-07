@@ -14,8 +14,9 @@ import {
 import { tokenPayload, splitTokens } from "./control-chars.js";
 import { describeMessage, parseHl7, stripHl7Framing } from "./inspector-core.js";
 import { showView, setLeaveGuard, currentView } from "./nav.js";
-import { sendMessage, setComposerText } from "./messages.js";
+import { sendMessage, setComposerText, activeSendTarget, activeSessionId } from "./messages.js";
 import { SAVE_AS_TEMPLATE_EVENT } from "./inspector.js";
+import { subscribeSendEligibility } from "./sessions.js";
 import { el, renderTokens } from "./render.js";
 import { logError, logInfo } from "./log.js";
 
@@ -92,8 +93,7 @@ async function init() {
     }
   });
 
-  window.connection_status.subscribe(updateSendEnabled);
-  updateSendEnabled();
+  subscribeSendEligibility(updateSendEnabled);
 
   await loadAll();
 }
@@ -416,7 +416,12 @@ function loadInComposer() {
   if (!draft) return;
   const result = resolveNow();
   if (!result.ok) return;
-  setComposerText(result.text);
+  // Captured now: the text goes to the session selected at this moment.
+  const target = activeSessionId();
+  if (!target || !setComposerText(result.text, target)) {
+    showBanner("No session is open: start one from Home, then load the template.", "error");
+    return;
+  }
   // Leaving with unsaved edits is fine here: the draft stays in the editor.
   showView("session", { force: true });
 }
@@ -425,16 +430,26 @@ async function sendNow() {
   if (!draft) return;
   const result = resolveNow();
   if (!result.ok) return;
-  if (window.connection_status.get() !== "connected") {
-    showBanner("Not connected: connect from Home to send.", "error");
+  // The target is captured before awaiting: a session switch cannot redirect the send.
+  const target = activeSendTarget();
+  if (!target) {
+    showBanner("The selected session is not connected: connect it to send.", "error");
     return;
   }
-  const ok = await sendMessage(result.text);
-  showBanner(ok ? "Template sent." : "Sending failed, see the conversation log.", ok ? "ok" : "error");
+  const ok = await sendMessage(result.text, target);
+  showBanner(
+    ok ? `Template sent to ${target.label}.` : `Sending to ${target.label} failed, see its conversation log.`,
+    ok ? "ok" : "error",
+  );
 }
 
 function updateSendEnabled() {
-  $("tpl-send").disabled = window.connection_status.get() !== "connected";
+  const target = activeSendTarget();
+  $("tpl-send").disabled = !target;
+  $("tpl-send").textContent = target ? `Send to ${target.label} ➤` : "Send now ➤";
+  $("tpl-send").title = target
+    ? `Send to the selected session (${target.label})`
+    : "Select a connected session to send";
 }
 
 // ── Editor events ───────────────────────────────────────────

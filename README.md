@@ -7,8 +7,9 @@ SimAutomate5 is a Tauri desktop app for exchanging ASTM and HL7-style messages o
 - Client mode connects to a remote host and port over TCP.
 - Server mode starts a listener on `0.0.0.0` for one client connection.
 - Live connection status indicator: Disconnected, Connecting, Listening (server), Connected, or Error.
+- Multiple simultaneous sessions (client and/or server), listed in the sidebar; each has its own conversation, counters, draft and inspector state. Sessions are runtime-only (not restored at launch).
 - Labelled left navigation: Home, Session, Templates, Auto reply, Autobuild.
-- Home quick connect (Client/Server, host/port) with recent endpoints (browser storage) and template shortcuts.
+- Home quick connect (Client/Server, host/port) always opens a new session; recent endpoints (browser storage) and template shortcuts.
 - Session view with conversation bubbles for sent, received, and system messages with timestamps, plus a docked message inspector (Parsed HL7 / Raw / Hex of the selected message; parsing is best effort per received chunk) and "Save as template".
 - Templates: list with search and an always-docked editor (create, edit, delete, `{{VARIABLES}}`, exact preview, load in composer, send). Templates are stored in `config.json` in the app config directory; built-ins are offered only when no templates have been saved yet.
 - Message composer with:
@@ -22,7 +23,7 @@ SimAutomate5 is a Tauri desktop app for exchanging ASTM and HL7-style messages o
 - Automatic response support:
   - ASTM: configurable response message.
   - HL7: configurable message type and response code.
-  - Settings are updated through the UI and stored locally.
+  - Settings are updated through the UI and stored locally. They are global: they apply to all sessions, current and future.
 - Local persistence for the current UI configuration in browser storage.
 - Structured logging to `backend.log` and `frontend.log` with size-based rotation.
 - Metadata-only traffic logging; raw protocol payload bodies are not written to the log files.
@@ -38,7 +39,8 @@ SimAutomate5 is a Tauri desktop app for exchanging ASTM and HL7-style messages o
 4. Type a message in the Session composer (or load a template).
 5. Use **Autobuild** if you want the backend to format ASTM or HL7/MLLP content.
 6. Click **Send** to transmit the message.
-7. Use **Clear** in the Session header to clear the conversation, or **Clear** in the composer to reset the input.
+7. Use **Clear** in the Session header to clear the selected conversation, or **Clear** in the composer to reset its draft.
+8. Go back to Home (or the `＋` in the sidebar) to open more sessions; switch with the Sessions list. **Disconnect** keeps a session (use **Reconnect**), **Close** removes it.
 
 ## Development Setup
 
@@ -78,12 +80,12 @@ cargo check
 ### Tests
 
 ```bash
-node --test tests/templates.test.js tests/recent.test.js tests/inspector.test.js
+node --test tests/*.test.js   # on Windows PowerShell: $f=(Get-ChildItem tests\*.test.js).FullName; node --test @f
 cd src-tauri
 cargo test
 ```
 
-Multiple sessions and auto-reply templates are not available yet.
+`cargo test` includes real loopback-socket tests for several simultaneous sessions. Auto-reply templates are not available yet.
 
 ### Manual socket test helpers
 

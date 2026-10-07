@@ -11,10 +11,32 @@ import { logError } from "./log.js";
 
 export const SAVE_AS_TEMPLATE_EVENT = "simautomate:save-as-template";
 
+// One inspected message / tab / collapsed-segments state per session: switching session
+// restores what was being inspected there and never shows another session's message.
+const states = new Map();
+let currentKey = null;
+// The state of the displayed session (a throw-away one while no session is open).
+let view = newState();
+
+function newState() {
+  return { record: null, tab: null, collapsed: new Set() };
+}
+
+function stateFor(key) {
+  if (!states.has(key)) states.set(key, newState());
+  return states.get(key);
+}
+
+// Aliases kept for the render code below.
 let record = null;
 let tab = null;
-/** Segment names the user collapsed; kept while browsing messages. */
-const collapsed = new Set();
+let collapsed = view.collapsed;
+
+function sync() {
+  record = view.record;
+  tab = view.tab;
+  collapsed = view.collapsed;
+}
 
 function available(rec) {
   const info = describeMessage(rec);
@@ -25,17 +47,41 @@ function available(rec) {
   return { info, tabs };
 }
 
-export function showInspector(rec) {
-  record = rec;
-  const { tabs } = available(rec);
-  if (!tabs.some(([id]) => id === tab)) tab = tabs[0][0];
+/** Displays the inspector state of a session (null: no session open). */
+export function activateInspector(sessionId) {
+  currentKey = sessionId;
+  view = sessionId === null ? newState() : stateFor(sessionId);
+  sync();
   render();
 }
 
-export function clearInspector() {
-  record = null;
-  tab = null;
-  render();
+/** Inspects a message of its own session; shown only if that session is displayed. */
+export function showInspector(rec) {
+  const state = stateFor(rec.session_id);
+  state.record = rec;
+  const { tabs } = available(rec);
+  if (!tabs.some(([id]) => id === state.tab)) state.tab = tabs[0][0];
+  if (rec.session_id === currentKey) {
+    view = state;
+    sync();
+    render();
+  }
+}
+
+export function clearInspector(sessionId) {
+  const state = stateFor(sessionId);
+  state.record = null;
+  state.tab = null;
+  if (sessionId === currentKey) {
+    view = state;
+    sync();
+    render();
+  }
+}
+
+/** Drops everything remembered about a closed session. */
+export function forgetInspector(sessionId) {
+  states.delete(sessionId);
 }
 
 function render() {
@@ -88,7 +134,8 @@ function render() {
     button.setAttribute("role", "tab");
     button.setAttribute("aria-selected", String(id === tab));
     button.addEventListener("click", () => {
-      tab = id;
+      view.tab = id;
+      sync();
       render();
     });
     tabsEl.appendChild(button);

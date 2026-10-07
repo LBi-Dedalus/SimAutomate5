@@ -1,6 +1,7 @@
 import { tokenPayload } from "./control-chars.js";
-import { sendMessage } from "./messages.js";
+import { sendMessage, activeSendTarget } from "./messages.js";
 import { logError } from "./log.js";
+import { subscribeSendEligibility } from "./sessions.js";
 
 window.addEventListener("DOMContentLoaded", init);
 
@@ -25,15 +26,15 @@ function initSpecialCharButtons() {
         );
         return;
       }
-      console.log("Sending char", formatted);
-      await sendMessage(formatted);
+      // Target captured at click time.
+      await sendMessage(formatted, activeSendTarget());
     });
   }
 }
 
 function unlockButtonsWhenConnected() {
-  window.connection_status.subscribe((status) => {
-    const enable = ["connected"].includes(status);
+  subscribeSendEligibility((target) => {
+    const enable = Boolean(target);
 
     const specialCharsDiv = document.getElementById("special-chars");
     const specialCharsButtons = specialCharsDiv.querySelectorAll("button");

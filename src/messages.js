@@ -1,120 +1,226 @@
 import { describeMessage, hl7Ack } from "./inspector-core.js";
-import { showInspector, clearInspector } from "./inspector.js";
+import {
+  showInspector,
+  clearInspector,
+  activateInspector,
+  forgetInspector,
+} from "./inspector.js";
 import { renderTokens, el } from "./render.js";
-import { logError } from "./log.js";
+import { sessions, store, subscribeSendEligibility } from "./sessions.js";
 
-const { listen } = window.__TAURI__.event;
-const { invoke } = window.__TAURI__.core;
+/**
+ * One conversation container per session (display: contents inside #messages): switching
+ * session swaps the container, nothing is rebuilt. Background sessions keep receiving.
+ * @type {Map<string, {container: HTMLElement, nodes: Map<number, HTMLElement>}>}
+ */
+const views = new Map();
+let composerPlaceholder = "";
 
-const MESSAGE_EVENT = "message://stream";
-const MAX_MESSAGES = 2000;
-
-let sequence = 0;
-/** @type {{record: object, node: HTMLElement}[]} */
-const entries = [];
-let selectedId = null;
-
-document.addEventListener("DOMContentLoaded", async () => {
-  initMessageForm();
-  await initChat();
-  unlockMessageInputWhenConnected();
+document.addEventListener("DOMContentLoaded", () => {
+  initComposer();
+  initConversation();
+  initSendButton();
 });
 
-/** The single send path used by the composer, control buttons and templates. */
-export async function sendMessage(message) {
-  try {
-    console.log("Sending message", message);
-    await invoke("send_message", { payload: { message } });
-    return true;
-  } catch (err) {
-    console.error("Failed to send message", err);
-    logError(`Failed to send message: ${String(err)}`, "messages.js:sendMessage");
+/** What a send would target right now (captured synchronously by the caller), or null. */
+export function activeSendTarget() {
+  return sessions.sendTarget();
+}
+
+/** Id of the selected session, or null. */
+export function activeSessionId() {
+  return store.activeId;
+}
+
+/**
+ * The single send path used by the composer, control buttons and templates.
+ * `target` is captured by the caller before any await; it defaults to the selected session.
+ * Never falls back to another session. Resolves true when the backend accepted the message.
+ */
+export async function sendMessage(message, target = sessions.sendTarget()) {
+  if (!target) {
+    const active = store.active();
+    // The failure is shown in the session it concerns, if there is one.
+    if (active) store.addLocal(active.id, "systemerror", "Cannot send: the session is not connected.");
     return false;
   }
+  const result = await sessions.send(target, message);
+  return result.ok;
 }
 
-/** Puts text in the composer (and lets the persistence layer see the change). */
-export function setComposerText(text) {
-  const textarea = document.getElementById("message-form").message;
-  textarea.value = text;
-  textarea.dispatchEvent(new Event("change", { bubbles: true }));
+/**
+ * Puts text in the composer draft of a session (default: the selected one, captured by the
+ * caller before awaiting). Returns false when that session does not exist (any more).
+ */
+export function setComposerText(text, sessionId = store.activeId) {
+  if (!sessionId) return false;
+  return store.setDraft(sessionId, text);
 }
 
-function initMessageForm() {
-  const messageForm = document.getElementById("message-form");
-  messageForm.addEventListener("submit", async (ev) => {
+function composerField() {
+  return document.getElementById("message-form").message;
+}
+
+function initComposer() {
+  const form = document.getElementById("message-form");
+  const field = composerField();
+  composerPlaceholder = field.placeholder ?? "";
+
+  // Edits belong to the session displayed when they happen.
+  const capture = () => {
+    const active = store.activeId;
+    if (active) store.setDraft(active, field.value);
+  };
+  field.addEventListener("input", capture);
+  field.addEventListener("change", capture);
+  // Reset only clears the draft of the selected session (the field has no default text).
+  form.addEventListener("reset", () => {
+    const active = store.activeId;
+    if (active) store.setDraft(active, "");
+  });
+
+  form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    await sendMessage(messageForm.message.value);
+    await sendMessage(field.value);
   });
 }
 
-async function initChat() {
-  document.getElementById("clear-chat").addEventListener("click", clearMessages);
-  await listen(MESSAGE_EVENT, (event) => appendMessage(event.payload));
-}
-
-function clearMessages() {
-  for (const { node } of entries) node.remove();
-  entries.length = 0;
-  selectedId = null;
-  clearInspector();
-  updateStats();
-  document.getElementById("no-connection").classList.remove("hidden");
-}
-
-function unlockMessageInputWhenConnected() {
-  window.connection_status.subscribe((status) => {
-    const enable = ["connected"].includes(status);
-
-    const messageForm = document.getElementById("message-form");
-    const sendButton = messageForm.querySelector('button[type="submit"]');
-    if (sendButton) {
-      sendButton.disabled = !enable;
-    }
+function initSendButton() {
+  subscribeSendEligibility((target) => {
+    const sendButton = document
+      .getElementById("message-form")
+      .querySelector('button[type="submit"]');
+    if (sendButton) sendButton.disabled = !target;
   });
 }
 
-function select(id) {
-  const entry = entries.find((item) => item.record.id === id);
-  if (!entry) return;
-  selectedId = id;
-  for (const item of entries) {
-    item.node.classList.toggle("sel", item.record.id === id);
+function initConversation() {
+  document.getElementById("clear-chat").addEventListener("click", () => {
+    const active = store.activeId;
+    if (active) store.clearMessages(active);
+  });
+  store.subscribe(onStoreEvent);
+  attachActive();
+}
+
+function onStoreEvent(event) {
+  switch (event.type) {
+    case "message":
+      onMessage(event);
+      break;
+    case "cleared":
+      views.get(event.id)?.container.replaceChildren();
+      views.get(event.id)?.nodes.clear();
+      clearInspector(event.id);
+      if (event.id === store.activeId) updateEmptyState();
+      break;
+    case "removed":
+      views.get(event.id)?.container.remove();
+      views.delete(event.id);
+      forgetInspector(event.id);
+      break;
+    case "select":
+      attachActive();
+      break;
+    case "status":
+      if (event.id === store.activeId) updateEmptyState();
+      break;
+    case "draft":
+      if (event.id === store.activeId) showDraft(event.session);
+      break;
+    case "record-selected":
+      onRecordSelected(event);
+      break;
+    default:
   }
-  showInspector(entry.record);
 }
 
-function appendMessage(payload) {
-  const record = { id: ++sequence, ...payload };
+function viewFor(session) {
+  let view = views.get(session.id);
+  if (!view) {
+    const container = el("div", "msgs");
+    container.dataset.session = session.id;
+    view = { container, nodes: new Map() };
+    views.set(session.id, view);
+    // Messages received before the view existed (should not happen) are not lost.
+    for (const record of session.records) addNode(session, view, record);
+  }
+  return view;
+}
+
+/** Displays the selected session: its conversation, draft and inspector. */
+function attachActive() {
+  const session = store.active();
+  const messagesEl = document.getElementById("messages");
+  const field = composerField();
+
+  for (const { container } of views.values()) container.remove();
+  if (session) {
+    messagesEl.appendChild(viewFor(session).container);
+  }
+  field.disabled = !session;
+  field.placeholder = session ? composerPlaceholder : "Open a session to write a message…";
+  showDraft(session);
+  activateInspector(session ? session.id : null);
+  const selected = session?.records.find((record) => record.id === session.selectedRecordId);
+  if (selected) showInspector(selected);
+  updateEmptyState();
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function showDraft(session) {
+  const field = composerField();
+  const text = session ? session.draft : "";
+  if (field.value !== text) field.value = text;
+}
+
+function updateEmptyState() {
+  const session = store.active();
+  const empty = document.getElementById("no-connection");
+  const busy = !!session && ["connecting", "listening", "connected"].includes(session.status);
+  empty.classList.toggle("hidden", !!session && session.records.length > 0);
+  empty.toggleAttribute("data-busy", busy);
+}
+
+function onRecordSelected({ session, record }) {
+  const view = views.get(session.id);
+  if (!view) return;
+  for (const [id, node] of view.nodes) node.classList.toggle("sel", record !== null && id === record.id);
+  if (record) showInspector(record);
+  else clearInspector(session.id);
+}
+
+function onMessage({ session, record, evicted }) {
+  const view = viewFor(session);
+  if (!view.nodes.has(record.id)) addNode(session, view, record);
+  for (const old of evicted) {
+    view.nodes.get(old.id)?.remove();
+    view.nodes.delete(old.id);
+    if (session.selectedRecordId === null) clearInspector(session.id);
+  }
+  if (session.id === store.activeId) {
+    updateEmptyState();
+    const messagesEl = document.getElementById("messages");
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+}
+
+function addNode(session, view, record) {
   const info = describeMessage(record);
   const node =
     info.kind === "system" ? buildSystemNode(record) : buildBubbleNode(record, info);
 
   node.tabIndex = 0;
-  node.addEventListener("click", () => select(record.id));
+  const choose = () => store.selectRecord(session.id, record.id);
+  node.addEventListener("click", choose);
   node.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter" || ev.key === " ") {
       ev.preventDefault();
-      select(record.id);
+      choose();
     }
   });
-
-  const messagesEl = document.getElementById("messages");
-  document.getElementById("no-connection").classList.add("hidden");
-
-  messagesEl.appendChild(node);
-  entries.push({ record, node });
-
-  while (entries.length > MAX_MESSAGES) {
-    const removed = entries.shift();
-    removed.node.remove();
-    if (removed.record.id === selectedId) {
-      selectedId = null;
-      clearInspector();
-    }
-  }
-  updateStats();
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  view.container.appendChild(node);
+  view.nodes.set(record.id, node);
 }
 
 function buildSystemNode(record) {
@@ -144,18 +250,6 @@ function buildBubbleNode(record, info) {
   bubble.title = record.content;
   node.appendChild(bubble);
   return node;
-}
-
-function updateStats() {
-  const stats = document.getElementById("session-stats");
-  let sent = 0;
-  let received = 0;
-  for (const { record } of entries) {
-    if (record.msg_type === "sent") sent++;
-    else if (record.msg_type === "received") received++;
-  }
-  stats.textContent = `↑ ${sent} sent · ↓ ${received} received`;
-  stats.classList.toggle("hidden", sent + received === 0);
 }
 
 function formatTime(value) {

@@ -1,11 +1,9 @@
 use crate::emitter::Emitter;
-use crate::models::AutoResponseConfig;
 use crate::transport::ConnectionManager;
 
 pub struct AppState {
     pub connection_manager: ConnectionManager,
     pub emitter: Emitter,
-    pub desired_auto_response: AutoResponseConfig,
 }
 
 impl AppState {
@@ -13,7 +11,6 @@ impl AppState {
         Self {
             connection_manager: ConnectionManager::new(emitter.clone()),
             emitter,
-            desired_auto_response: AutoResponseConfig::default(),
         }
     }
 }

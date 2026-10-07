@@ -1,10 +1,10 @@
+use std::sync::Arc;
+
 use chrono::Utc;
-use tauri::{AppHandle, Emitter as _, Manager, State};
+use tauri::{AppHandle, Emitter as _};
 use tauri_plugin_notification::NotificationExt;
-use tokio::sync::Mutex;
 
 use crate::{
-    app_state::AppState,
     logger::AppLogger,
     models::{
         ConnectionStatus, FrontendLogEntry, LogLevel, MessagePayload, MessageType, StatusPayload,
@@ -12,49 +12,149 @@ use crate::{
     },
 };
 
+/// Destination of the events produced by the connections.
+/// The application uses Tauri; tests use an in-memory sink.
+pub trait EventSink: Send + Sync {
+    fn status(&self, payload: StatusPayload) -> Result<(), String>;
+    fn message(&self, payload: MessagePayload) -> Result<(), String>;
+    fn notify(&self, title: &str, body: &str) -> Result<(), String>;
+}
+
+pub struct TauriSink {
+    app: AppHandle,
+}
+
+impl TauriSink {
+    pub fn new(app: AppHandle) -> Self {
+        Self { app }
+    }
+}
+
+impl EventSink for TauriSink {
+    fn status(&self, payload: StatusPayload) -> Result<(), String> {
+        self.app
+            .emit(STATUS_EVENT, payload)
+            .map_err(|err| err.to_string())
+    }
+
+    fn message(&self, payload: MessagePayload) -> Result<(), String> {
+        self.app
+            .emit(MESSAGE_EVENT, payload)
+            .map_err(|err| err.to_string())
+    }
+
+    fn notify(&self, title: &str, body: &str) -> Result<(), String> {
+        self.app
+            .notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show()
+            .map_err(|err| err.to_string())
+    }
+}
+
+/// Identifies who produced an event: a session and one of its connection attempts.
+#[derive(Clone, Debug)]
+struct Scope {
+    session_id: String,
+    attempt: u64,
+}
+
+/// Root emitters (no scope) only write logs: events always belong to a session,
+/// so a global log can never pollute whichever conversation happens to be selected.
 #[derive(Clone)]
 pub struct Emitter {
-    app: AppHandle,
-    logger: AppLogger,
+    sink: Arc<dyn EventSink>,
+    logger: Option<AppLogger>,
+    scope: Option<Scope>,
 }
 
 impl Emitter {
     pub fn new(app: AppHandle, logger: AppLogger) -> Self {
-        return Self { app, logger };
+        Self {
+            sink: Arc::new(TauriSink::new(app)),
+            logger: Some(logger),
+            scope: None,
+        }
+    }
+
+    /// Root emitter writing to an arbitrary sink, without a file logger.
+    #[cfg(test)]
+    pub fn with_sink(sink: Arc<dyn EventSink>) -> Self {
+        Self {
+            sink,
+            logger: None,
+            scope: None,
+        }
+    }
+
+    /// Emitter whose events carry `session_id` and `attempt`.
+    pub fn scoped(&self, session_id: &str, attempt: u64) -> Self {
+        Self {
+            sink: self.sink.clone(),
+            logger: self.logger.clone(),
+            scope: Some(Scope {
+                session_id: session_id.to_string(),
+                attempt,
+            }),
+        }
+    }
+
+    fn log(&self, level: LogLevel, file: &str, line: u32, message: String) {
+        if let Some(logger) = &self.logger {
+            match &self.scope {
+                Some(scope) => logger.log_backend(
+                    level,
+                    file,
+                    line,
+                    format!(
+                        "[session={} attempt={}] {}",
+                        scope.session_id, scope.attempt, message
+                    ),
+                ),
+                None => logger.log_backend(level, file, line, message),
+            }
+        }
     }
 
     pub fn info(&self, file: &str, line: u32, message: impl ToString) {
-        self.logger
-            .log_backend(LogLevel::Inf, file, line, message.to_string());
+        self.log(LogLevel::Inf, file, line, message.to_string());
         self.emit_message(MessageType::SystemInfo, message.to_string())
     }
 
     pub fn warn(&self, file: &str, line: u32, message: impl ToString) {
-        self.logger
-            .log_backend(LogLevel::Wrn, file, line, message.to_string());
+        self.log(LogLevel::Wrn, file, line, message.to_string());
         self.emit_message(MessageType::SystemWarn, message.to_string())
     }
 
     pub fn error(&self, file: &str, line: u32, message: impl ToString) {
-        self.logger
-            .log_backend(LogLevel::Err, file, line, message.to_string());
+        self.log(LogLevel::Err, file, line, message.to_string());
         self.emit_message(MessageType::SystemError, message.to_string())
     }
 
     pub fn only_log(&self, level: LogLevel, file: &str, line: u32, message: impl ToString) {
-        self.logger
-            .log_backend(level, file, line, message.to_string());
+        self.log(level, file, line, message.to_string());
     }
 
     pub fn log_frontend(&self, entry: &FrontendLogEntry) {
-        self.logger.log_frontend(entry);
+        if let Some(logger) = &self.logger {
+            logger.log_frontend(entry);
+        }
     }
 
     pub fn emit_status(&self, status: ConnectionStatus) {
-        let payload = StatusPayload { status };
+        let Some(scope) = &self.scope else {
+            return;
+        };
+        let payload = StatusPayload {
+            session_id: scope.session_id.clone(),
+            attempt: scope.attempt,
+            status,
+        };
 
-        if let Err(err) = self.app.emit(STATUS_EVENT, payload) {
-            self.logger.log_backend(
+        if let Err(err) = self.sink.status(payload) {
+            self.log(
                 LogLevel::Err,
                 file!(),
                 line!(),
@@ -73,16 +173,19 @@ impl Emitter {
     }
 
     fn emit_payload(&self, msg_type: MessageType, content: String, raw: Option<Vec<u8>>) {
-        if let Err(err) = self.app.emit(
-            MESSAGE_EVENT,
-            MessagePayload {
-                content: content,
-                msg_type: msg_type,
-                timestamp: now_ts(),
-                raw,
-            },
-        ) {
-            self.logger.log_backend(
+        let Some(scope) = &self.scope else {
+            return;
+        };
+        let payload = MessagePayload {
+            session_id: scope.session_id.clone(),
+            attempt: scope.attempt,
+            content,
+            msg_type,
+            timestamp: now_ts(),
+            raw,
+        };
+        if let Err(err) = self.sink.message(payload) {
+            self.log(
                 LogLevel::Err,
                 file!(),
                 line!(),
@@ -91,22 +194,16 @@ impl Emitter {
         }
     }
 
-    /// Called by a finished connection task: frees the manager slot, but only if it
-    /// still belongs to that task (`id`), so a stale task cannot kill a newer connection.
-    pub async fn emit_disconnect(&self, id: u64) {
-        let state: State<'_, Mutex<AppState>> = self.app.state();
-        let mut appstate = state.lock().await;
-        appstate.connection_manager.release(id);
-    }
-
+    /// A failing desktop notification must never abort a connection task.
     pub fn emit_notification(&self, title: &str, body: &str) {
-        self.app
-            .notification()
-            .builder()
-            .title(title)
-            .body(body)
-            .show()
-            .unwrap();
+        if let Err(err) = self.sink.notify(title, body) {
+            self.log(
+                LogLevel::Wrn,
+                file!(),
+                line!(),
+                format!("failed to show notification: {err}"),
+            );
+        }
     }
 }
 

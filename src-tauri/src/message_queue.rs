@@ -47,7 +47,11 @@ impl MessageQueue {
             LogLevel::Inf,
             file!(),
             line!(),
-            format!("sending user message={}", payload.message),
+            format!(
+                "sending user message lines={} chars={}",
+                payload.message.lines().count(),
+                payload.message.chars().count()
+            ),
         );
 
         self.enqueue_message(&payload.message).await;

@@ -11,7 +11,9 @@
     <script type="module" src="./config.js" defer></script>
     <script type="module" src="./status.js" defer></script>
     <script type="module" src="./nav.js" defer></script>
+    <script type="module" src="./sessions.js" defer></script>
     <script type="module" src="./messages.js" defer></script>
+    <script type="module" src="./session-ui.js" defer></script>
     <script type="module" src="./connection.js" defer></script>
     <script type="module" src="./special-chars.js" defer></script>
     <script type="module" src="./autobuild.js" defer></script>
@@ -48,9 +50,19 @@
           </button>
         </nav>
 
-        <h6 class="side-h"><span>Recent servers</span></h6>
-        <div id="side-recent" class="side-list"></div>
-        <p id="side-recent-empty" class="side-empty">None yet</p>
+        <div id="side-lists">
+          <h6 class="side-h">
+            <span>Sessions</span>
+            <button type="button" id="session-new" class="side-add" title="New session (go to Home)" aria-label="New session">＋</button>
+          </h6>
+          <div id="side-sessions" class="side-list"></div>
+          <p id="side-sessions-empty" class="side-empty">No session open</p>
+          <p id="sessions-note" class="side-empty hidden" role="status"></p>
+
+          <h6 class="side-h"><span>Recent servers</span></h6>
+          <div id="side-recent" class="side-list"></div>
+          <p id="side-recent-empty" class="side-empty">None yet</p>
+        </div>
 
         <div class="side-foot">
           <span class="pill off" id="status" data-status-pill><i></i>Disconnected</span>
@@ -98,6 +110,9 @@
                     type="number"
                     placeholder="12345"
                     name="port"
+                    min="1"
+                    max="65535"
+                    step="1"
                     data-persist
                     required
                   />
@@ -109,6 +124,9 @@
                     type="number"
                     placeholder="12345"
                     name="server-port"
+                    min="1"
+                    max="65535"
+                    step="1"
                     data-persist
                   />
                 </label>
@@ -162,9 +180,11 @@
             <span id="session-stats" class="stats hidden"></span>
             <div class="sp"></div>
             <button class="btn sm gh" type="button" id="clear-chat">Clear</button>
+            <button class="btn sm" type="button" id="session-reconnect">Reconnect</button>
             <button class="btn sm dg hidden" type="button" id="session-disconnect">
               Disconnect
             </button>
+            <button class="btn sm gh" type="button" id="session-close" title="Close this session">Close</button>
           </header>
 
           <div class="split">
@@ -204,7 +224,6 @@
                   placeholder="Type a message… control characters as tokens, e.g. <VT>MSH|…<CR><FS><CR>"
                   required
                   name="message"
-                  data-persist
                   spellcheck="false"
                 ></textarea>
                 <div class="cf">
@@ -387,6 +406,10 @@
                 Automatically answer incoming ASTM and HL7 messages while a
                 connection is open.
               </p>
+              <p class="hint" id="autoreply-scope">
+                These settings are global: they apply to every session, the
+                ones already open and the ones you start later.
+              </p>
               <label class="switch-row">
                 <span>Activate</span>
                 <input
@@ -449,6 +472,7 @@
               <input type="checkbox" role="switch" name="no-etb" data-persist />
             </label>
           </div>
+          <p id="autobuild-error" class="inline-error hidden" role="alert"></p>
 
           <div class="hstack gap-2 justify-end">
             <button
@@ -465,6 +489,19 @@
             <button data-variant="primary" class="small" type="submit">
               Build and copy to input
             </button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+
+    <dialog id="close-confirm" closedby="any">
+      <div>
+        <form method="dialog">
+          <h4 id="close-confirm-title">Close session?</h4>
+          <ul id="close-confirm-list"></ul>
+          <div class="hstack gap-2 justify-end">
+            <button class="outline small" type="submit" value="cancel">Keep open</button>
+            <button class="small" data-variant="danger" type="submit" value="confirm">Close session</button>
           </div>
         </form>
       </div>
