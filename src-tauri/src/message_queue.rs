@@ -132,9 +132,7 @@ impl MessageQueue {
         if state.closed {
             return;
         }
-        state
-            .pending_messages
-            .extend(message.lines().map(translate::to_bytes));
+        state.pending_messages.extend(split_message(message));
         drop(state);
         self.ready.notify_one();
     }
@@ -325,6 +323,88 @@ impl MessageQueue {
     }
 }
 
+/// Position of the first of `needles` in `text` (with the needle length).
+fn find_first(text: &str, needles: &[&str]) -> Option<(usize, usize)> {
+    needles
+        .iter()
+        .filter_map(|n| text.find(n).map(|i| (i, n.len())))
+        .min_by_key(|(i, _)| *i)
+}
+
+fn starts_mllp(text: &str) -> bool {
+    text.starts_with("<VT>") || text.starts_with('\u{0B}')
+}
+
+/// Translates `text` line by line (lines as `str::lines()` sees them: a CR is dropped only
+/// when it precedes the LF that ends the line) and concatenates the bytes, so that the line
+/// breaks are not sent and a token can never span two lines.
+fn translate_lines_joined(text: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        let (line, next) = match rest.find('\n') {
+            Some(index) => {
+                let line = &rest[..index];
+                (line.strip_suffix('\r').unwrap_or(line), &rest[index + 1..])
+            }
+            None => (rest, ""),
+        };
+        bytes.extend(translate::to_bytes(line));
+        rest = next;
+    }
+    bytes
+}
+
+/// Splits the composer text into the items written to the socket.
+///
+/// An HL7/MLLP frame (`<VT>` ... `<FS>` plus the following `<CR>`, human-readable tokens or
+/// raw bytes) is ONE item: the line breaks inside it are composer formatting and are not sent.
+/// Leading whitespace before `<VT>` is skipped; an unterminated frame runs to the end of the
+/// text. Everything else keeps the line-based behaviour (one item per line, newlines dropped),
+/// which the ASTM ENQ/STX/ACK handling relies on.
+fn split_message(message: &str) -> Vec<Vec<u8>> {
+    let mut items = Vec::new();
+    let mut rest = message;
+    while !rest.is_empty() {
+        let trimmed = rest.trim_start_matches(['\n', '\r', ' ', '\t']);
+        if starts_mllp(trimmed) {
+            let end = match find_first(trimmed, &["<FS>", "\u{1C}"]) {
+                Some((index, len)) => {
+                    let mut end = index + len;
+                    let after = &trimmed[end..];
+                    if after.starts_with("<CR>") {
+                        end += 4;
+                    } else if after.starts_with('\r') && !after.starts_with("\r\n") {
+                        end += 1;
+                    }
+                    end
+                }
+                None => trimmed.len(),
+            };
+            items.push(translate_lines_joined(&trimmed[..end]));
+            rest = &trimmed[end..];
+            // The line break that ends the frame's last line is formatting too.
+            rest = rest
+                .strip_prefix("\r\n")
+                .or_else(|| rest.strip_prefix('\n'))
+                .unwrap_or(rest);
+        } else {
+            // A CR is stripped only when it precedes the LF consumed here; a trailing CR
+            // without LF is data (as with `str::lines()`).
+            let (line, next) = match rest.find('\n') {
+                Some(index) => {
+                    let line = &rest[..index];
+                    (line.strip_suffix('\r').unwrap_or(line), &rest[index + 1..])
+                }
+                None => (rest, ""),
+            };
+            items.push(translate::to_bytes(line));
+            rest = next;
+        }
+    }
+    items
+}
+
 fn requires_ack(line: &[u8]) -> bool {
     if line.is_empty() {
         return false;
@@ -337,4 +417,170 @@ fn requires_ack(line: &[u8]) -> bool {
 /// for the ACK of our own transmission.
 fn is_control_reply(frame: &[u8]) -> bool {
     frame == [ControlToken::ACK as u8] || frame == [ControlToken::NAK as u8]
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use tokio::time::timeout;
+
+    use super::*;
+    use crate::models::{MessagePayload, StatusPayload};
+
+    struct NoSink;
+
+    impl crate::emitter::EventSink for NoSink {
+        fn status(&self, _: StatusPayload) -> Result<(), String> {
+            Ok(())
+        }
+        fn message(&self, _: MessagePayload) -> Result<(), String> {
+            Ok(())
+        }
+        fn notify(&self, _: &str, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    fn queue() -> SharedMessageQueue {
+        MessageQueue::shared(
+            Emitter::with_sink(Arc::new(NoSink)),
+            Arc::new(RuleSet::disabled()),
+        )
+    }
+
+    const AUTOBUILD: &str = "<VT>\nMSH|^~\\&|A|B<CR>\nPID|1||123<CR>\n<FS><CR>";
+    const AUTOBUILD_BYTES: &[u8] = b"\x0bMSH|^~\\&|A|B\rPID|1||123\r\x1c\r";
+
+    #[test]
+    fn autobuild_hl7_is_one_item_with_exact_bytes() {
+        assert_eq!(split_message(AUTOBUILD), vec![AUTOBUILD_BYTES.to_vec()]);
+    }
+
+    #[test]
+    fn hl7_tolerates_crlf_trailing_newline_and_leading_whitespace() {
+        let crlf = format!("\r\n  {}\r\n", AUTOBUILD.replace('\n', "\r\n"));
+        assert_eq!(split_message(&crlf), vec![AUTOBUILD_BYTES.to_vec()]);
+        let lf = format!("\n\n{AUTOBUILD}\n");
+        assert_eq!(split_message(&lf), vec![AUTOBUILD_BYTES.to_vec()]);
+    }
+
+    #[test]
+    fn hl7_with_raw_control_bytes_is_one_item() {
+        let text = "\u{0B}MSH|A\r\nPID|1\r\u{1C}\r";
+        assert_eq!(
+            split_message(text),
+            vec![b"\x0bMSH|APID|1\r\x1c\r".to_vec()]
+        );
+    }
+
+    #[test]
+    fn two_frames_are_two_items() {
+        let text = format!("{AUTOBUILD}\n{AUTOBUILD}\n");
+        assert_eq!(
+            split_message(&text),
+            vec![AUTOBUILD_BYTES.to_vec(), AUTOBUILD_BYTES.to_vec()]
+        );
+    }
+
+    #[test]
+    fn unterminated_frame_is_sent_as_one_item() {
+        assert_eq!(
+            split_message("<VT>\nMSH|A<CR>\nPID|1<CR>\n"),
+            vec![b"\x0bMSH|A\rPID|1\r".to_vec()]
+        );
+    }
+
+    #[test]
+    fn frame_without_trailing_cr_ends_at_fs() {
+        assert_eq!(
+            split_message("<VT>MSH|A<CR><FS>\nplain"),
+            vec![b"\x0bMSH|A\r\x1c".to_vec(), b"plain".to_vec()]
+        );
+    }
+
+    #[test]
+    fn text_outside_frames_stays_line_based() {
+        assert_eq!(
+            split_message(&format!("one\r\ntwo\n\n  {AUTOBUILD}\nthree")),
+            vec![
+                b"one".to_vec(),
+                b"two".to_vec(),
+                AUTOBUILD_BYTES.to_vec(),
+                b"three".to_vec()
+            ]
+        );
+    }
+
+    #[test]
+    fn astm_and_plain_text_stay_one_item_per_line() {
+        assert_eq!(
+            split_message("<ENQ>\n<STX>1H|\\^&<CR><ETX>00<CR><LF>\n<EOT>"),
+            vec![vec![0x05], b"\x021H|\\^&\r\x0300\r\n".to_vec(), vec![0x04]]
+        );
+        assert_eq!(split_message("a\nb\n"), vec![b"a".to_vec(), b"b".to_vec()]);
+        assert!(split_message("").is_empty());
+    }
+
+    #[test]
+    fn tokens_split_across_lines_are_not_joined_into_tokens() {
+        let expected = vec![b"\x0bMSH|A<CR>\r\x1c\r".to_vec()];
+        assert_eq!(split_message("<VT>MSH|A<C\nR><CR><FS><CR>"), expected);
+        assert_eq!(split_message("<VT>MSH|A<C\r\nR><CR><FS><CR>"), expected);
+    }
+
+    #[test]
+    fn lone_terminal_cr_is_data() {
+        assert_eq!(split_message("plain\r"), vec![b"plain\r".to_vec()]);
+        assert_eq!(split_message("\r"), vec![vec![0x0d]]);
+        assert_eq!(split_message("a\r\n\r"), vec![b"a".to_vec(), vec![0x0d]]);
+        assert_eq!(
+            split_message("<STX>1H|<CR>\r"),
+            vec![b"\x021H|\r\r".to_vec()]
+        );
+        assert_eq!(split_message("<ENQ>\r"), vec![vec![0x05, 0x0d]]);
+    }
+
+    #[test]
+    fn non_hl7_text_matches_per_line_translation() {
+        let atoms = [
+            "a", "<CR>", "<C", "R>", "\r", "\n", "\r\n", " ", "<ENQ>", "x|y",
+        ];
+        let mut seed = 12345u32;
+        for _ in 0..500 {
+            let mut text = String::new();
+            for _ in 0..8 {
+                seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+                text.push_str(atoms[(seed >> 16) as usize % atoms.len()]);
+            }
+            let old: Vec<Vec<u8>> = text.lines().map(translate::to_bytes).collect();
+            assert_eq!(split_message(&text), old, "{text:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn hl7_frame_is_released_in_one_piece_without_waiting_for_ack() {
+        let queue = queue();
+        queue
+            .enqueue_message(&format!("{AUTOBUILD}\n{AUTOBUILD}"))
+            .await;
+        for _ in 0..2 {
+            let item = timeout(Duration::from_millis(200), queue.recv())
+                .await
+                .expect("frame released");
+            assert_eq!(item, AUTOBUILD_BYTES);
+        }
+    }
+
+    #[tokio::test]
+    async fn astm_items_still_wait_for_ack() {
+        let queue = queue();
+        queue.enqueue_message("<ENQ>\nsecond").await;
+        assert_eq!(queue.recv().await, vec![0x05]);
+        assert!(timeout(Duration::from_millis(100), queue.recv())
+            .await
+            .is_err());
+        queue.handle_frame(FrameEvent::Ack).await;
+        assert_eq!(queue.recv().await, b"second".to_vec());
+    }
 }

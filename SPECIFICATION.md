@@ -28,7 +28,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend and a R
   - Built-in templates (HL7 QRY^A19, HL7 ACK^O21, ASTM ENQ, ASTM EOT) are offered only when the file or the `templates` key is absent. They are not written until the user saves, and an empty list stays empty.
   - A malformed config file or malformed template list is reported as an error and is never overwritten.
   - Writes are atomic (temp file in the same directory, then rename); the directory is created when needed.
-- Templates use `{{NAME}}` variables, distinct from `<CR>`-style control tokens. `{{NOW}}` (yyyyMMddHHmmss) and `{{CONTROL_ID}}` are resolved once when the template is loaded in the composer or sent; other variables use the values entered in the editor. Unresolved variables block loading and sending. A real line break in a payload is sent as separate frames (existing `enqueue_message` behaviour), so built-in HL7 templates are single-line.
+- Templates use `{{NAME}}` variables, distinct from `<CR>`-style control tokens. `{{NOW}}` (yyyyMMddHHmmss) and `{{CONTROL_ID}}` are resolved once when the template is loaded in the composer or sent; other variables use the values entered in the editor. Unresolved variables block loading and sending. A real line break in a payload outside an HL7/MLLP frame is sent as separate writes (`enqueue_message` splits it); an HL7/MLLP frame (`<VT>` … `<FS>` plus a following `<CR>`) is always one write, see Messages.
 - Unsaved template edits are protected: leaving the editor, selecting another template, or creating a new one asks to save or discard.
 
 ### Logging
@@ -163,6 +163,7 @@ The application includes an Autobuild helper for constructing ASTM and MLLP mess
 ## Message Format and Protocol Support
 
 - Messages are plain text and may contain multiple lines.
+- Sending: text is split into queue items, each written to the socket separately (paced by the transport). When the text, after leading whitespace, starts with `<VT>` (or byte 0x0B), the whole frame up to `<FS>` plus a following `<CR>` is ONE item (one write, one log entry) and its composer line breaks (LF/CRLF) are not transmitted; several frames give one item each; an unterminated frame is sent as one item up to the end of the text. Any other text keeps one item per line (newlines dropped), so ASTM `<ENQ>`/`<STX>` items still wait for the peer's ACK.
 - The app must support special characters such as `<ENQ>`, `<EOT>`, `<VT>`, `<FS>`, `<STX>`, `<ETX>`, `<ETB>`, `<CR>`, `<LF>`, `<ACK>`, and `<NAK>`.
 - The backend translates between human-readable token strings and their corresponding control characters for sending and display.
 - Message display uses human-readable token strings rather than raw binary control bytes.
