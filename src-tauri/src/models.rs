@@ -43,25 +43,6 @@ pub struct SendRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AutoResponseConfig {
-    pub enabled: bool,
-    pub astm_message: Option<String>,
-    pub hl7_message_type: Option<String>,
-    pub hl7_response_code: Option<String>,
-}
-
-impl AutoResponseConfig {
-    pub const fn default() -> Self {
-        AutoResponseConfig {
-            enabled: false,
-            astm_message: None,
-            hl7_message_type: None,
-            hl7_response_code: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoBuildRequest {
     pub input: String,
     pub no_etb: bool,

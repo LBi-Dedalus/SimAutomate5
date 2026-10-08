@@ -11,9 +11,17 @@ export async function buildForTarget(deps, input, noEtb, { deliver }) {
     req: { input, no_etb: noEtb },
   });
   if (!deliver) return { output, target, delivered: false, error: null };
+  return { output, target, ...deliverToTarget(deps, output, target) };
+}
+
+/**
+ * Copies already built text to the composer draft of `target` (the session captured by the
+ * caller, defaults to the active one right now). No build happens.
+ * Returns { delivered, target, error }.
+ */
+export function deliverToTarget(deps, output, target = deps.activeId()) {
   if (!target) {
     return {
-      output,
       target,
       delivered: false,
       error: "No session is open: the message was built but not copied. Start a session first.",
@@ -21,11 +29,10 @@ export async function buildForTarget(deps, input, noEtb, { deliver }) {
   }
   if (!deps.hasSession(target) || !deps.setDraft(target, output)) {
     return {
-      output,
       target,
       delivered: false,
       error: "The session this message was built for has been closed: nothing was copied.",
     };
   }
-  return { output, target, delivered: true, error: null };
+  return { target, delivered: true, error: null };
 }

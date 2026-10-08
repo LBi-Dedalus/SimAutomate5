@@ -451,3 +451,38 @@ test("failed delete re-enables Save/Delete and a retry succeeds", async () => {
   assert.equal(form().hidden, true);
   assert.equal(cardNamed("Beta"), undefined);
 });
+
+test("the saved-template store only follows confirmed load / save / delete results", async () => {
+  const { getSavedTemplates } = await import("../src/template-store.js");
+  await boot();
+  assert.deepEqual(getSavedTemplates().map((t) => t.id), ["a", "b"], "published after load");
+
+  open("Beta");
+  getNode("tpl-name").type("Beta edited");
+  assert.equal(getSavedTemplates().find((t) => t.id === "b").name, "Beta", "drafts are never published");
+
+  ipc.handler = async () => {
+    throw "refused: would break the auto reply rule";
+  };
+  getNode("tpl-save").fire("click");
+  await tick();
+  assert.equal(getSavedTemplates().find((t) => t.id === "b").name, "Beta", "failed save publishes nothing");
+  assert.match(getNode("tpl-banner-text").textContent, /would break the auto reply rule/);
+
+  ipc.handler = async () => undefined;
+  getNode("tpl-save").fire("click");
+  await tick();
+  assert.equal(getSavedTemplates().find((t) => t.id === "b").name, "Beta edited", "published after save");
+
+  getNode("tpl-delete").fire("click");
+  getNode("tpl-delete").fire("click");
+  await tick();
+  assert.deepEqual(getSavedTemplates().map((t) => t.id), ["a"], "published after delete");
+
+  ipc.handler = async () => {
+    throw "boom";
+  };
+  getNode("tpl-banner-retry").fire("click");
+  await tick();
+  assert.equal(getSavedTemplates(), null, "unknown library after a failed load");
+});

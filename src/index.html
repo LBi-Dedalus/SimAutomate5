@@ -17,7 +17,7 @@
     <script type="module" src="./connection.js" defer></script>
     <script type="module" src="./special-chars.js" defer></script>
     <script type="module" src="./autobuild.js" defer></script>
-    <script type="module" src="./autoresponse.js" defer></script>
+    <script type="module" src="./autoreply.js" defer></script>
     <script type="module" src="./templates.js" defer></script>
   </head>
   <body>
@@ -40,12 +40,7 @@
             <b aria-hidden="true">↺</b>Auto reply
             <em id="autoreply-badge" class="nav-badge hidden">ON</em>
           </button>
-          <button
-            type="button"
-            class="nav-item"
-            commandfor="autobuild"
-            command="show-modal"
-          >
+          <button type="button" class="nav-item" data-view="autobuild">
             <b aria-hidden="true">⚒</b>Autobuild
           </button>
         </nav>
@@ -229,12 +224,7 @@
                 <div class="cf">
                   <span class="h">Tokens such as &lt;CR&gt; are sent as control characters.</span>
                   <button class="btn sm gh" type="reset">Clear</button>
-                  <button
-                    class="btn sm"
-                    commandfor="autobuild"
-                    command="show-modal"
-                    type="button"
-                  >
+                  <button class="btn sm" data-nav="autobuild" type="button">
                     ⚒ Autobuild
                   </button>
                   <button class="btn p" disabled type="submit">Send ➤</button>
@@ -398,101 +388,251 @@
         <!-- ───────────── Auto reply ───────────── -->
         <section id="view-autoreply" class="view hidden" data-view-panel="autoreply">
           <header class="vh">
-            <h4>Auto reply</h4>
+            <h4>
+              <span>Auto reply</span>
+              <small>Global rules · every session, open or future</small>
+            </h4>
+            <div class="sp"></div>
+            <span id="ar-dirty" class="dirty hidden">● Unsaved changes</span>
+            <span id="ar-saved" class="saved hidden">Saved</span>
+            <button type="button" class="btn sm" id="ar-discard" disabled>Discard</button>
+            <button type="button" class="btn sm p" id="ar-save" disabled>Save rules</button>
+            <label class="ar-master" title="Applied immediately; it does not save the rules you are editing">
+              <span>Enabled</span>
+              <input type="checkbox" id="ar-enabled" role="switch" disabled />
+            </label>
           </header>
-          <div class="scroll">
-            <form id="autoresponse-form" class="card form-card">
-              <p class="sub">
-                Automatically answer incoming ASTM and HL7 messages while a
-                connection is open.
+
+          <div id="ar-banner" class="banner hidden" role="status" aria-live="polite">
+            <span id="ar-banner-text"></span>
+            <button type="button" class="btn sm hidden" id="ar-banner-retry">Retry</button>
+            <button type="button" class="btn sm gh" id="ar-banner-close">Dismiss</button>
+          </div>
+
+          <div id="ar-guard" class="banner warn hidden" role="alertdialog" aria-live="assertive">
+            <span>Unsaved auto reply rules.</span>
+            <button type="button" class="btn sm p" id="ar-guard-save">Save</button>
+            <button type="button" class="btn sm dg" id="ar-guard-discard">Discard</button>
+            <button type="button" class="btn sm" id="ar-guard-cancel">Cancel</button>
+          </div>
+
+          <div class="ar-body">
+            <div class="ar-main scroll">
+              <section class="card ar-card" aria-labelledby="ar-title">
+                <div class="ar-head">
+                  <h6 id="ar-title">Rules</h6>
+                  <span class="hint" id="ar-count"></span>
+                  <div class="sp"></div>
+                  <button type="button" class="btn sm p" id="ar-add" disabled>＋ Add rule</button>
+                </div>
+                <p class="hint ar-intro">
+                  The first enabled rule whose trigger and condition match a
+                  complete incoming message applies its action: it sends its reply, or
+                  suppresses any reply (No auto reply) and stops lower rules.
+                  Nothing matching means no reply: there is no default acknowledgement.
+                </p>
+                <div class="ar-table" id="ar-table" role="list">
+                  <div class="ar-row ar-th" role="presentation">
+                    <span>On</span>
+                    <span>When receiving</span>
+                    <span>Condition</span>
+                    <span>Reply with</span>
+                    <span>Delay</span>
+                    <span></span>
+                  </div>
+                  <div id="ar-list" class="ar-list"></div>
+                </div>
+                <p class="empty-note hidden" id="ar-empty">
+                  No rule yet. Add one to answer incoming messages automatically.
+                </p>
+              </section>
+            </div>
+
+            <aside class="ar-dock" id="ar-dock" aria-label="Rule editor">
+              <p class="empty-note" id="ar-dock-empty">Select a rule to edit it.</p>
+              <form class="ar-form hidden" id="ar-form" autocomplete="off" novalidate>
+                <div class="ar-form-head">
+                  <h6>Rule details</h6>
+                  <label class="ar-inline">
+                    <input type="checkbox" id="ar-rule-enabled" />
+                    <span>Enabled</span>
+                  </label>
+                </div>
+                <ul class="ar-errors hidden" id="ar-errors" role="alert"></ul>
+                <label class="field">
+                  <span class="lbl">Name</span>
+                  <input type="text" id="ar-name" maxlength="100" />
+                </label>
+
+                <fieldset class="ar-set">
+                  <legend>When receiving</legend>
+                  <label class="field">
+                    <span class="lbl">Trigger</span>
+                    <select id="ar-trigger">
+                      <option value="hl7">HL7 message</option>
+                      <option value="astm_frame">ASTM frame</option>
+                      <option value="astm_enq">ASTM ENQ</option>
+                    </select>
+                  </label>
+                  <div id="ar-hl7-fields">
+                    <label class="field">
+                      <span class="lbl">Message type (MSH-9)</span>
+                      <input type="text" id="ar-type" placeholder="QRY^A19 or ORU^* or *" />
+                    </label>
+                    <label class="ar-inline">
+                      <input type="checkbox" id="ar-cond-use" />
+                      <span>Only when a field matches</span>
+                    </label>
+                    <div id="ar-cond-fields" class="ar-cond">
+                      <label class="field">
+                        <span class="lbl">Segment</span>
+                        <input type="text" id="ar-cond-seg" placeholder="QRD" maxlength="3" />
+                      </label>
+                      <label class="field">
+                        <span class="lbl">Field</span>
+                        <input type="number" id="ar-cond-field" min="1" max="999" placeholder="8" />
+                      </label>
+                      <label class="field">
+                        <span class="lbl">Operator</span>
+                        <select id="ar-cond-op">
+                          <option value="exact">equals</option>
+                          <option value="glob">matches *</option>
+                        </select>
+                      </label>
+                      <label class="field ar-wide">
+                        <span class="lbl">Value</span>
+                        <input type="text" id="ar-cond-value" placeholder="AAZ*" />
+                      </label>
+                    </div>
+                  </div>
+                </fieldset>
+
+                <fieldset class="ar-set">
+                  <legend>Reply with</legend>
+                  <label class="field">
+                    <span class="lbl">Action</span>
+                    <select id="ar-action">
+                      <option value="template">Saved template</option>
+                      <option value="literal">Literal text</option>
+                      <option value="hl7_ack">Generated HL7 acknowledgement</option>
+                      <option value="none">No auto reply</option>
+                    </select>
+                  </label>
+                  <div id="ar-act-template">
+                    <label class="field">
+                      <span class="lbl">Template (from the Templates library)</span>
+                      <select id="ar-template"></select>
+                    </label>
+                    <div class="ar-preview" id="ar-preview-box">
+                      <span class="lbl">Preview (read-only, nothing is sent)</span>
+                      <pre id="ar-preview" class="raw"></pre>
+                      <ul id="ar-vars" class="ar-vars"></ul>
+                    </div>
+                  </div>
+                  <div id="ar-act-literal" class="hidden">
+                    <label class="field">
+                      <span class="lbl">Response</span>
+                      <textarea id="ar-literal" rows="3" placeholder="&lt;ACK&gt;"></textarea>
+                    </label>
+                  </div>
+                  <div id="ar-act-ack" class="hidden ar-cond">
+                    <label class="field">
+                      <span class="lbl">Type (MSH-9)</span>
+                      <input type="text" id="ar-ack-type" placeholder="ACK^O21" />
+                    </label>
+                    <label class="field">
+                      <span class="lbl">Code (MSA-1)</span>
+                      <input type="text" id="ar-ack-code" maxlength="2" placeholder="AA" />
+                    </label>
+                  </div>
+                  <p id="ar-act-none" class="hint hidden">
+                    A matching message gets no automatic reply, and lower-priority
+                    rules are not applied to it.
+                  </p>
+                  <label class="field ar-delay" id="ar-delay-field">
+                    <span class="lbl">Delay before replying (ms, 0 to 60000)</span>
+                    <input type="number" id="ar-delay" min="0" max="60000" step="1" />
+                  </label>
+                </fieldset>
+
+                <p class="hint ar-help">
+                  Templates can use <code>{{REQ_CONTROL_ID}}</code>: it is replaced
+                  by the MSH-10 of the message that triggered the rule (HL7
+                  rules only; it overrides any default). <code>{{NOW}}</code> and
+                  <code>{{CONTROL_ID}}</code> are generated for each reply. Other
+                  variables use the template's saved defaults. Conditions compare
+                  the raw field, components included; <code>*</code> is the only
+                  wildcard. Generic <code>*</code> types never answer an
+                  acknowledgement (ACK) message; an exact type such as
+                  <code>ACK^A01</code> does.
+                </p>
+              </form>
+            </aside>
+          </div>
+        </section>
+
+        <!-- Autobuild -->
+        <section id="view-autobuild" class="view hidden" data-view-panel="autobuild">
+          <header class="vh">
+            <h4>Autobuild <small id="ab-count-label"></small></h4>
+            <div class="sp"></div>
+            <button type="button" class="btn sm gh" id="ab-clear" disabled>Clear recent</button>
+          </header>
+
+          <div class="split ab-split">
+            <div class="tlist ab-list">
+              <h5 class="ab-h" id="ab-list-label">Recent autobuilds</h5>
+              <p id="ab-note" class="inline-error hidden" role="status"></p>
+              <p id="ab-empty" class="empty-note">
+                Messages you build successfully appear here, newest first.
               </p>
-              <p class="hint" id="autoreply-scope">
-                These settings are global: they apply to every session, the
-                ones already open and the ones you start later.
-              </p>
-              <label class="switch-row">
-                <span>Activate</span>
-                <input
-                  type="checkbox"
-                  id="autoresponse-activate"
-                  name="autoresponse-enabled"
-                  data-persist
-                  role="switch"
-                />
-              </label>
-              <label class="field">
-                <span class="lbl">ASTM ACK</span>
-                <input type="text" name="astm_ack" data-persist value="&lt;ACK&gt;" />
-              </label>
-              <label class="field">
-                <span class="lbl">HL7 Type</span>
-                <input type="text" name="hl7_type" data-persist value="ACK^O21" />
-              </label>
-              <label class="field">
-                <span class="lbl">HL7 Code</span>
-                <input type="text" name="hl7_code" data-persist value="AA" />
-              </label>
-              <div class="form-actions">
-                <button class="btn p" type="submit">Save</button>
-                <span id="autoresponse-status" class="hint" role="status"></span>
+              <ul id="ab-list" class="tcards ab-cards" aria-labelledby="ab-list-label"></ul>
+            </div>
+
+            <form id="ab-form" class="dock ab-dock" novalidate>
+              <div class="ab-body">
+                <label class="field">
+                  <span class="lbl">Input</span>
+                  <textarea
+                    id="ab-input"
+                    class="code-input"
+                    placeholder="Type a message... (starts with H| for ASTM, MSH| for HL7)"
+                    required
+                    name="input"
+                    spellcheck="false"
+                    data-persist
+                  ></textarea>
+                </label>
+                <label class="field">
+                  <span class="lbl">Output</span>
+                  <textarea
+                    id="ab-output"
+                    class="code-input"
+                    placeholder="Autobuilt message will appear here"
+                    readonly
+                    name="output"
+                    spellcheck="false"
+                    data-persist
+                  ></textarea>
+                </label>
+                <label class="switch-row">
+                  <span>No ETB ?</span>
+                  <input type="checkbox" role="switch" id="ab-no-etb" name="no-etb" data-persist />
+                </label>
+                <p id="autobuild-error" class="inline-error hidden" role="alert"></p>
+              </div>
+              <div class="ia">
+                <span class="sp"></span>
+                <button type="button" class="btn sm" id="build-message">Build</button>
+                <button type="submit" class="btn sm p" id="build-copy">
+                  Build and copy to input
+                </button>
               </div>
             </form>
           </div>
         </section>
       </div>
     </div>
-
-    <dialog id="autobuild" closedby="any">
-      <div>
-        <form method="dialog">
-          <label>
-            Input:
-            <textarea
-              type="text"
-              placeholder="Type a message..."
-              required
-              name="input"
-              data-persist
-            ></textarea>
-          </label>
-          <label>
-            Output:
-            <textarea
-              type="text"
-              placeholder="Autobuilt message will appear here"
-              readonly
-              name="output"
-              data-persist
-            ></textarea>
-          </label>
-
-          <div class="hstack gap-2 py-2">
-            <label>
-              No ETB ?
-              <input type="checkbox" role="switch" name="no-etb" data-persist />
-            </label>
-          </div>
-          <p id="autobuild-error" class="inline-error hidden" role="alert"></p>
-
-          <div class="hstack gap-2 justify-end">
-            <button
-              class="outline small"
-              type="button"
-              commandfor="autobuild"
-              command="close"
-            >
-              Close
-            </button>
-            <button class="small" type="button" id="build-message">
-              Build
-            </button>
-            <button data-variant="primary" class="small" type="submit">
-              Build and copy to input
-            </button>
-          </div>
-        </form>
-      </div>
-    </dialog>
 
     <dialog id="close-confirm" closedby="any">
       <div>

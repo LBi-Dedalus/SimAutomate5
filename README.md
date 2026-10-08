@@ -15,15 +15,15 @@ SimAutomate5 is a Tauri desktop app for exchanging ASTM and HL7-style messages o
 - Message composer with:
   - Send for the current full message.
   - Clear to reset the input.
-  - Autobuild to open the protocol helper.
-- Autobuild helper for:
+  - Autobuild to open the Autobuild view.
+- Autobuild view (dedicated navigation entry, not a popup) with a builder (Input, Output, `No ETB ?`, **Build**, **Build and copy to input**) and a list of the 20 most recent successful autobuilds (kept in browser storage). Click a recent autobuild to load it into the builder, **Use in session** to copy its output to the active session's composer, `×` to delete it, **Clear recent** to empty the list. The builder supports:
   - ASTM text with segment numbering, checksums, and control characters.
   - HL7 text wrapped as MLLP.
   - Optional `No ETB` mode for ASTM output.
-- Automatic response support:
-  - ASTM: configurable response message.
-  - HL7: configurable message type and response code.
-  - Settings are updated through the UI and stored locally. They are global: they apply to all sessions, current and future.
+- Automatic response support (Auto reply tab, global to all sessions, current and future):
+  - An ordered list of rules; each rule has a trigger (HL7 message type with an optional field condition, ASTM frame, or ASTM ENQ), a reply (saved template, literal text, or a generated HL7 acknowledgement with its own type and code, or **No auto reply**), and a delay (0 to 60000 ms). The first enabled matching rule wins; a **No auto reply** rule sends nothing and stops the lower-priority rules for that message; if none matches nothing is sent. There is no default acknowledgement.
+  - Rules are stored in `config.json` (`auto_reply` key), with a global Enabled switch. Template replies use the saved template library and its `{{NAME}}` syntax; `{{REQ_CONTROL_ID}}` is filled from the MSH-10 of the request.
+  - Previous browser-storage settings are offered once as an unsaved draft of explicit rules (automatic replies stay off until saved and enabled).
 - Local persistence for the current UI configuration in browser storage.
 - Structured logging to `backend.log` and `frontend.log` with size-based rotation.
 - Metadata-only traffic logging; raw protocol payload bodies are not written to the log files.
@@ -35,9 +35,9 @@ SimAutomate5 is a Tauri desktop app for exchanging ASTM and HL7-style messages o
 2. Choose a mode:
    - Client: enter host and port, then connect.
    - Server: enter a port, then start the server.
-3. If needed, open **Auto reply** in the sidebar and configure ASTM or HL7 response values.
+3. If needed, open **Auto reply**, add rules (when receiving → reply with), save them and turn **Enabled** on.
 4. Type a message in the Session composer (or load a template).
-5. Use **Autobuild** if you want the backend to format ASTM or HL7/MLLP content.
+5. Use **Autobuild** (sidebar or composer button) if you want the backend to format ASTM or HL7/MLLP content; pick one of the recent autobuilds to reuse it.
 6. Click **Send** to transmit the message.
 7. Use **Clear** in the Session header to clear the selected conversation, or **Clear** in the composer to reset its draft.
 8. Go back to Home (or the `＋` in the sidebar) to open more sessions; switch with the Sessions list. **Disconnect** keeps a session (use **Reconnect**), **Close** removes it.
@@ -85,7 +85,7 @@ cd src-tauri
 cargo test
 ```
 
-`cargo test` includes real loopback-socket tests for several simultaneous sessions. Auto-reply templates are not available yet.
+`cargo test` includes real loopback-socket tests for several simultaneous sessions and for auto reply rules (first match, templates, split/coalesced frames, delays, reconnect, ACK-wait policy). The Node tests cover the Rules view with a fake DOM and a mocked IPC.
 
 ### Manual socket test helpers
 

@@ -7,9 +7,11 @@ use tokio::sync::{oneshot, watch};
 use tokio::task::{AbortHandle, JoinHandle};
 use tokio::time::{sleep, timeout, Duration};
 
+use crate::auto_reply::RuleSet;
 use crate::emitter::Emitter;
+use crate::frames::FrameBuffer;
 use crate::message_queue::{MessageQueue, SharedMessageQueue};
-use crate::models::{AutoResponseConfig, ConnectRequest, ConnectionStatus, LogLevel};
+use crate::models::{ConnectRequest, ConnectionStatus, LogLevel};
 
 /// Longest a stop request waits for a connection task to release its socket.
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -78,7 +80,8 @@ struct Session {
 /// to finish is done by `StopTicket::run`, outside of that lock.
 pub struct ConnectionManager {
     emitter: Emitter,
-    auto_response: AutoResponseConfig,
+    /// The latest validated rules: every new connection starts with them.
+    rules: Arc<RuleSet>,
     sessions: HashMap<String, Session>,
 }
 
@@ -119,7 +122,7 @@ impl ConnectionManager {
     pub fn new(emitter: Emitter) -> Self {
         Self {
             emitter,
-            auto_response: AutoResponseConfig::default(),
+            rules: Arc::new(RuleSet::disabled()),
             sessions: HashMap::new(),
         }
     }
@@ -163,7 +166,7 @@ impl ConnectionManager {
         }
 
         let emitter = self.emitter.scoped(session_id, attempt);
-        let message_queue = MessageQueue::shared(emitter.clone(), self.auto_response.clone());
+        let message_queue = MessageQueue::shared(emitter.clone(), self.rules.clone());
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let (status_tx, status_rx) = watch::channel(ConnectionStatus::Connecting);
         let join = tokio::spawn(run_connection(
@@ -256,15 +259,13 @@ impl ConnectionManager {
         }
     }
 
-    /// The configuration is global: it is applied to every running session and to the future ones.
-    pub async fn update_auto_response(&mut self, config: AutoResponseConfig) {
-        self.auto_response = config.clone();
+    /// The rules are global: they are applied to every running session and to the future ones.
+    /// Replies still pending under the previous rules are dropped.
+    pub async fn apply_rules(&mut self, rules: Arc<RuleSet>) {
+        self.rules = rules.clone();
         for session in self.sessions.values() {
             if let SessionState::Running(running) = &session.state {
-                running
-                    .message_queue
-                    .update_auto_response(config.clone())
-                    .await;
+                running.message_queue.update_rules(rules.clone()).await;
             }
         }
     }
@@ -518,7 +519,7 @@ async fn run_connected(
                 Ok(()) => ConnectionStatus::Disconnected,
             }
         }
-        result = send_loop(&mut writer, message_queue) => {
+        result = send_loop(&mut writer, message_queue.clone()) => {
             match result {
                 Err(err) => {
                     emitter.error(
@@ -537,6 +538,8 @@ async fn run_connected(
         }
     };
 
+    // Nothing pending (user messages, delayed automatic replies) may outlive the connection.
+    message_queue.close().await;
     let _ = writer.shutdown().await;
     terminal
 }
@@ -590,6 +593,9 @@ async fn read_loop(
     message_queue: SharedMessageQueue,
 ) -> Result<(), String> {
     let mut buffer = vec![0u8; 4096];
+    // Complete messages are extracted here (per connection attempt) while the UI keeps
+    // receiving the raw chunks.
+    let mut frames = FrameBuffer::new();
 
     loop {
         let len = reader
@@ -598,6 +604,9 @@ async fn read_loop(
             .map_err(|err| err.to_string())?;
         let res = Vec::from_iter(buffer[..len].iter().copied());
         message_queue.handle_received_message(res).await?;
+        for event in frames.feed(&buffer[..len]) {
+            message_queue.handle_frame(event).await;
+        }
     }
 }
 

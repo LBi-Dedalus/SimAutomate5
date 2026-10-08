@@ -19,6 +19,7 @@ import { SAVE_AS_TEMPLATE_EVENT } from "./inspector.js";
 import { subscribeSendEligibility } from "./sessions.js";
 import { el, renderTokens } from "./render.js";
 import { logError, logInfo } from "./log.js";
+import { publishSavedTemplates, clearSavedTemplates } from "./template-store.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -126,11 +127,13 @@ async function doLoad() {
     loadError = null;
     loaded = true;
     ok = true;
+    publishSavedTemplates(templates);
     if (result.seeded) logInfo("Built-in templates provided (no saved templates yet)", "templates.js:load");
   } catch (err) {
     templates = [];
     loadError = String(err);
     loaded = false;
+    clearSavedTemplates();
     logError(`Failed to load templates: ${loadError}`, "templates.js:load");
   } finally {
     loading = false;
@@ -347,6 +350,7 @@ async function save() {
 
   // The draft is locked while saving, so it still equals what was written.
   templates = next;
+  publishSavedTemplates(templates);
   draft.isNew = false;
   draft.name = saved.name;
   baseline = snapshot(draft);
@@ -398,6 +402,7 @@ async function onDelete() {
   }
   const name = draft.name;
   templates = next;
+  publishSavedTemplates(templates);
   draft = null;
   baseline = null;
   showBanner(`Deleted “${name}”.`, "ok");
