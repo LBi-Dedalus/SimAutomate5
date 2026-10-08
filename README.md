@@ -9,7 +9,7 @@ SimAutomate5 is a Tauri desktop app for exchanging ASTM and HL7-style messages o
 - Live connection status indicator: Disconnected, Connecting, Listening (server), Connected, or Error.
 - Multiple simultaneous sessions (client and/or server), listed in the sidebar; each has its own conversation, counters, draft and inspector state. Sessions are runtime-only (not restored at launch).
 - Labelled left navigation: Home, Session, Templates, Auto reply, Autobuild.
-- Home quick connect (Client/Server, host/port) always opens a new session; recent endpoints (browser storage) and template shortcuts.
+- Home quick connect (Client/Server, host/port) always opens a new session; recent endpoints (browser storage).
 - Session view with conversation bubbles for sent, received, and system messages with timestamps, plus a docked message inspector (Parsed HL7 / Raw / Hex of the selected message; parsing is best effort per received chunk) and "Save as template".
 - Templates: list with search and an always-docked editor (create, edit, delete, `{{VARIABLES}}`, exact preview, load in composer, send). Templates are stored in `config.json` in the app config directory; built-ins are offered only when no templates have been saved yet.
 - Message composer with:

@@ -552,10 +552,6 @@ function previewLine(payload) {
 function renderAll() {
   renderList();
   renderEditor();
-  renderHome();
-  const count = $("templates-count");
-  count.textContent = String(templates.length);
-  count.classList.toggle("hidden", !loaded || templates.length === 0);
   $("tpl-count-label").textContent = loaded
     ? templates.length === 1
       ? "1 template"
@@ -771,35 +767,5 @@ function renderPreview(result) {
   } else {
     validity.className = "validity err";
     validity.textContent = resolved.errors.join(" ");
-  }
-}
-
-function renderHome() {
-  const container = $("home-templates");
-  container.replaceChildren();
-  $("home-templates-empty").classList.toggle("hidden", templates.length > 0);
-  $("home-templates-empty").textContent = loading
-    ? "Loading templates…"
-    : !loaded
-      ? `Templates unavailable${loadError ? `: ${loadError}` : ""}`
-      : "No template yet.";
-
-  for (const template of templates.slice(0, 6)) {
-    const card = el("button", "rc");
-    card.type = "button";
-    const top = el("div", "top");
-    const kind = templateKind(template.payload);
-    top.appendChild(el("span", kind.cls, kind.label));
-    top.appendChild(el("span", "go", "Open ↗"));
-    card.appendChild(top);
-    card.appendChild(el("div", "ep plain", template.name));
-    card.appendChild(el("div", "ds", template.description || variableCount(template.payload)));
-    card.addEventListener("click", () =>
-      requestAction(() => {
-        showView("templates", { force: true });
-        openTemplate(template.id);
-      }),
-    );
-    container.appendChild(card);
   }
 }

@@ -23,7 +23,7 @@
   <body>
     <div id="app">
       <aside id="sidebar">
-        <div class="brand"><i></i>SimAutomate</div>
+        <div class="brand"><img class="brand-logo" src="assets/logo.png" alt="" width="24" height="24" aria-hidden="true" />SimAutomate</div>
 
         <nav id="nav" aria-label="Main">
           <button type="button" class="nav-item on" data-view="home">
@@ -34,7 +34,6 @@
           </button>
           <button type="button" class="nav-item" data-view="templates">
             <b aria-hidden="true">▤</b>Templates
-            <em id="templates-count" class="nav-badge hidden"></em>
           </button>
           <button type="button" class="nav-item" data-view="autoreply">
             <b aria-hidden="true">↺</b>Auto reply
@@ -149,17 +148,6 @@
               here.
             </p>
             <div id="recent-list" class="cards"></div>
-
-            <div class="sh">
-              <b>Templates</b>
-              <button type="button" class="link-btn" data-nav="templates">
-                Open library →
-              </button>
-            </div>
-            <p id="home-templates-empty" class="empty-note hidden">
-              No template yet.
-            </p>
-            <div id="home-templates" class="cards"></div>
            </div>
           </div>
         </section>

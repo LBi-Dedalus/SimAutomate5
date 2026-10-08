@@ -388,12 +388,12 @@ button[data-variant="primary"]:hover:not(:disabled) {
   color: #fff;
 }
 
-.brand i {
+.brand-logo {
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--tl), var(--tl2));
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  border-radius: 5px;
 }
 
 #nav {
@@ -1001,11 +1001,6 @@ button[data-variant="primary"]:hover:not(:disabled) {
   font-family: var(--mono);
   font-size: 13.5px;
   font-weight: 700;
-}
-
-.rc .ep.plain {
-  font-family: inherit;
-  font-size: 13px;
 }
 
 .rc .ds {

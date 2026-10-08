@@ -10,7 +10,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend and a R
 
 - The UI is built with semantic HTML, Oat CSS classes, and project-specific styling (light content area, dark sidebar, teal accents).
 - A labelled left navigation switches between Home, Session, Templates, Auto reply and Autobuild (a dedicated view, not a dialog). The sidebar footer shows the live connection status badge.
-- Home offers quick connect (Client/Server, host/port; there is no protocol selector), recent endpoints and a template shortcut list.
+- Home offers quick connect (Client/Server, host/port; there is no protocol selector), and recent endpoints.
 - Session shows the conversation of the selected session (bubbles plus system lines), its composer with control-character buttons, and an always-docked message inspector (Parsed/Raw/Hex of the selected message).
 - Multiple sessions can be open at once (client and server, any mix). The sidebar has a **Sessions** list (selected row, endpoint, mode, status, unread badge for background traffic, a close button, and a `＋` button that goes to Home) next to the **Recent servers** shortcuts.
 - Sessions are runtime-only: they are not saved, restored or reconnected when the app starts. Each session owns its endpoint, status, conversation (max 2000 messages), sent/received counters, composer draft and inspected message. Switching sessions never reconnects or mixes these.
