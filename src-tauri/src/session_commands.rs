@@ -797,6 +797,8 @@ mod tests {
                 description: String::new(),
                 payload: "<VT>MSH|^~\\&|X|Y|R|F|{{NOW}}||ADR^A19|{{CONTROL_ID}}|P|2.4<CR>MSA|AA|{{REQ_CONTROL_ID}}<CR><FS><CR>".into(),
                 variables: vec![TemplateVariable { name: "REQ_CONTROL_ID".into(), default: "STALE".into() }],
+                autobuild: false,
+                autobuild_no_etb: false,
             },
             Template {
                 id: "nf".into(),
@@ -804,6 +806,8 @@ mod tests {
                 description: String::new(),
                 payload: "NOT-FOUND {{REQ_CONTROL_ID}}".into(),
                 variables: vec![],
+                autobuild: false,
+                autobuild_no_etb: false,
             },
         ];
         save_templates(&cfg.lock, &cfg.path, &state, &templates)
@@ -1214,6 +1218,8 @@ mod tests {
             description: String::new(),
             payload: "<VT>A{{REQ_CONTROL_ID}}B<FS><CR>".into(),
             variables: vec![],
+            autobuild: false,
+            autobuild_no_etb: false,
         }];
         save_templates(&cfg.lock, &cfg.path, &state, &templates)
             .await
@@ -1262,6 +1268,8 @@ mod tests {
             description: String::new(),
             payload: payload.into(),
             variables: vec![],
+            autobuild: false,
+            autobuild_no_etb: false,
         };
         save_templates(&cfg.lock, &cfg.path, &state, &[make("<ACK>")])
             .await

@@ -36,3 +36,17 @@ export function deliverToTarget(deps, output, target = deps.activeId()) {
   }
   return { target, delivered: true, error: null };
 }
+/**
+ * Applies a template's Autobuild option to an already resolved message.
+ * Option off: returns the text unchanged and never calls the backend.
+ * Option on: returns the built output; a backend failure rejects (nothing may be delivered).
+ *
+ * deps: { invoke }, options: { autobuild, noEtb }
+ */
+export async function applyTemplateAutobuild(deps, text, { autobuild, noEtb }) {
+  if (!autobuild) return text;
+  const { output } = await deps.invoke("auto_build_message_cmd", {
+    req: { input: text, no_etb: Boolean(noEtb) },
+  });
+  return output;
+}

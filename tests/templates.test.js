@@ -98,3 +98,10 @@ test("snapshot ignores unused variables so dirty state is stable", () => {
   assert.equal(snapshot(base), snapshot(withExtra));
   assert.notEqual(snapshot(base), snapshot({ ...base, payload: "{{X}}!" }));
 });
+
+test("snapshot includes the Autobuild flags (missing flags equal false)", () => {
+  const base = { name: "n", description: "", payload: "p", variables: [] };
+  assert.equal(snapshot(base), snapshot({ ...base, autobuild: false, autobuildNoEtb: false }));
+  assert.notEqual(snapshot(base), snapshot({ ...base, autobuild: true }));
+  assert.notEqual(snapshot(base), snapshot({ ...base, autobuildNoEtb: true }));
+});

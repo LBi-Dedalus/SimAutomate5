@@ -49,6 +49,13 @@ pub struct Template {
     pub payload: String,
     #[serde(default)]
     pub variables: Vec<TemplateVariable>,
+    /// When true, the UI runs the resolved message through Autobuild (MLLP/ASTM framing)
+    /// before sending it or loading it in the composer. Auto-reply rules ignore it.
+    #[serde(default)]
+    pub autobuild: bool,
+    /// Autobuild "No ETB" option; only meaningful when `autobuild` is true.
+    #[serde(default)]
+    pub autobuild_no_etb: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -76,6 +83,8 @@ pub fn builtin_templates() -> Vec<Template> {
                 name: "PATIENT_ID".to_string(),
                 default: String::new(),
             }],
+            autobuild: false,
+            autobuild_no_etb: false,
         },
         Template {
             id: "builtin-hl7-ack-o21".to_string(),
@@ -86,6 +95,8 @@ pub fn builtin_templates() -> Vec<Template> {
                 name: "REQ_CONTROL_ID".to_string(),
                 default: String::new(),
             }],
+            autobuild: false,
+            autobuild_no_etb: false,
         },
         Template {
             id: "builtin-astm-enq".to_string(),
@@ -93,6 +104,8 @@ pub fn builtin_templates() -> Vec<Template> {
             description: "Starts an ASTM transmission.".to_string(),
             payload: "<ENQ>".to_string(),
             variables: Vec::new(),
+            autobuild: false,
+            autobuild_no_etb: false,
         },
         Template {
             id: "builtin-astm-eot".to_string(),
@@ -100,6 +113,8 @@ pub fn builtin_templates() -> Vec<Template> {
             description: "Ends an ASTM transmission.".to_string(),
             payload: "<EOT>".to_string(),
             variables: Vec::new(),
+            autobuild: false,
+            autobuild_no_etb: false,
         },
     ]
 }
@@ -364,6 +379,8 @@ mod tests {
                 name: "X".to_string(),
                 default: "1".to_string(),
             }],
+            autobuild: false,
+            autobuild_no_etb: false,
         }
     }
 
@@ -405,6 +422,37 @@ mod tests {
             .collect();
         assert_eq!(leftovers, vec![CONFIG_FILE_NAME.to_string()]);
         let _ = fs::remove_dir_all(dir.parent().unwrap());
+    }
+
+    #[test]
+    fn legacy_template_without_autobuild_fields_loads_with_false_defaults() {
+        let legacy = r#"{"id":"x","name":"N","payload":"<ENQ>"}"#;
+        let t: Template = serde_json::from_str(legacy).unwrap();
+        assert!(!t.autobuild);
+        assert!(!t.autobuild_no_etb);
+        assert!(t.variables.is_empty());
+    }
+
+    #[test]
+    fn autobuild_flags_round_trip_through_the_file() {
+        let dir = temp_dir("autobuild").join("nested");
+        let path = config_path(&dir);
+        let mut t = sample("a");
+        t.autobuild = true;
+        t.autobuild_no_etb = true;
+        save_templates_to(&path, &[t.clone(), sample("b")]).unwrap();
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("\"autobuild\": true"));
+        assert!(raw.contains("\"autobuild_no_etb\": true"));
+        let loaded = load_templates_from(&path).unwrap();
+        assert_eq!(loaded.templates, vec![t, sample("b")]);
+        let _ = fs::remove_dir_all(dir.parent().unwrap());
+    }
+
+    #[test]
+    fn unknown_template_fields_are_still_denied() {
+        let bad = r#"{"id":"x","name":"N","payload":"p","autobuildNoEtb":true}"#;
+        assert!(serde_json::from_str::<Template>(bad).is_err());
     }
 
     #[test]

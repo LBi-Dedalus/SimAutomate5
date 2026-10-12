@@ -1,6 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildForTarget, deliverToTarget } from "../src/autobuild-core.js";
+import { buildForTarget, deliverToTarget, applyTemplateAutobuild } from "../src/autobuild-core.js";
+
+test("applyTemplateAutobuild: off returns the text and never invokes", async () => {
+  const calls = [];
+  const deps = { invoke: async (...a) => (calls.push(a), { output: "X" }) };
+  assert.equal(await applyTemplateAutobuild(deps, "H|abc", { autobuild: false, noEtb: true }), "H|abc");
+  assert.equal(calls.length, 0);
+});
+
+test("applyTemplateAutobuild: on invokes with {input, no_etb} and returns the output", async () => {
+  const calls = [];
+  const deps = { invoke: async (...a) => (calls.push(a), { output: "<VT>built" }) };
+  assert.equal(await applyTemplateAutobuild(deps, "MSH|x", { autobuild: true, noEtb: true }), "<VT>built");
+  assert.equal(await applyTemplateAutobuild(deps, "H|x", { autobuild: true, noEtb: false }), "<VT>built");
+  assert.deepEqual(calls[0], ["auto_build_message_cmd", { req: { input: "MSH|x", no_etb: true } }]);
+  assert.deepEqual(calls[1], ["auto_build_message_cmd", { req: { input: "H|x", no_etb: false } }]);
+});
+
+test("applyTemplateAutobuild: a backend error propagates", async () => {
+  const deps = { invoke: async () => { throw "bad input"; } };
+  await assert.rejects(applyTemplateAutobuild(deps, "H|x", { autobuild: true, noEtb: false }), /bad input/);
+});
 
 function makeDeps({ active = "s1", sessions = ["s1", "s2"], accept = true } = {}) {
   const state = { active, drafts: {}, calls: [] };

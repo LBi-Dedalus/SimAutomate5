@@ -11,7 +11,7 @@ SimAutomate5 is a Tauri desktop app for exchanging ASTM and HL7-style messages o
 - Labelled left navigation: Home, Session, Templates, Auto reply, Autobuild.
 - Home quick connect (Client/Server, host/port) always opens a new session; recent endpoints (browser storage).
 - Session view with conversation bubbles for sent, received, and system messages with timestamps, plus a docked message inspector (Parsed HL7 / Raw / Hex of the selected message; parsing is best effort per received chunk) and "Save as template".
-- Templates: list with search and an always-docked editor (create, edit, delete, `{{VARIABLES}}`, exact preview, load in composer, send). Templates are stored in `config.json` in the app config directory; built-ins are offered only when no templates have been saved yet.
+- Templates: list with search and an always-docked editor (create, edit, delete, `{{VARIABLES}}`, exact preview, load in composer, send). Each template has an optional **Apply Autobuild** switch (with a **No ETB** sub-option): when on, the resolved message is wrapped in HL7 (MLLP) or ASTM framing, like the Autobuild view, before it is sent or loaded in the composer; the editor's single preview box shows the built result while the switch is on (tagged "· after Autobuild") and the plain resolved text otherwise, and cards show an "Autobuild" badge. Auto reply rules that use a saved template ignore this option and send the template payload as before. Templates are stored in `config.json` in the app config directory; built-ins are offered only when no templates have been saved yet.
 - Message composer with:
   - Send for the current full message.
   - Clear to reset the input.

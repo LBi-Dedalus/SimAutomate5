@@ -338,7 +338,22 @@
                       ></textarea>
                     </div>
 
-                    <span class="lbl">Preview with current values</span>
+                    <div class="tpl-opts">
+                      <label class="switch-row">
+                        <span>Apply Autobuild</span>
+                        <input type="checkbox" role="switch" id="tpl-autobuild" />
+                      </label>
+                      <label class="switch-row sub">
+                        <span>No ETB</span>
+                        <input type="checkbox" role="switch" id="tpl-autobuild-noetb" />
+                      </label>
+                      <p class="hint">
+                        Wraps the message in HL7 (MLLP) or ASTM framing, like the Autobuild
+                        menu, when you send or load it.
+                      </p>
+                    </div>
+
+                    <span class="lbl">Preview with current values <span class="tag ab hidden" id="tpl-preview-tag">· after Autobuild</span></span>
                     <div id="tpl-preview" class="raw"></div>
                     <div id="tpl-validity" class="validity"></div>
                   </div>

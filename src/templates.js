@@ -20,6 +20,7 @@ import { subscribeSendEligibility } from "./sessions.js";
 import { el, renderTokens } from "./render.js";
 import { logError, logInfo } from "./log.js";
 import { publishSavedTemplates, clearSavedTemplates } from "./template-store.js";
+import { applyTemplateAutobuild } from "./autobuild-core.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -40,6 +41,12 @@ let saving = false;
 let pendingAction = null;
 let deleteArmed = false;
 let deleteTimer = null;
+/** True while a template is being built by Autobuild before send/load (blocks double actions). */
+let delivering = false;
+/** Template id whose built text the preview box currently shows (null: plain text or error). */
+let builtShownFor = null;
+/** Monotonic id of the latest built-preview request (older results are ignored). */
+let previewSeq = 0;
 
 const $ = (id) => document.getElementById(id);
 
@@ -67,8 +74,10 @@ async function init() {
   }
   $("tpl-save").addEventListener("click", () => void save());
   $("tpl-delete").addEventListener("click", () => void onDelete());
-  $("tpl-load").addEventListener("click", loadInComposer);
+  $("tpl-load").addEventListener("click", () => void loadInComposer());
   $("tpl-send").addEventListener("click", () => void sendNow());
+  $("tpl-autobuild").addEventListener("change", onAutobuildChange);
+  $("tpl-autobuild-noetb").addEventListener("change", onAutobuildChange);
   $("tpl-insert-var").addEventListener("click", insertVariable);
   $("tpl-banner-close").addEventListener("click", hideBanner);
   $("tpl-banner-retry").addEventListener("click", () => void loadAll());
@@ -158,6 +167,8 @@ function cloneForEditor(template) {
     name: template.name,
     description: template.description ?? "",
     payload: template.payload,
+    autobuild: Boolean(template.autobuild),
+    autobuildNoEtb: Boolean(template.autobuild_no_etb),
     variables: syncVariables(template.payload, template.variables ?? []),
     isNew: false,
   };
@@ -169,6 +180,8 @@ function toPersisted(d) {
     name: d.name.trim(),
     description: d.description,
     payload: d.payload,
+    autobuild: Boolean(d.autobuild),
+    autobuild_no_etb: Boolean(d.autobuildNoEtb),
     variables: syncVariables(d.payload, d.variables).map((v) => ({
       name: v.name,
       default: v.default,
@@ -305,6 +318,8 @@ function newTemplate(payload) {
     name: fromMessage ? `Message ${new Date().toLocaleTimeString()}` : "New template",
     description: "",
     payload: fromMessage ? payload : "",
+    autobuild: false,
+    autobuildNoEtb: false,
     variables: [],
     isNew: true,
   };
@@ -417,22 +432,40 @@ function resolveNow() {
   return result;
 }
 
-function loadInComposer() {
-  if (!draft) return;
+async function loadInComposer() {
+  if (!draft || delivering) return;
   const result = resolveNow();
   if (!result.ok) return;
-  // Captured now: the text goes to the session selected at this moment.
+  // Captured now, before any await: the text goes to the session selected at this moment.
   const target = activeSessionId();
-  if (!target || !setComposerText(result.text, target)) {
+  if (!target) {
     showBanner("No session is open: start one from Home, then load the template.", "error");
     return;
   }
+  const options = autobuildOptions();
+  // Also captured now: the view and the draft the user initiated this from.
+  const startedInTemplates = currentView() === "templates";
+  const startDraft = draft;
+  const text = await buildForDelivery(result.text, options, "loaded");
+  if (text === null) return;
+  if (!setComposerText(text, target)) {
+    showBanner(
+      options.autobuild
+        ? "The session this template was built for has been closed: nothing was loaded."
+        : "No session is open: start one from Home, then load the template.",
+      "error",
+    );
+    return;
+  }
+  // Navigate only if the user is still where they started; otherwise the late result
+  // must not hijack the navigation nor bypass another view's leave guard.
+  if (!startedInTemplates || currentView() !== "templates" || draft !== startDraft) return;
   // Leaving with unsaved edits is fine here: the draft stays in the editor.
   showView("session", { force: true });
 }
 
 async function sendNow() {
-  if (!draft) return;
+  if (!draft || delivering) return;
   const result = resolveNow();
   if (!result.ok) return;
   // The target is captured before awaiting: a session switch cannot redirect the send.
@@ -441,16 +474,45 @@ async function sendNow() {
     showBanner("The selected session is not connected: connect it to send.", "error");
     return;
   }
-  const ok = await sendMessage(result.text, target);
+  const text = await buildForDelivery(result.text, autobuildOptions(), "sent");
+  if (text === null) return;
+  const ok = await sendMessage(text, target);
   showBanner(
     ok ? `Template sent to ${target.label}.` : `Sending to ${target.label} failed, see its conversation log.`,
     ok ? "ok" : "error",
   );
 }
 
+/** Autobuild options of the draft as they are right now (captured before any await). */
+function autobuildOptions() {
+  return { autobuild: Boolean(draft.autobuild), noEtb: Boolean(draft.autobuildNoEtb) };
+}
+
+/**
+ * Applies the template's Autobuild option to resolved text. Returns the text to deliver, or
+ * null (after showing the error) when the build failed: nothing may be delivered then.
+ * Re-entry is blocked while the build is pending.
+ */
+async function buildForDelivery(text, options, verb) {
+  if (!options.autobuild) return text;
+  delivering = true;
+  updateSendEnabled();
+  try {
+    return await applyTemplateAutobuild({ invoke }, text, options);
+  } catch (err) {
+    logError(`Autobuild failed for template: ${String(err)}`, "templates.js:autobuild");
+    showBanner(`Autobuild failed: ${String(err)}. Nothing was ${verb}.`, "error");
+    return null;
+  } finally {
+    delivering = false;
+    updateSendEnabled();
+  }
+}
+
 function updateSendEnabled() {
   const target = activeSendTarget();
-  $("tpl-send").disabled = !target;
+  $("tpl-send").disabled = !target || delivering;
+  $("tpl-load").disabled = delivering;
   $("tpl-send").textContent = target ? `Send to ${target.label} ➤` : "Send now ➤";
   $("tpl-send").title = target
     ? `Send to the selected session (${target.label})`
@@ -476,6 +538,29 @@ function onDescInput() {
   if (editBlocked($("tpl-desc"), draft?.description)) return;
   draft.description = $("tpl-desc").value;
   afterEdit(false);
+}
+
+function onAutobuildChange() {
+  if (!draft || saving) {
+    syncAutobuildControls(); // restore the controls: the edit is refused
+    return;
+  }
+  draft.autobuild = $("tpl-autobuild").checked;
+  draft.autobuildNoEtb = $("tpl-autobuild-noetb").checked;
+  syncAutobuildControls();
+  afterEdit(false);
+}
+
+/** Mirrors the draft in the Autobuild switches ("No ETB" only applies when Autobuild is on). */
+function syncAutobuildControls() {
+  const box = $("tpl-autobuild");
+  const sub = $("tpl-autobuild-noetb");
+  if (draft) {
+    box.checked = Boolean(draft.autobuild);
+    sub.checked = Boolean(draft.autobuildNoEtb);
+  }
+  box.disabled = saving;
+  sub.disabled = saving || !draft?.autobuild;
 }
 
 function onPayloadInput() {
@@ -597,6 +682,7 @@ function renderList() {
     const kind = templateKind(shown.payload);
     meta.appendChild(el("span", kind.cls, kind.label));
     meta.appendChild(el("span", "", variableCount(shown.payload)));
+    if (shown.autobuild) meta.appendChild(el("span", "tag ab", "Autobuild"));
     if (active && draft.isNew) meta.appendChild(el("span", "tag s", "unsaved"));
     card.appendChild(meta);
     card.addEventListener("click", () => {
@@ -620,6 +706,7 @@ function renderEditor() {
   if ($("tpl-payload").value !== draft.payload) $("tpl-payload").value = draft.payload;
   renderPayloadDecor();
   updateCursor();
+  syncAutobuildControls();
   renderVars();
   renderPreview();
   updateButtons();
@@ -668,6 +755,7 @@ function updateButtons() {
   $("tpl-delete").disabled = !allowed;
   for (const id of ["tpl-name", "tpl-desc", "tpl-payload"]) $(id).readOnly = saving;
   for (const input of document.querySelectorAll("#tpl-vars input")) input.readOnly = saving;
+  syncAutobuildControls();
   $("tpl-dirty").classList.toggle("hidden", !isDirty());
   $("tpl-saved").classList.toggle("hidden", isDirty() || Boolean(draft.isNew));
 }
@@ -741,8 +829,6 @@ function renderPreview(result) {
   const resolved =
     result ??
     resolveTemplate(draft.payload, manualValues(syncVariables(draft.payload, draft.variables)), ctx);
-  renderPreviewText($("tpl-preview"), resolved.text);
-
   const validity = $("tpl-validity");
   validity.replaceChildren();
   if (draft.payload === "") {
@@ -768,4 +854,52 @@ function renderPreview(result) {
     validity.className = "validity err";
     validity.textContent = resolved.errors.join(" ");
   }
+  renderPreviewBox(resolved);
+}
+
+/**
+ * Single preview box. Autobuild off (or nothing buildable): the resolved text, synchronously.
+ * Autobuild on: the built text, fetched asynchronously. Every call supersedes the previous
+ * one: a result that arrives late (older request, other template, switch turned off, editor
+ * closed) is dropped. While a build is pending the box keeps the last built text of the same
+ * template (dimmed) or, failing that, the plain resolved text (dimmed), so typing never
+ * flickers; a failed build shows the error instead of any text.
+ */
+function renderPreviewBox(resolved) {
+  const seq = ++previewSeq;
+  const out = $("tpl-preview");
+  const tag = $("tpl-preview-tag");
+  const building = draft.autobuild && draft.payload !== "" && resolved.ok;
+  tag.classList.toggle("hidden", !draft.autobuild);
+  if (!building) {
+    builtShownFor = null;
+    out.className = "raw";
+    out.textContent = "";
+    renderPreviewText(out, resolved.text);
+    return;
+  }
+  const id = draft.id;
+  if (builtShownFor !== id) {
+    builtShownFor = null;
+    out.textContent = "";
+    renderPreviewText(out, resolved.text);
+  }
+  out.className = "raw pending";
+  const current = () => seq === previewSeq && draft !== null && draft.id === id;
+  applyTemplateAutobuild({ invoke }, resolved.text, autobuildOptions()).then(
+    (text) => {
+      if (!current()) return;
+      out.className = "raw";
+      out.textContent = "";
+      renderPreviewText(out, text);
+      builtShownFor = id;
+    },
+    (err) => {
+      if (!current()) return;
+      builtShownFor = null;
+      out.className = "raw err";
+      out.replaceChildren();
+      out.textContent = `Autobuild failed: ${String(err)}`;
+    },
+  );
 }

@@ -105,7 +105,7 @@ globalThis.window = {
     },
     event: { listen: async () => {} },
   },
-  connection_status: { get: () => "disconnected", subscribe() {} },
+  connection_status: { get: () => "disconnected", set() {}, subscribe() {} },
 };
 
 const SEED = [
@@ -485,4 +485,272 @@ test("the saved-template store only follows confirmed load / save / delete resul
   getNode("tpl-banner-retry").fire("click");
   await tick();
   assert.equal(getSavedTemplates(), null, "unknown library after a failed load");
+});
+
+// ── Autobuild option ────────────────────────────────────────
+
+globalThis.localStorage ??= { getItem: () => null, setItem() {} };
+const abCalls = () => ipc.calls.filter((c) => c.cmd === "auto_build_message_cmd");
+const sends = () => ipc.calls.filter((c) => c.cmd === "send_message");
+const check = (id, on) => {
+  const box = getNode(id);
+  box.checked = on;
+  box.fire("change");
+};
+
+/** Handler: templates load as usual, Autobuild answers through `ab(args)`. */
+function useBackend(stored, ab) {
+  ipc.handler = async (cmd, args) => {
+    if (cmd === "load_templates") return { templates: structuredClone(stored), seeded: false };
+    if (cmd === "auto_build_message_cmd") return ab(args);
+    return undefined;
+  };
+}
+
+/** Reloads the collection and opens `name` from a clean state (no stale draft from a previous test). */
+async function openFresh(name) {
+  await boot();
+  showView("templates", { force: true });
+  if (!form().hidden) {
+    showView("home");
+    if (!guard().hidden) getNode("tpl-guard-discard").fire("click");
+  }
+  open(name === "Alpha" ? "Beta" : "Alpha");
+  open(name);
+  showView("templates", { force: true });
+}
+
+async function twoSessions() {
+  const { sessions, store } = await import("../src/sessions.js");
+  const ids = [];
+  for (const port of [9001, 9002]) {
+    const { id, done } = sessions.start({ mode: "client", label: `h:${port}`, req: { type: "ClientConnectRequest", ip: "h", port } });
+    await done;
+    sessions.handleStatus({ session_id: id, attempt: store.get(id).attempt, status: "connected" });
+    ids.push(id);
+  }
+  return { store, ids };
+}
+
+test("autobuild flags: dirty tracking, save payload, badge and legacy defaults", async () => {
+  await openFresh("Alpha");
+  assert.equal(getNode("tpl-autobuild").checked, false, "legacy template loads with the option off");
+  assert.equal(getNode("tpl-autobuild-noetb").checked, false);
+  assert.equal(getNode("tpl-autobuild-noetb").disabled, true, "No ETB needs Autobuild");
+  assert.equal(getNode("tpl-dirty").hidden, true);
+  assert.equal(cardNamed("Alpha").text.includes("Autobuild"), false);
+
+  useBackend(SEED, async () => ({ output: "B" }));
+  check("tpl-autobuild", true);
+  assert.equal(getNode("tpl-dirty").hidden, false, "toggling Autobuild makes the draft dirty");
+  assert.equal(getNode("tpl-autobuild-noetb").disabled, false);
+  assert.ok(cardNamed("Alpha").text.includes("Autobuild"), "badge shown for the live draft");
+  check("tpl-autobuild", false);
+  assert.equal(getNode("tpl-dirty").hidden, true, "back to the saved value: clean");
+  check("tpl-autobuild", true);
+  check("tpl-autobuild-noetb", true);
+
+  getNode("tpl-save").fire("click");
+  await tick();
+  const alpha = savedOk().at(-1).args.templates.find((t) => t.id === "a");
+  assert.equal(alpha.autobuild, true);
+  assert.equal(alpha.autobuild_no_etb, true);
+  assert.equal(getNode("tpl-dirty").hidden, true);
+
+  const { getSavedTemplates } = await import("../src/template-store.js");
+  assert.equal(getSavedTemplates().find((t) => t.id === "a").autobuild, true);
+  assert.equal(getSavedTemplates().find((t) => t.id === "b").autobuild_no_etb, false);
+
+  // New templates default to off.
+  getNode("tpl-new").fire("click");
+  assert.equal(getNode("tpl-autobuild").checked, false);
+  assert.equal(getNode("tpl-autobuild-noetb").checked, false);
+  getNode("tpl-delete").fire("click");
+  getNode("tpl-delete").fire("click");
+});
+
+test("Send builds first and keeps the target captured before the await; double click sends once", async () => {
+  const { store, ids } = await twoSessions();
+  const [s1, s2] = ids;
+  store.select(s1);
+  await openFresh("Alpha");
+  const gate = deferred();
+  useBackend(SEED, () => gate.promise);
+  check("tpl-autobuild", true);
+  check("tpl-autobuild-noetb", true);
+  ipc.calls = [];
+  getNode("tpl-send").fire("click");
+  getNode("tpl-send").fire("click"); // double click while building
+  getNode("tpl-load").fire("click"); // also guarded
+  assert.equal(getNode("tpl-send").disabled, true);
+  store.select(s2); // the user switches session while the build is pending
+  gate.resolve({ output: "<VT>BUILT<FS><CR>" });
+  await tick();
+  await tick();
+  assert.equal(sends().length, 1, "one send only");
+  assert.equal(sends()[0].args.sessionId, s1, "captured target, not the new selection");
+  assert.equal(sends()[0].args.payload.message, "<VT>BUILT<FS><CR>");
+  const sendBuild = abCalls().find((c) => c.args.req.input === "ALPHA 1");
+  assert.deepEqual(sendBuild.args, { req: { input: "ALPHA 1", no_etb: true } });
+  assert.equal(store.get(s2).draft ?? "", "", "nothing leaked to the other session");
+  assert.equal(getNode("tpl-send").disabled, false, "re-enabled after the build");
+  assert.match(getNode("tpl-banner-text").textContent, /sent/);
+
+  // Option off: the resolved text goes out untouched and nothing is built.
+  check("tpl-autobuild", false);
+  ipc.calls = [];
+  store.select(s1);
+  getNode("tpl-send").fire("click");
+  await tick();
+  assert.equal(abCalls().length, 0);
+  assert.equal(sends().at(-1).args.payload.message, "ALPHA 1");
+  store.select(s1);
+});
+
+test("Load in composer delivers the built text to the session captured before the await", async () => {
+  const { store, ids } = await twoSessions();
+  const [s1, s2] = ids;
+  store.select(s1);
+  await openFresh("Alpha");
+  const gate = deferred();
+  useBackend(SEED, () => gate.promise);
+  check("tpl-autobuild", true);
+  getNode("tpl-load").fire("click");
+  store.select(s2);
+  gate.resolve({ output: "LOADED" });
+  await tick();
+  await tick();
+  assert.equal(store.get(s1).draft, "LOADED");
+  assert.notEqual(store.get(s2).draft, "LOADED");
+  assert.deepEqual(abCalls().at(-1).args, { req: { input: "ALPHA 1", no_etb: false } });
+
+  // The captured session is closed during the build: nothing is loaded elsewhere.
+  store.select(s1);
+  const gate2 = deferred();
+  useBackend(SEED, () => gate2.promise);
+  getNode("tpl-load").fire("click");
+  store.remove?.(s1);
+  store.select(s2);
+  gate2.resolve({ output: "ORPHAN" });
+  await tick();
+  await tick();
+  assert.notEqual(store.get(s2).draft, "ORPHAN");
+});
+
+test("a failed build shows the error and neither sends nor loads", async () => {
+  const { store, ids } = await twoSessions();
+  store.select(ids[0]);
+  await openFresh("Alpha");
+  useBackend(SEED, async () => {
+    throw "build exploded";
+  });
+  check("tpl-autobuild", true);
+  await tick();
+  assert.match(getNode("tpl-preview").text, /Autobuild failed: build exploded/);
+  assert.doesNotMatch(getNode("tpl-preview").text, /ALPHA 1/, "error replaces the text, no stale text");
+  assert.match(getNode("tpl-validity").text, /Ready/, "existing validity message is kept");
+  ipc.calls = [];
+  const before = store.get(ids[0]).draft;
+  getNode("tpl-send").fire("click");
+  await tick();
+  assert.equal(sends().length, 0);
+  assert.match(getNode("tpl-banner-text").textContent, /Autobuild failed: build exploded.*Nothing was sent/);
+  assert.equal(getNode("tpl-send").disabled, false, "guard released after the failure");
+  getNode("tpl-load").fire("click");
+  await tick();
+  assert.equal(store.get(ids[0]).draft, before, "nothing loaded");
+  assert.match(getNode("tpl-banner-text").textContent, /Nothing was loaded/);
+});
+
+test("single preview box: plain when off, built when on, no late overwrite", async () => {
+  await openFresh("Alpha");
+  const gates = [];
+  useBackend(SEED, (args) => {
+    const gate = deferred();
+    gates.push({ gate, input: args.req.input });
+    return gate.promise;
+  });
+  const html = (await import("node:fs")).readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
+  assert.equal((html.match(/id="tpl-preview"/g) ?? []).length, 1, "exactly one preview element");
+  assert.doesNotMatch(html, /tpl-built/, "no second preview box");
+  assert.doesNotMatch(html, /Preview — after Autobuild/);
+
+  ipc.calls = [];
+  assert.match(getNode("tpl-preview").text, /ALPHA 1/);
+  assert.equal(getNode("tpl-preview-tag").hidden, true, "no tag while off");
+  assert.equal(abCalls().length, 0, "off: no invoke");
+  check("tpl-autobuild", true);
+  assert.equal(getNode("tpl-preview-tag").hidden, false, "tag shown while on");
+  assert.equal(getNode("tpl-preview").classes.has("pending"), true);
+  assert.match(getNode("tpl-preview").text, /ALPHA 1/, "plain text while pending");
+  getNode("tpl-payload").type("ALPHA second");
+  assert.equal(gates.length, 2);
+  gates[1].gate.resolve({ output: "NEW RESULT" });
+  await tick();
+  assert.equal(getNode("tpl-preview").classes.has("pending"), false);
+  gates[0].gate.resolve({ output: "OLD RESULT" });
+  await tick();
+  assert.match(getNode("tpl-preview").text, /NEW RESULT/);
+  assert.doesNotMatch(getNode("tpl-preview").text, /OLD/);
+
+  // Toggling off shows the plain text again; a late result must not overwrite it.
+  getNode("tpl-payload").type("ALPHA third");
+  const pending = gates.at(-1);
+  check("tpl-autobuild", false);
+  assert.match(getNode("tpl-preview").text, /ALPHA third/);
+  assert.equal(getNode("tpl-preview-tag").hidden, true);
+  pending.gate.resolve({ output: "LATE BUILT" });
+  await tick();
+  assert.match(getNode("tpl-preview").text, /ALPHA third/);
+  assert.doesNotMatch(getNode("tpl-preview").text, /LATE BUILT/);
+
+  // Switching to another template drops a result still in flight for the previous one.
+  check("tpl-autobuild", true);
+  const inflight = gates.at(-1);
+  showView("templates");
+  getNode("tpl-guard-discard").fire("click");
+  open("Beta");
+  inflight.gate.resolve({ output: "FROM ALPHA" });
+  await tick();
+  assert.doesNotMatch(getNode("tpl-preview").text, /FROM ALPHA/);
+});
+test("late Load result does not navigate away from another view nor bypass its leave guard", async () => {
+  const { setLeaveGuard } = await import("../src/nav.js");
+  const { store, ids } = await twoSessions();
+  const [s1, s2] = ids;
+  store.select(s1);
+  await openFresh("Alpha");
+  const gate = deferred();
+  useBackend(SEED, () => gate.promise);
+  check("tpl-autobuild", true);
+  getNode("tpl-load").fire("click");
+  // The user leaves Templates (its own guard satisfied) for a view with unsaved edits.
+  let guardCalls = 0;
+  setLeaveGuard("autoreply", () => {
+    guardCalls += 1;
+    return false;
+  });
+  showView("autoreply", { force: true });
+  store.select(s2);
+  gate.resolve({ output: "LATE" });
+  await tick();
+  await tick();
+  assert.equal(currentView(), "autoreply", "no forced navigation");
+  assert.equal(guardCalls, 0, "guard neither consulted nor bypassed");
+  assert.equal(store.get(s1).draft, "LATE", "draft still loaded into the captured session");
+  assert.notEqual(store.get(s2).draft, "LATE");
+  assert.equal(getNode("tpl-load").disabled, false, "pending flags reset");
+  setLeaveGuard("autoreply", () => true);
+
+  // Normal path: still in Templates, still the same draft => navigates to the session view.
+  showView("templates", { force: true });
+  store.select(s1);
+  const gate2 = deferred();
+  useBackend(SEED, () => gate2.promise);
+  getNode("tpl-load").fire("click");
+  gate2.resolve({ output: "NORMAL" });
+  await tick();
+  await tick();
+  assert.equal(store.get(s1).draft, "NORMAL");
+  assert.equal(currentView(), "session");
 });

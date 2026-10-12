@@ -762,6 +762,8 @@ mod tests {
                     default: default.to_string(),
                 })
                 .collect(),
+            autobuild: false,
+            autobuild_no_etb: false,
         }
     }
 
@@ -1169,6 +1171,33 @@ mod tests {
         let now = first.split('|').nth(1).unwrap();
         assert_eq!(now.len(), 14);
         assert!(now.chars().all(|c| c.is_ascii_digit()));
+    }
+
+    #[test]
+    fn autobuild_template_options_do_not_affect_auto_replies() {
+        let plain = tpl("t", "<VT>A{{REQ_CONTROL_ID}}B<FS><CR>", &[]);
+        let mut built = plain.clone();
+        built.autobuild = true;
+        built.autobuild_no_etb = true;
+        let frames = |template: Template| {
+            let set = compile(
+                vec![rule(
+                    "1",
+                    hl7("*"),
+                    None,
+                    Action::Template {
+                        template_id: "t".into(),
+                    },
+                )],
+                &[template],
+            )
+            .unwrap();
+            match set.evaluate(&msg("ADT^A01", "R1", "")) {
+                Outcome::Reply(reply) => reply.frames,
+                other => panic!("{other:?}"),
+            }
+        };
+        assert_eq!(frames(plain), frames(built));
     }
 
     #[test]

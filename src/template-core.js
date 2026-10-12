@@ -105,6 +105,8 @@ export function snapshot(template) {
     name: template.name,
     description: template.description,
     payload: template.payload,
+    autobuild: Boolean(template.autobuild),
+    autobuildNoEtb: Boolean(template.autobuildNoEtb),
     variables: syncVariables(template.payload, template.variables).map((v) => [
       v.name,
       v.default,

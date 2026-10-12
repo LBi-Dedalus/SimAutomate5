@@ -18,6 +18,8 @@ export function publishSavedTemplates(templates) {
     name: t.name,
     description: t.description ?? "",
     payload: t.payload,
+    autobuild: Boolean(t.autobuild),
+    autobuild_no_etb: Boolean(t.autobuild_no_etb),
     variables: (t.variables ?? []).map((v) => ({ name: v.name, default: v.default })),
   }));
   for (const fn of [...subscribers]) fn(saved);

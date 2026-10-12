@@ -1976,6 +1976,52 @@ button[data-variant="primary"]:hover:not(:disabled) {
   font-size: 11px;
 }
 
+.tpl-opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 10px 0 4px;
+}
+
+.tpl-opts .switch-row {
+  margin: 0;
+  padding: 5px 10px;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.tpl-opts .switch-row.sub {
+  font-weight: 500;
+}
+
+.tpl-opts .switch-row.sub:has(input:disabled) {
+  opacity: 0.55;
+}
+
+.tpl-opts .hint {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 11px;
+}
+
+#tpl-preview.pending {
+  opacity: 0.6;
+}
+
+#tpl-preview.err {
+  color: var(--rd, #b91c1c);
+}
+
+.tag.hidden {
+  display: none;
+}
+.tag.ab {
+  background: #fff;
+  color: var(--tl);
+  box-shadow: inset 0 0 0 1px var(--tl);
+}
+
 /* ── Auto reply ── */
 .card {
   background: #fff;
