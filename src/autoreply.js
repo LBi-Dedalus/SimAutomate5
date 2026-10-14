@@ -479,7 +479,7 @@ function renderList() {
   const list = $("ar-list");
   list.replaceChildren();
   if (!loaded) {
-    list.appendChild(el("p", "empty-note", loading ? "Loading rules…" : "Rules unavailable."));
+    list.appendChild(el("p", "", loading ? "Loading rules…" : "Rules unavailable."));
     return;
   }
   const problems = failingRules();
@@ -492,10 +492,9 @@ function renderList() {
       if (ev.key === "Enter" && ev.target === row) select(rule.id);
     });
 
-    const on = el("span", "ar-c ar-c-on");
+    const on = el("span");
     const box = el("input");
     box.type = "checkbox";
-    box.className = "ar-on";
     box.checked = rule.enabled;
     box.disabled = !editable();
     box.setAttribute("aria-label", `Enable rule ${rule.name}`);
@@ -504,7 +503,7 @@ function renderList() {
     on.appendChild(box);
     row.appendChild(on);
 
-    const when = el("span", "ar-c ar-c-when");
+    const when = el("span");
     when.appendChild(el("b", "", rule.name.trim() || "Untitled"));
     when.appendChild(el("span", "ar-sub", describeTrigger(rule)));
     if (problems.has(rule.id)) {
@@ -513,13 +512,14 @@ function renderList() {
       when.appendChild(bad);
     }
     row.appendChild(when);
-    row.appendChild(el("span", "ar-c ar-c-cond", describeCondition(rule)));
-    row.appendChild(el("span", "ar-c ar-c-reply", describeAction(rule, templates)));
-    row.appendChild(el("span", "ar-c ar-c-delay", describeDelay(rule)));
+    row.appendChild(el("span", "", describeCondition(rule)));
+    row.appendChild(el("span", "", describeAction(rule, templates)));
+    row.appendChild(el("span", "", describeDelay(rule)));
 
-    const tools = el("span", "ar-c ar-c-tools");
-    const mk = (label, title, onClick, disabled, extra = "") => {
-      const b = el("button", `btn sm gh ${extra}`.trim(), label);
+    const tools = el("span");
+    const mk = (label, title, onClick, disabled, danger = false) => {
+      const b = el("button", "small ghost", label);
+      if (danger) b.dataset.variant = "danger";
       b.type = "button";
       b.title = title;
       b.disabled = disabled || !editable();
@@ -533,7 +533,7 @@ function renderList() {
     mk("↑", "Move up (higher priority)", () => move(rule, -1), index === 0);
     mk("↓", "Move down", () => move(rule, 1), index === rules.length - 1);
     const armed = deleteArmedId === rule.id;
-    mk(armed ? "Sure?" : "✕", armed ? "Click again to delete" : "Delete rule", () => deleteRule(rule), false, "dg");
+    mk(armed ? "Sure?" : "✕", armed ? "Click again to delete" : "Delete rule", () => deleteRule(rule), false, true);
     row.appendChild(tools);
     list.appendChild(row);
   });

@@ -129,19 +129,19 @@ function renderSidebar() {
     const dot = el("i");
     dot.dataset.st = session.status;
     open.appendChild(dot);
-    const tx = el("span", "tx");
+    const tx = el("span");
     tx.appendChild(el("span", "", endpointLabel(session)));
     tx.appendChild(
       el("small", "", `${session.mode === "client" ? "Client" : "Server"} · ${STATUS_TEXT[session.status] ?? session.status}`),
     );
     open.appendChild(tx);
     if (session.unread > 0 && !active) {
-      open.appendChild(el("em", "ub", String(Math.min(session.unread, 99))));
+      open.appendChild(el("em", "", String(Math.min(session.unread, 99))));
     }
     open.addEventListener("click", () => openSession(session.id));
     item.appendChild(open);
 
-    const close = el("button", "ses-x", "×");
+    const close = el("button", "ghost icon", "×");
     close.type = "button";
     close.title = `Close ${session.label}`;
     close.setAttribute("aria-label", `Close session ${session.label}`);

@@ -235,10 +235,10 @@ function buildBubbleNode(record, info) {
   const node = el("div", `msg ${outgoing ? "out" : "in"} ${record.msg_type}`);
 
   const meta = el("div", "meta");
-  meta.appendChild(el("span", "ty", info.title));
+  meta.appendChild(el("span", record.msg_type === "received" ? "badge in" : "badge", info.title));
   meta.appendChild(el("span", "", formatTime(record.timestamp)));
   const ack = hl7Ack(info.hl7);
-  if (ack) meta.appendChild(el("span", ack.ok ? "ok" : "ko", `${ack.ok ? "✓" : "✕"} ${ack.code}`));
+  if (ack) meta.appendChild(el("span", ack.ok ? "ack ok" : "ack error", `${ack.ok ? "✓" : "✕"} ${ack.code}`));
   node.appendChild(meta);
 
   const bubble = el("div", "bub");

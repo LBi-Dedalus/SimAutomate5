@@ -590,10 +590,10 @@ function insertVariable() {
 function templateKind(payload) {
   const info = describeMessage({ msg_type: "sent", content: payload });
   if (info.kind === "hl7") {
-    return { label: info.hl7.version ? `HL7 ${info.hl7.version}` : "HL7", cls: "tag" };
+    return { label: info.hl7.version ? `HL7 ${info.hl7.version}` : "HL7", cls: "badge" };
   }
-  if (info.kind === "astm") return { label: "ASTM", cls: "tag a" };
-  return { label: "Text", cls: "tag c" };
+  if (info.kind === "astm") return { label: "ASTM", cls: "badge in" };
+  return { label: "Text", cls: "badge mute" };
 }
 
 /** Card preview: the first segment after the header (falls back to the payload start). */
@@ -626,7 +626,7 @@ function renderList() {
 
   if (rows.length === 0) {
     list.appendChild(
-      el("p", "empty-note", loading ? "Loading templates…" : !loaded ? "Templates unavailable." : query ? "No match." : "No template yet."),
+      el("p", "", loading ? "Loading templates…" : !loaded ? "Templates unavailable." : query ? "No match." : "No template yet."),
     );
     return;
   }
@@ -635,11 +635,11 @@ function renderList() {
     const active = draft && draft.id === row.id;
     // The editor holds the live copy of the selected template.
     const shown = active ? draft : row;
-    const card = el("button", `tcard${active ? " on" : ""}`);
+    const card = el("button", `card${active ? " on" : ""}`);
     card.type = "button";
     const title = el("b");
-    title.appendChild(el("span", "tname", shown.name.trim() || "Untitled"));
-    if (active && isDirty()) title.appendChild(el("span", "dot", "●"));
+    title.appendChild(el("span", "", shown.name.trim() || "Untitled"));
+    if (active && isDirty()) title.appendChild(el("span", "", "●"));
     card.appendChild(title);
     const preview = el("div", "pv");
     const line = previewLine(shown.payload);
@@ -649,8 +649,8 @@ function renderList() {
     const meta = el("div", "mt");
     const kind = templateKind(shown.payload);
     meta.appendChild(el("span", kind.cls, kind.label));
-    if (shown.autobuild) meta.appendChild(el("span", "tag ab", "Autobuild"));
-    if (active && draft.isNew) meta.appendChild(el("span", "tag s", "unsaved"));
+    if (shown.autobuild) meta.appendChild(el("span", "badge outline", "Autobuild"));
+    if (active && draft.isNew) meta.appendChild(el("span", "badge warn", "unsaved"));
     card.appendChild(meta);
     card.addEventListener("click", () => {
       if (active) return;
@@ -731,14 +731,14 @@ function renderVars() {
 
   if (names.length === 0) return;
   for (const name of names) {
-    const row = el("div", "vr");
-    const label = el("label", "lbl");
+    const row = el("div");
+    const label = el("label");
     label.appendChild(el("span", "var", name));
     if (isAutoVariable(name)) {
       label.appendChild(el("em", "", "auto"));
       row.appendChild(label);
       row.appendChild(
-        el("div", "inp auto", name === "NOW" ? "yyyyMMddHHmmss" : "unique per send"),
+        el("output", "", name === "NOW" ? "yyyyMMddHHmmss" : "unique per send"),
       );
     } else {
       label.appendChild(el("em", "", "value"));
@@ -792,10 +792,10 @@ function renderPreview(result) {
   const validity = $("tpl-validity");
   validity.replaceChildren();
   if (draft.payload === "") {
-    validity.className = "validity warn";
+    validity.className = "warn";
     validity.textContent = "Empty payload: nothing to send.";
   } else if (resolved.ok) {
-    validity.className = "validity ok";
+    validity.className = "ok";
     const parts = ["✓ Ready"];
     const hl7 = parseHl7(resolved.text);
     if (hl7) {
@@ -804,7 +804,7 @@ function renderPreview(result) {
     }
     validity.textContent = parts.join(" · ");
   } else {
-    validity.className = "validity err";
+    validity.className = "error";
     validity.textContent = resolved.errors.join(" ");
   }
   renderPreviewBox(resolved);
@@ -850,7 +850,7 @@ function renderPreviewBox(resolved) {
     (err) => {
       if (!current()) return;
       builtShownFor = null;
-      out.className = "raw err";
+      out.className = "raw error";
       out.replaceChildren();
       out.textContent = `Autobuild failed: ${String(err)}`;
     },

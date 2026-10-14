@@ -12,11 +12,11 @@ const STATUS_LABELS = {
 
 // Pill modifier per status; "connected" uses the default (green) pill.
 const STATUS_PILL_CLASSES = {
-  disconnected: "off",
-  connecting: "wait",
-  listening: "wait",
+  disconnected: "mute",
+  connecting: "warn",
+  listening: "warn",
   connected: "",
-  error: "err",
+  error: "error",
 };
 
 // A connection attempt, a listening server or a live connection is "busy".
@@ -46,10 +46,10 @@ window.connection_status = {
 
 function renderPills(status) {
   const label = STATUS_LABELS[status] ?? status;
-  const cls = STATUS_PILL_CLASSES[status] ?? "off";
+  const cls = STATUS_PILL_CLASSES[status] ?? "mute";
 
   for (const pill of document.querySelectorAll("[data-status-pill]")) {
-    pill.className = cls ? `pill ${cls}` : "pill";
+    pill.className = cls ? `badge ${cls}` : "badge";
     pill.replaceChildren(document.createElement("i"), document.createTextNode(label));
   }
 }

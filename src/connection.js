@@ -204,13 +204,13 @@ function renderRecent() {
   for (const entry of entries) {
     const client = entry.mode === "client";
 
-    const card = el("button", "rc");
+    const card = el("button", "card");
     card.type = "button";
-    const top = el("div", "top");
-    top.appendChild(el("span", client ? "tag" : "tag c", client ? "Client" : "Server"));
-    top.appendChild(el("span", "go", client ? "Connect ↗" : "Listen ↗"));
+    const top = el("div");
+    top.appendChild(el("span", client ? "badge" : "badge mute", client ? "Client" : "Server"));
+    top.appendChild(el("small", "", client ? "Connect ↗" : "Listen ↗"));
     card.appendChild(top);
-    card.appendChild(el("div", "ep", endpointText(entry)));
+    card.appendChild(el("b", "", endpointText(entry)));
     card.addEventListener("click", () => useRecent(entry));
     list.appendChild(card);
   }
@@ -221,11 +221,11 @@ function renderRecent() {
     item.type = "button";
     item.title = `${client ? "Connect to" : "Listen on"} ${endpointText(entry)} in a new session`;
     item.appendChild(el("i"));
-    const tx = el("span", "tx");
+    const tx = el("span");
     tx.appendChild(el("span", "", endpointText(entry)));
     tx.appendChild(el("small", "", [client ? "Client" : "Server", relativeTime(entry.lastUsed)].filter(Boolean).join(" · ")));
     item.appendChild(tx);
-    item.appendChild(el("span", "x", "↗"));
+    item.appendChild(el("b", "", "↗"));
     item.addEventListener("click", () => useRecent(entry));
     side.appendChild(item);
   }

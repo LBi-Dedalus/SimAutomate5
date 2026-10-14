@@ -101,7 +101,7 @@ function render() {
     title.textContent = "Message inspector";
     dir.classList.add("hidden");
     body.appendChild(
-      el("p", "empty-note", "Select a message in the conversation to inspect it."),
+      el("p", "", "Select a message in the conversation to inspect it."),
     );
     copy.disabled = true;
     save.disabled = true;
@@ -110,11 +110,11 @@ function render() {
 
   const { info, tabs } = available(record);
   title.textContent = info.title;
-  dir.className = "mbadge";
+  dir.className = "badge";
   dir.textContent = { sent: "OUT", received: "IN" }[record.msg_type] ?? "SYS";
   if (record.msg_type === "received") dir.classList.add("in");
-  if (record.msg_type === "systemerror") dir.classList.add("err");
-  if (record.msg_type === "systemwarn") dir.classList.add("warnb");
+  if (record.msg_type === "systemerror") dir.classList.add("error");
+  if (record.msg_type === "systemwarn") dir.classList.add("warn");
 
   const time = new Date(record.timestamp);
   meta.appendChild(
@@ -213,7 +213,7 @@ function renderParsed(body, hl7) {
     body.appendChild(block);
   }
 
-  body.appendChild(el("span", "lbl", "Raw"));
+  body.appendChild(el("small", "", "Raw"));
   const raw = el("div", "raw");
   renderTokens(raw, record.content, { breakAfterCr: true, segments: true });
   body.appendChild(raw);
@@ -227,7 +227,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (err) {
       logError(`Copy failed: ${String(err)}`, "inspector.js:copy");
       const meta = document.getElementById("insp-meta");
-      meta.appendChild(el("span", "inline-error", "Copy failed"));
+      meta.appendChild(el("span", "badge error", "Copy failed"));
     }
   });
 

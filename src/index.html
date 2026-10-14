@@ -23,285 +23,206 @@
   <body>
     <div id="app">
       <aside id="sidebar">
-        <div class="brand"><img class="brand-logo" src="assets/logo.png" alt="" width="24" height="24" aria-hidden="true" />SimAutomate</div>
+        <h1><img src="assets/logo.png" alt="" width="24" height="24" aria-hidden="true" />SimAutomate</h1>
 
         <nav id="nav" aria-label="Main">
-          <button type="button" class="nav-item on" data-view="home">
-            <b aria-hidden="true">⌂</b>Home
-          </button>
-          <button type="button" class="nav-item" data-view="session">
-            <b aria-hidden="true">◉</b>Session
-          </button>
-          <button type="button" class="nav-item" data-view="templates">
-            <b aria-hidden="true">▤</b>Templates
-          </button>
-          <button type="button" class="nav-item" data-view="autoreply">
+          <button type="button" class="on" data-view="home"><b aria-hidden="true">⌂</b>Home</button>
+          <button type="button" data-view="session"><b aria-hidden="true">◉</b>Session</button>
+          <button type="button" data-view="templates"><b aria-hidden="true">▤</b>Templates</button>
+          <button type="button" data-view="autoreply">
             <b aria-hidden="true">↺</b>Auto reply
-            <em id="autoreply-badge" class="nav-badge hidden">ON</em>
+            <span id="autoreply-badge" class="badge hidden">ON</span>
           </button>
-          <button type="button" class="nav-item" data-view="autobuild">
-            <b aria-hidden="true">⚒</b>Autobuild
-          </button>
+          <button type="button" data-view="autobuild"><b aria-hidden="true">⚒</b>Autobuild</button>
         </nav>
 
         <div id="side-lists">
-          <h6 class="side-h">
+          <h6>
             <span>Sessions</span>
-            <button type="button" id="session-new" class="side-add" title="New session (go to Home)" aria-label="New session">＋</button>
+            <button type="button" id="session-new" class="ghost icon" title="New session (go to Home)" aria-label="New session">＋</button>
           </h6>
-          <div id="side-sessions" class="side-list"></div>
-          <p id="side-sessions-empty" class="side-empty">No session open</p>
-          <p id="sessions-note" class="side-empty hidden" role="status"></p>
+          <div id="side-sessions"></div>
+          <p id="side-sessions-empty">No session open</p>
+          <p id="sessions-note" class="hidden" role="status"></p>
 
-          <h6 class="side-h"><span>Recent servers</span></h6>
-          <div id="side-recent" class="side-list"></div>
-          <p id="side-recent-empty" class="side-empty">None yet</p>
+          <h6><span>Recent servers</span></h6>
+          <div id="side-recent"></div>
+          <p id="side-recent-empty">None yet</p>
         </div>
 
-        <div class="side-foot">
-          <span class="pill off" id="status" data-status-pill><i></i>Disconnected</span>
-          <span id="side-endpoint" class="side-endpoint"></span>
-        </div>
+        <footer>
+          <span class="badge mute" id="status" data-status-pill><i></i>Disconnected</span>
+          <span id="side-endpoint"></span>
+        </footer>
       </aside>
 
       <div id="views">
         <!-- ───────────── Home ───────────── -->
         <section id="view-home" class="view" data-view-panel="home">
           <div class="scroll">
-           <div class="home">
-            <div class="hero">
+            <div class="home">
               <h2>Start a session</h2>
-              <form id="connect-form" class="cbox" novalidate>
-                <div class="field">
-                  <span class="lbl">Mode</span>
+              <form id="connect-form" class="card" novalidate>
+                <div>
+                  <small>Mode</small>
                   <div class="seg" role="group" aria-label="Mode">
-                    <button type="button" id="client-mode" class="on">
-                      Client
-                    </button>
+                    <button type="button" id="client-mode" class="on">Client</button>
                     <button type="button" id="server-mode">Server</button>
                   </div>
                 </div>
 
-                <label class="field grow" id="client-host-field">
-                  <span class="lbl">Host</span>
-                  <input
-                    type="text"
-                    placeholder="localhost"
-                    name="host"
-                    data-persist
-                    required
-                  />
+                <label id="client-host-field">
+                  Host
+                  <input type="text" placeholder="localhost" name="host" data-persist required />
                 </label>
 
-                <label class="field port" id="client-port-field">
-                  <span class="lbl">Port</span>
-                  <input
-                    type="number"
-                    placeholder="12345"
-                    name="port"
-                    min="1"
-                    max="65535"
-                    step="1"
-                    data-persist
-                    required
-                  />
+                <label id="client-port-field">
+                  Port
+                  <input type="number" placeholder="12345" name="port" min="1" max="65535" step="1" data-persist required />
                 </label>
 
-                <label class="field grow hidden" id="server-port-field">
-                  <span class="lbl">Port</span>
-                  <input
-                    type="number"
-                    placeholder="12345"
-                    name="server-port"
-                    min="1"
-                    max="65535"
-                    step="1"
-                    data-persist
-                  />
+                <label class="hidden" id="server-port-field">
+                  Port
+                  <input type="number" placeholder="12345" name="server-port" min="1" max="65535" step="1" data-persist />
                 </label>
 
-                <button id="connect-btn" class="btn" type="submit" data-variant="primary">
-                  Connect
-                </button>
+                <button id="connect-btn" type="submit">Connect</button>
               </form>
-              <p id="connect-hint" class="hint">
-                Server mode listens on all interfaces (0.0.0.0) and accepts one
-                client.
-              </p>
-              <p id="connect-error" class="inline-error hidden" role="alert"></p>
-            </div>
+              <p id="connect-hint">Server mode listens on all interfaces (0.0.0.0) and accepts one client.</p>
+              <p id="connect-error" class="hidden" role="alert" data-variant="danger"></p>
 
-            <div class="sh">
-              <b>Recent servers</b>
-              <button type="button" class="link-btn hidden" id="recent-clear">
-                Clear list
-              </button>
+              <h5>
+                Recent servers
+                <button type="button" class="small ghost hidden" id="recent-clear">Clear list</button>
+              </h5>
+              <p id="recent-note" class="hidden" role="alert" data-variant="danger"></p>
+              <div id="recent-list" class="cards"></div>
             </div>
-            <p id="recent-note" class="inline-error hidden" role="alert"></p>
-            <div id="recent-list" class="cards"></div>
-           </div>
           </div>
         </section>
 
         <!-- ───────────── Session ───────────── -->
         <section id="view-session" class="view hidden" data-view-panel="session">
-          <header class="vh">
+          <header>
             <h4>
               <span id="session-title">No connection</span>
-              <span id="session-mode" class="mbadge hidden"></span>
+              <span id="session-mode" class="badge hidden"></span>
             </h4>
-            <span class="pill off" data-status-pill><i></i>Disconnected</span>
+            <span class="badge mute" data-status-pill><i></i>Disconnected</span>
             <div class="sp"></div>
-            <button class="btn sm gh" type="button" id="clear-chat">Clear</button>
-            <button class="btn sm" type="button" id="session-reconnect">Reconnect</button>
-            <button class="btn sm dg hidden" type="button" id="session-disconnect">
-              Disconnect
-            </button>
-            <button class="btn sm gh" type="button" id="session-close" title="Close this session">Close</button>
+            <button class="small ghost" type="button" id="clear-chat">Clear</button>
+            <button class="small outline" type="button" id="session-reconnect">Reconnect</button>
+            <button class="small outline hidden" data-variant="danger" type="button" id="session-disconnect">Disconnect</button>
+            <button class="small ghost" type="button" id="session-close" title="Close this session">Close</button>
           </header>
 
           <div class="split">
             <div class="convo">
               <div id="messages">
-                <div id="no-connection" class="empty-state">
-                  <div class="es-ic" aria-hidden="true">◉</div>
+                <div id="no-connection" class="empty">
+                  <i aria-hidden="true">◉</i>
                   <b class="es-off">No connection</b>
-                  <button type="button" class="btn sm es-off" data-nav="home">
-                    Go to Home
-                  </button>
+                  <button type="button" class="small outline es-off" data-nav="home">Go to Home</button>
                   <b class="es-on">No message yet</b>
                 </div>
               </div>
 
-              <form id="message-form" class="comp">
-                <div id="special-chars" class="ins" aria-label="Send a control character">
-                  <span class="ins-label">Send</span>
-                  <button type="button" class="kk" data-token="ENQ" title="Send &lt;ENQ&gt; now" disabled>ENQ</button>
-                  <button type="button" class="kk" data-token="EOT" title="Send &lt;EOT&gt; now" disabled>EOT</button>
-                  <button type="button" class="kk" data-token="ACK" title="Send &lt;ACK&gt; now" disabled>ACK</button>
-                  <button type="button" class="kk" data-token="NAK" title="Send &lt;NAK&gt; now" disabled>NAK</button>
-                  <button type="button" class="kk" data-token="VT" title="Send &lt;VT&gt; now" disabled>VT</button>
-                  <button type="button" class="kk" data-token="FS.CR" title="Send &lt;FS&gt;&lt;CR&gt; now" disabled>FS·CR</button>
-                  <button type="button" class="kk" data-token="CR" title="Send &lt;CR&gt; now" disabled>CR</button>
+              <form id="message-form" class="card">
+                <div id="special-chars" aria-label="Send a control character">
+                  <span>Send</span>
+                  <button type="button" class="chip" data-token="ENQ" title="Send &lt;ENQ&gt; now" disabled>ENQ</button>
+                  <button type="button" class="chip" data-token="EOT" title="Send &lt;EOT&gt; now" disabled>EOT</button>
+                  <button type="button" class="chip" data-token="ACK" title="Send &lt;ACK&gt; now" disabled>ACK</button>
+                  <button type="button" class="chip" data-token="NAK" title="Send &lt;NAK&gt; now" disabled>NAK</button>
+                  <button type="button" class="chip" data-token="VT" title="Send &lt;VT&gt; now" disabled>VT</button>
+                  <button type="button" class="chip" data-token="FS.CR" title="Send &lt;FS&gt;&lt;CR&gt; now" disabled>FS·CR</button>
+                  <button type="button" class="chip" data-token="CR" title="Send &lt;CR&gt; now" disabled>CR</button>
                 </div>
-                <textarea
-                  type="text"
-                  placeholder="Type a message…"
-                  required
-                  name="message"
-                  spellcheck="false"
-                ></textarea>
-                <div class="cf">
-                  <button class="btn sm gh" type="reset">Clear</button>
-                  <button class="btn sm" data-nav="autobuild" type="button">
-                    ⚒ Autobuild
-                  </button>
-                  <button class="btn p" disabled type="submit">Send ➤</button>
+                <textarea type="text" placeholder="Type a message…" required name="message" spellcheck="false"></textarea>
+                <div>
+                  <button class="small ghost" type="reset">Clear</button>
+                  <button class="small outline" data-nav="autobuild" type="button">⚒ Autobuild</button>
+                  <button disabled type="submit">Send ➤</button>
                 </div>
               </form>
             </div>
 
             <aside id="inspector" aria-label="Message inspector">
-              <div class="ih">
-                <div class="r1">
-                  <span id="insp-dir" class="mbadge hidden"></span>
+              <header>
+                <div class="hstack gap-2">
+                  <span id="insp-dir" class="badge hidden"></span>
                   <b id="insp-title">Message inspector</b>
                 </div>
-                <div id="insp-meta" class="r2"></div>
-                <div id="insp-tabs" class="itabs" role="tablist"></div>
+                <small id="insp-meta" class="hstack gap-2"></small>
+                <div id="insp-tabs" role="tablist"></div>
+              </header>
+              <div id="insp-body">
+                <p>Select a message in the conversation to inspect it.</p>
               </div>
-              <div id="insp-body" class="ib">
-                <p class="empty-note">
-                  Select a message in the conversation to inspect it.
-                </p>
-              </div>
-              <div class="ia">
-                <button type="button" class="btn sm" id="insp-copy" disabled>
-                  Copy
-                </button>
-                <button type="button" class="btn sm" id="insp-save-template" disabled>
-                  Save as template
-                </button>
-              </div>
+              <footer>
+                <button type="button" class="small outline" id="insp-copy" disabled>Copy</button>
+                <button type="button" class="small outline" id="insp-save-template" disabled>Save as template</button>
+              </footer>
             </aside>
           </div>
         </section>
 
         <!-- ───────────── Templates ───────────── -->
         <section id="view-templates" class="view hidden" data-view-panel="templates">
-          <header class="vh">
+          <header>
             <h4>Templates</h4>
             <div class="sp"></div>
-            <button type="button" class="btn sm p" id="tpl-new">＋ New</button>
+            <button type="button" class="small" id="tpl-new">＋ New</button>
           </header>
 
           <div id="tpl-banner" class="banner hidden" role="status" aria-live="polite">
             <span id="tpl-banner-text"></span>
-            <button type="button" class="btn sm hidden" id="tpl-banner-retry">
-              Retry
-            </button>
-            <button type="button" class="btn sm gh" id="tpl-banner-close">
-              Dismiss
-            </button>
+            <button type="button" class="small outline hidden" id="tpl-banner-retry">Retry</button>
+            <button type="button" class="small ghost" id="tpl-banner-close">Dismiss</button>
           </div>
 
           <div id="tpl-guard" class="banner warn hidden" role="alertdialog" aria-live="assertive">
             <span id="tpl-guard-text">Unsaved changes.</span>
-            <button type="button" class="btn sm p" id="tpl-guard-save">
-              Save
-            </button>
-            <button type="button" class="btn sm" id="tpl-guard-discard">
-              Discard
-            </button>
-            <button type="button" class="btn sm gh" id="tpl-guard-cancel">
-              Cancel
-            </button>
+            <button type="button" class="small" id="tpl-guard-save">Save</button>
+            <button type="button" class="small outline" id="tpl-guard-discard">Discard</button>
+            <button type="button" class="small ghost" id="tpl-guard-cancel">Cancel</button>
           </div>
 
           <div class="split">
-            <div class="tlist">
-              <input
-                type="search"
-                id="tpl-search"
-                placeholder="⌕  Search templates"
-                autocomplete="off"
-              />
-              <div id="tpl-list" class="tcards"></div>
-              <button type="button" class="tcard new" id="tpl-new-card">
-                ＋ New template
-              </button>
-            </div>
+            <aside class="tlist">
+              <input type="search" id="tpl-search" placeholder="⌕  Search templates" autocomplete="off" />
+              <div id="tpl-list"></div>
+              <button type="button" class="card new" id="tpl-new-card">＋ New template</button>
+            </aside>
 
             <section class="dock" id="tpl-editor">
-              <div id="tpl-empty" class="empty-state">
-                <div class="es-ic" aria-hidden="true">▤</div>
+              <div id="tpl-empty" class="empty">
+                <i aria-hidden="true">▤</i>
                 <b>No template selected</b>
               </div>
 
-              <div id="tpl-form" class="tpl-form hidden">
-                <div class="ih">
-                  <div class="r1">
-                    <input id="tpl-name" class="title-input" type="text" placeholder="Template name" aria-label="Template name" autocomplete="off" />
-                    <span id="tpl-dirty" class="dirty hidden">● Unsaved changes</span>
-                    <span id="tpl-saved" class="saved hidden">● Saved</span>
+              <div id="tpl-form" class="hidden">
+                <header>
+                  <div class="hstack gap-2">
+                    <input id="tpl-name" type="text" placeholder="Template name" aria-label="Template name" autocomplete="off" />
+                    <small id="tpl-dirty" class="warn hidden">● Unsaved changes</small>
+                    <small id="tpl-saved" class="ok hidden">● Saved</small>
                   </div>
-                  <div class="r2">
-                    <span id="tpl-kind" class="tag"></span>
-                  </div>
-                </div>
+                  <small><span id="tpl-kind" class="badge"></span></small>
+                </header>
 
                 <div class="bd">
-                  <div class="col">
-                    <div class="tbar">
+                  <div>
+                    <div class="tbar hstack gap-1">
                       <span>Insert</span>
-                      <button type="button" class="k" data-insert="VT">VT</button>
-                      <button type="button" class="k" data-insert="FS.CR">FS·CR</button>
-                      <button type="button" class="k" data-insert="CR">CR</button>
-                      <button type="button" class="k" data-insert="ENQ">ENQ</button>
-                      <button type="button" class="k" data-insert="EOT">EOT</button>
-                      <button type="button" class="k" data-insert="ACK">ACK</button>
-                      <button type="button" class="k" data-insert="NAK">NAK</button>
-                      <button type="button" class="k v" id="tpl-insert-var" title="Insert a {{VARIABLE}} placeholder">{{ }} variable</button>
+                      <button type="button" class="chip" data-insert="VT">VT</button>
+                      <button type="button" class="chip" data-insert="FS.CR">FS·CR</button>
+                      <button type="button" class="chip" data-insert="CR">CR</button>
+                      <button type="button" class="chip" data-insert="ENQ">ENQ</button>
+                      <button type="button" class="chip" data-insert="EOT">EOT</button>
+                      <button type="button" class="chip" data-insert="ACK">ACK</button>
+                      <button type="button" class="chip" data-insert="NAK">NAK</button>
+                      <button type="button" class="chip warn" id="tpl-insert-var" title="Insert a {{VARIABLE}} placeholder">{{ }} variable</button>
                     </div>
                     <div class="ed-wrap">
                       <div id="tpl-payload-hl" class="ed-hl" aria-hidden="true"></div>
@@ -314,47 +235,39 @@
                       ></textarea>
                     </div>
 
-                    <div class="tpl-opts">
-                      <label class="switch-row">
-                        <span>Apply Autobuild</span>
+                    <div class="hstack gap-2">
+                      <label>
+                        Apply Autobuild
                         <input type="checkbox" role="switch" id="tpl-autobuild" />
                       </label>
-                      <label class="switch-row sub">
-                        <span>No ETB</span>
+                      <label>
+                        No ETB
                         <input type="checkbox" role="switch" id="tpl-autobuild-noetb" />
                       </label>
                     </div>
 
-                    <span class="tag ab hidden" id="tpl-preview-tag">After Autobuild</span>
+                    <span class="badge outline hidden" id="tpl-preview-tag">After Autobuild</span>
                     <div id="tpl-preview" class="raw"></div>
-                    <div id="tpl-validity" class="validity"></div>
+                    <small id="tpl-validity"></small>
                   </div>
 
                   <div class="vars">
-                    <span class="lbl">Variables</span>
+                    <small>Variables</small>
                     <div id="tpl-vars"></div>
-                    <p class="hint">
+                    <p>
                       <code>{{NOW}}</code> and <code>{{CONTROL_ID}}</code> are
                       filled in on load or send.
                     </p>
                   </div>
                 </div>
 
-                <div class="ia">
-                  <button type="button" class="btn sm gh dg" id="tpl-delete">
-                    Delete
-                  </button>
+                <footer>
+                  <button type="button" class="small ghost" data-variant="danger" id="tpl-delete">Delete</button>
                   <span class="sp"></span>
-                  <button type="button" class="btn sm" id="tpl-load">
-                    Load in composer
-                  </button>
-                  <button type="button" class="btn sm" id="tpl-save">
-                    Save
-                  </button>
-                  <button type="button" class="btn sm p" id="tpl-send" disabled>
-                    Send now ➤
-                  </button>
-                </div>
+                  <button type="button" class="small outline" id="tpl-load">Load in composer</button>
+                  <button type="button" class="small outline" id="tpl-save">Save</button>
+                  <button type="button" class="small" id="tpl-send" disabled>Send now ➤</button>
+                </footer>
               </div>
             </section>
           </div>
@@ -362,49 +275,47 @@
 
         <!-- ───────────── Auto reply ───────────── -->
         <section id="view-autoreply" class="view hidden" data-view-panel="autoreply">
-          <header class="vh">
-            <h4>
-              <span>Auto reply</span>
-            </h4>
+          <header>
+            <h4>Auto reply</h4>
             <div class="sp"></div>
-            <span id="ar-dirty" class="dirty hidden">● Unsaved changes</span>
-            <span id="ar-saved" class="saved hidden">Saved</span>
-            <button type="button" class="btn sm" id="ar-discard" disabled>Discard</button>
-            <button type="button" class="btn sm p" id="ar-save" disabled>Save rules</button>
-            <label class="ar-master" title="Applied immediately; it does not save the rules you are editing">
-              <span>Enabled</span>
+            <small id="ar-dirty" class="warn hidden">● Unsaved changes</small>
+            <small id="ar-saved" class="ok hidden">Saved</small>
+            <button type="button" class="small outline" id="ar-discard" disabled>Discard</button>
+            <button type="button" class="small" id="ar-save" disabled>Save rules</button>
+            <label title="Applied immediately; it does not save the rules you are editing">
+              Enabled
               <input type="checkbox" id="ar-enabled" role="switch" disabled />
             </label>
           </header>
 
           <div id="ar-banner" class="banner hidden" role="status" aria-live="polite">
             <span id="ar-banner-text"></span>
-            <button type="button" class="btn sm hidden" id="ar-banner-retry">Retry</button>
-            <button type="button" class="btn sm gh" id="ar-banner-close">Dismiss</button>
+            <button type="button" class="small outline hidden" id="ar-banner-retry">Retry</button>
+            <button type="button" class="small ghost" id="ar-banner-close">Dismiss</button>
           </div>
 
           <div id="ar-guard" class="banner warn hidden" role="alertdialog" aria-live="assertive">
             <span>Unsaved auto reply rules.</span>
-            <button type="button" class="btn sm p" id="ar-guard-save">Save</button>
-            <button type="button" class="btn sm dg" id="ar-guard-discard">Discard</button>
-            <button type="button" class="btn sm" id="ar-guard-cancel">Cancel</button>
+            <button type="button" class="small" id="ar-guard-save">Save</button>
+            <button type="button" class="small outline" data-variant="danger" id="ar-guard-discard">Discard</button>
+            <button type="button" class="small outline" id="ar-guard-cancel">Cancel</button>
           </div>
 
-          <div class="ar-body">
-            <div class="ar-main scroll">
-              <section class="card ar-card" aria-labelledby="ar-title">
-                <div class="ar-head">
+          <div class="split stack">
+            <div class="scroll">
+              <section class="card" aria-labelledby="ar-title">
+                <header>
                   <h6 id="ar-title">Rules</h6>
                   <div class="sp"></div>
-                  <button type="button" class="btn sm p" id="ar-add" disabled>＋ Add rule</button>
-                </div>
-                <p class="hint ar-intro">
+                  <button type="button" class="small" id="ar-add" disabled>＋ Add rule</button>
+                </header>
+                <p>
                   The first enabled rule whose trigger and condition match a
                   complete incoming message applies its action: it sends its reply, or
                   suppresses any reply (No auto reply) and stops lower rules.
                   Nothing matching means no reply: there is no default acknowledgement.
                 </p>
-                <div class="ar-table" id="ar-table" role="list">
+                <div id="ar-table" role="list">
                   <div class="ar-row ar-th" role="presentation">
                     <span>On</span>
                     <span>When receiving</span>
@@ -413,30 +324,30 @@
                     <span>Delay</span>
                     <span></span>
                   </div>
-                  <div id="ar-list" class="ar-list"></div>
+                  <div id="ar-list"></div>
                 </div>
               </section>
             </div>
 
-            <aside class="ar-dock" id="ar-dock" aria-label="Rule editor">
-              <form class="ar-form hidden" id="ar-form" autocomplete="off" novalidate>
-                <div class="ar-form-head">
+            <aside id="ar-dock" aria-label="Rule editor">
+              <form class="hidden" id="ar-form" autocomplete="off" novalidate>
+                <header>
                   <h6>Rule details</h6>
-                  <label class="ar-inline">
+                  <label>
                     <input type="checkbox" id="ar-rule-enabled" />
-                    <span>Enabled</span>
+                    Enabled
                   </label>
-                </div>
-                <ul class="ar-errors hidden" id="ar-errors" role="alert"></ul>
-                <label class="field">
-                  <span class="lbl">Name</span>
+                </header>
+                <ul class="hidden" id="ar-errors" role="alert" data-variant="danger"></ul>
+                <label>
+                  Name
                   <input type="text" id="ar-name" maxlength="100" />
                 </label>
 
-                <fieldset class="ar-set">
+                <fieldset>
                   <legend>When receiving</legend>
-                  <label class="field">
-                    <span class="lbl">Trigger</span>
+                  <label>
+                    Trigger
                     <select id="ar-trigger">
                       <option value="hl7">HL7 message</option>
                       <option value="astm_frame">ASTM frame</option>
@@ -444,42 +355,42 @@
                     </select>
                   </label>
                   <div id="ar-hl7-fields">
-                    <label class="field">
-                      <span class="lbl">Message type (MSH-9)</span>
+                    <label>
+                      Message type (MSH-9)
                       <input type="text" id="ar-type" placeholder="QRY^A19 or ORU^* or *" />
                     </label>
-                    <label class="ar-inline">
+                    <label>
                       <input type="checkbox" id="ar-cond-use" />
-                      <span>Only when a field matches</span>
+                      Only when a field matches
                     </label>
-                    <div id="ar-cond-fields" class="ar-cond">
-                      <label class="field">
-                        <span class="lbl">Segment</span>
+                    <div id="ar-cond-fields" class="row">
+                      <label class="col-4">
+                        Segment
                         <input type="text" id="ar-cond-seg" placeholder="QRD" maxlength="3" />
                       </label>
-                      <label class="field">
-                        <span class="lbl">Field</span>
+                      <label class="col-4">
+                        Field
                         <input type="number" id="ar-cond-field" min="1" max="999" placeholder="8" />
                       </label>
-                      <label class="field">
-                        <span class="lbl">Operator</span>
+                      <label class="col-4">
+                        Operator
                         <select id="ar-cond-op">
                           <option value="exact">equals</option>
                           <option value="glob">matches *</option>
                         </select>
                       </label>
-                      <label class="field ar-wide">
-                        <span class="lbl">Value</span>
+                      <label class="col-12">
+                        Value
                         <input type="text" id="ar-cond-value" placeholder="AAZ*" />
                       </label>
                     </div>
                   </div>
                 </fieldset>
 
-                <fieldset class="ar-set">
+                <fieldset>
                   <legend>Reply with</legend>
-                  <label class="field">
-                    <span class="lbl">Action</span>
+                  <label>
+                    Action
                     <select id="ar-action">
                       <option value="template">Saved template</option>
                       <option value="literal">Literal text</option>
@@ -488,39 +399,39 @@
                     </select>
                   </label>
                   <div id="ar-act-template">
-                    <label class="field">
-                      <span class="lbl">Template (from the Templates library)</span>
+                    <label>
+                      Template (from the Templates library)
                       <select id="ar-template"></select>
                     </label>
-                    <div class="ar-preview" id="ar-preview-box">
-                      <span class="lbl">Preview</span>
+                    <div id="ar-preview-box">
+                      <small>Preview</small>
                       <pre id="ar-preview" class="raw"></pre>
-                      <ul id="ar-vars" class="ar-vars"></ul>
+                      <ul id="ar-vars"></ul>
                     </div>
                   </div>
                   <div id="ar-act-literal" class="hidden">
-                    <label class="field">
-                      <span class="lbl">Response</span>
+                    <label>
+                      Response
                       <textarea id="ar-literal" rows="3" placeholder="&lt;ACK&gt;"></textarea>
                     </label>
                   </div>
-                  <div id="ar-act-ack" class="hidden ar-cond">
-                    <label class="field">
-                      <span class="lbl">Type (MSH-9)</span>
+                  <div id="ar-act-ack" class="row hidden">
+                    <label class="col-8">
+                      Type (MSH-9)
                       <input type="text" id="ar-ack-type" placeholder="ACK^O21" />
                     </label>
-                    <label class="field">
-                      <span class="lbl">Code (MSA-1)</span>
+                    <label class="col-4">
+                      Code (MSA-1)
                       <input type="text" id="ar-ack-code" maxlength="2" placeholder="AA" />
                     </label>
                   </div>
-                  <label class="field ar-delay" id="ar-delay-field">
-                    <span class="lbl">Delay before replying (ms, 0 to 60000)</span>
+                  <label id="ar-delay-field">
+                    Delay before replying (ms, 0 to 60000)
                     <input type="number" id="ar-delay" min="0" max="60000" step="1" />
                   </label>
                 </fieldset>
 
-                <p class="hint ar-help">
+                <p>
                   Templates can use <code>{{REQ_CONTROL_ID}}</code>: it is replaced
                   by the MSH-10 of the message that triggered the rule (HL7
                   rules only; it overrides any default). <code>{{NOW}}</code> and
@@ -538,23 +449,23 @@
 
         <!-- Autobuild -->
         <section id="view-autobuild" class="view hidden" data-view-panel="autobuild">
-          <header class="vh">
+          <header>
             <h4>Autobuild</h4>
             <div class="sp"></div>
-            <button type="button" class="btn sm gh" id="ab-clear" disabled>Clear recent</button>
+            <button type="button" class="small ghost" id="ab-clear" disabled>Clear recent</button>
           </header>
 
-          <div class="split ab-split">
-            <div class="tlist ab-list">
-              <h5 class="ab-h" id="ab-list-label">Recent autobuilds</h5>
-              <p id="ab-note" class="inline-error hidden" role="status"></p>
-              <ul id="ab-list" class="tcards ab-cards" aria-labelledby="ab-list-label"></ul>
-            </div>
+          <div class="split stack">
+            <aside class="tlist">
+              <h5 id="ab-list-label">Recent autobuilds</h5>
+              <p id="ab-note" class="hidden" role="alert" data-variant="danger"></p>
+              <ul id="ab-list" aria-labelledby="ab-list-label"></ul>
+            </aside>
 
-            <form id="ab-form" class="dock ab-dock" novalidate>
+            <form id="ab-form" class="dock" novalidate>
               <div class="ab-body">
-                <label class="field">
-                  <span class="lbl">Input</span>
+                <label>
+                  Input
                   <textarea
                     id="ab-input"
                     class="code-input"
@@ -565,8 +476,8 @@
                     data-persist
                   ></textarea>
                 </label>
-                <label class="field">
-                  <span class="lbl">Output</span>
+                <label>
+                  Output
                   <textarea
                     id="ab-output"
                     class="code-input"
@@ -577,19 +488,17 @@
                     data-persist
                   ></textarea>
                 </label>
-                <label class="switch-row">
-                  <span>No ETB ?</span>
+                <label>
+                  No ETB ?
                   <input type="checkbox" role="switch" id="ab-no-etb" name="no-etb" data-persist />
                 </label>
-                <p id="autobuild-error" class="inline-error hidden" role="alert"></p>
+                <p id="autobuild-error" class="hidden" role="alert" data-variant="danger"></p>
               </div>
-              <div class="ia">
+              <footer>
                 <span class="sp"></span>
-                <button type="button" class="btn sm" id="build-message">Build</button>
-                <button type="submit" class="btn sm p" id="build-copy">
-                  Build and copy to input
-                </button>
-              </div>
+                <button type="button" class="small outline" id="build-message">Build</button>
+                <button type="submit" class="small" id="build-copy">Build and copy to input</button>
+              </footer>
             </form>
           </div>
         </section>
