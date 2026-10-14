@@ -1235,12 +1235,6 @@ button[data-variant="primary"]:hover:not(:disabled) {
   border: 1px solid var(--bd);
 }
 
-.kk.q {
-  background: var(--tlXS);
-  border-color: #a5f3fc;
-  color: var(--tl);
-}
-
 .kk:hover:not(:disabled) {
   background: #fff;
   border-color: var(--tl);
