@@ -71,11 +71,6 @@
            <div class="home">
             <div class="hero">
               <h2>Start a session</h2>
-              <p>
-                Connect to a remote system, or open a local server and wait for
-                a client.
-              </p>
-
               <form id="connect-form" class="cbox" novalidate>
                 <div class="field">
                   <span class="lbl">Mode</span>
@@ -143,10 +138,6 @@
               </button>
             </div>
             <p id="recent-note" class="inline-error hidden" role="alert"></p>
-            <p id="recent-empty" class="empty-note">
-              Endpoints you connected to (or listened on) successfully appear
-              here.
-            </p>
             <div id="recent-list" class="cards"></div>
            </div>
           </div>
@@ -160,7 +151,6 @@
               <span id="session-mode" class="mbadge hidden"></span>
             </h4>
             <span class="pill off" data-status-pill><i></i>Disconnected</span>
-            <span id="session-stats" class="stats hidden"></span>
             <div class="sp"></div>
             <button class="btn sm gh" type="button" id="clear-chat">Clear</button>
             <button class="btn sm" type="button" id="session-reconnect">Reconnect</button>
@@ -176,18 +166,10 @@
                 <div id="no-connection" class="empty-state">
                   <div class="es-ic" aria-hidden="true">◉</div>
                   <b class="es-off">No connection</b>
-                  <p class="es-off">
-                    Connect to a system or start a server from Home. Messages
-                    then appear here as a conversation.
-                  </p>
                   <button type="button" class="btn sm es-off" data-nav="home">
                     Go to Home
                   </button>
                   <b class="es-on">No message yet</b>
-                  <p class="es-on">
-                    Type a message below, send a control character, or load a
-                    template.
-                  </p>
                 </div>
               </div>
 
@@ -204,13 +186,12 @@
                 </div>
                 <textarea
                   type="text"
-                  placeholder="Type a message… control characters as tokens, e.g. <VT>MSH|…<CR><FS><CR>"
+                  placeholder="Type a message…"
                   required
                   name="message"
                   spellcheck="false"
                 ></textarea>
                 <div class="cf">
-                  <span class="h">Tokens such as &lt;CR&gt; are sent as control characters.</span>
                   <button class="btn sm gh" type="reset">Clear</button>
                   <button class="btn sm" data-nav="autobuild" type="button">
                     ⚒ Autobuild
@@ -249,7 +230,7 @@
         <!-- ───────────── Templates ───────────── -->
         <section id="view-templates" class="view hidden" data-view-panel="templates">
           <header class="vh">
-            <h4>Templates <small id="tpl-count-label"></small></h4>
+            <h4>Templates</h4>
             <div class="sp"></div>
             <button type="button" class="btn sm p" id="tpl-new">＋ New</button>
           </header>
@@ -288,7 +269,6 @@
               <div id="tpl-list" class="tcards"></div>
               <button type="button" class="tcard new" id="tpl-new-card">
                 ＋ New template
-                <span>· or save one from a session message</span>
               </button>
             </div>
 
@@ -296,7 +276,6 @@
               <div id="tpl-empty" class="empty-state">
                 <div class="es-ic" aria-hidden="true">▤</div>
                 <b>No template selected</b>
-                <p>Pick a template in the list, or create a new one.</p>
               </div>
 
               <div id="tpl-form" class="tpl-form hidden">
@@ -308,8 +287,6 @@
                   </div>
                   <div class="r2">
                     <span id="tpl-kind" class="tag"></span>
-                    <span id="tpl-var-count"></span>
-                    <input id="tpl-desc" class="desc-input" type="text" placeholder="Add a description…" aria-label="Description" autocomplete="off" />
                   </div>
                 </div>
 
@@ -325,7 +302,6 @@
                       <button type="button" class="k" data-insert="ACK">ACK</button>
                       <button type="button" class="k" data-insert="NAK">NAK</button>
                       <button type="button" class="k v" id="tpl-insert-var" title="Insert a {{VARIABLE}} placeholder">{{ }} variable</button>
-                      <span id="tpl-cursor" class="pos"></span>
                     </div>
                     <div class="ed-wrap">
                       <div id="tpl-payload-hl" class="ed-hl" aria-hidden="true"></div>
@@ -347,19 +323,15 @@
                         <span>No ETB</span>
                         <input type="checkbox" role="switch" id="tpl-autobuild-noetb" />
                       </label>
-                      <p class="hint">
-                        Wraps the message in HL7 (MLLP) or ASTM framing, like the Autobuild
-                        menu, when you send or load it.
-                      </p>
                     </div>
 
-                    <span class="lbl">Preview with current values <span class="tag ab hidden" id="tpl-preview-tag">· after Autobuild</span></span>
+                    <span class="tag ab hidden" id="tpl-preview-tag">After Autobuild</span>
                     <div id="tpl-preview" class="raw"></div>
                     <div id="tpl-validity" class="validity"></div>
                   </div>
 
                   <div class="vars">
-                    <span class="lbl" id="tpl-vars-label">Variables</span>
+                    <span class="lbl">Variables</span>
                     <div id="tpl-vars"></div>
                     <p class="hint">
                       <code>{{NOW}}</code> and <code>{{CONTROL_ID}}</code> are
@@ -393,7 +365,6 @@
           <header class="vh">
             <h4>
               <span>Auto reply</span>
-              <small>Global rules · every session, open or future</small>
             </h4>
             <div class="sp"></div>
             <span id="ar-dirty" class="dirty hidden">● Unsaved changes</span>
@@ -424,7 +395,6 @@
               <section class="card ar-card" aria-labelledby="ar-title">
                 <div class="ar-head">
                   <h6 id="ar-title">Rules</h6>
-                  <span class="hint" id="ar-count"></span>
                   <div class="sp"></div>
                   <button type="button" class="btn sm p" id="ar-add" disabled>＋ Add rule</button>
                 </div>
@@ -445,14 +415,10 @@
                   </div>
                   <div id="ar-list" class="ar-list"></div>
                 </div>
-                <p class="empty-note hidden" id="ar-empty">
-                  No rule yet. Add one to answer incoming messages automatically.
-                </p>
               </section>
             </div>
 
             <aside class="ar-dock" id="ar-dock" aria-label="Rule editor">
-              <p class="empty-note" id="ar-dock-empty">Select a rule to edit it.</p>
               <form class="ar-form hidden" id="ar-form" autocomplete="off" novalidate>
                 <div class="ar-form-head">
                   <h6>Rule details</h6>
@@ -527,7 +493,7 @@
                       <select id="ar-template"></select>
                     </label>
                     <div class="ar-preview" id="ar-preview-box">
-                      <span class="lbl">Preview (read-only, nothing is sent)</span>
+                      <span class="lbl">Preview</span>
                       <pre id="ar-preview" class="raw"></pre>
                       <ul id="ar-vars" class="ar-vars"></ul>
                     </div>
@@ -548,10 +514,6 @@
                       <input type="text" id="ar-ack-code" maxlength="2" placeholder="AA" />
                     </label>
                   </div>
-                  <p id="ar-act-none" class="hint hidden">
-                    A matching message gets no automatic reply, and lower-priority
-                    rules are not applied to it.
-                  </p>
                   <label class="field ar-delay" id="ar-delay-field">
                     <span class="lbl">Delay before replying (ms, 0 to 60000)</span>
                     <input type="number" id="ar-delay" min="0" max="60000" step="1" />
@@ -577,7 +539,7 @@
         <!-- Autobuild -->
         <section id="view-autobuild" class="view hidden" data-view-panel="autobuild">
           <header class="vh">
-            <h4>Autobuild <small id="ab-count-label"></small></h4>
+            <h4>Autobuild</h4>
             <div class="sp"></div>
             <button type="button" class="btn sm gh" id="ab-clear" disabled>Clear recent</button>
           </header>
@@ -586,9 +548,6 @@
             <div class="tlist ab-list">
               <h5 class="ab-h" id="ab-list-label">Recent autobuilds</h5>
               <p id="ab-note" class="inline-error hidden" role="status"></p>
-              <p id="ab-empty" class="empty-note">
-                Messages you build successfully appear here, newest first.
-              </p>
               <ul id="ab-list" class="tcards ab-cards" aria-labelledby="ab-list-label"></ul>
             </div>
 
@@ -599,7 +558,7 @@
                   <textarea
                     id="ab-input"
                     class="code-input"
-                    placeholder="Type a message... (starts with H| for ASTM, MSH| for HL7)"
+                    placeholder="Type a message..."
                     required
                     name="input"
                     spellcheck="false"

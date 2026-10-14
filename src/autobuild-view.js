@@ -27,10 +27,8 @@ export function initAutobuildView(deps) {
   const buildButton = $("build-message");
   const errorNode = $("autobuild-error");
   const noteNode = $("ab-note");
-  const emptyNode = $("ab-empty");
   const listNode = $("ab-list");
   const clearButton = $("ab-clear");
-  const countLabel = $("ab-count-label");
 
   let entries = [];
   let loadButtons = [];
@@ -173,10 +171,8 @@ export function initAutobuildView(deps) {
     listNode.replaceChildren();
     loadButtons = [];
     for (const entry of entries) listNode.appendChild(cardFor(entry));
-    emptyNode.classList.toggle("hidden", entries.length > 0);
     listNode.classList.toggle("hidden", entries.length === 0);
     clearButton.disabled = entries.length === 0;
-    countLabel.textContent = entries.length > 0 ? `(${entries.length})` : "";
   }
 
   async function run(deliver) {

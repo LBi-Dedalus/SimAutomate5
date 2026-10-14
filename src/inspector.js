@@ -157,9 +157,6 @@ function renderRaw(body) {
 
 function renderHex(body) {
   body.appendChild(el("pre", "raw hex", toHexDump(record.raw)));
-  body.appendChild(
-    el("p", "hint", "Exact bytes of this event as written to / read from the socket."),
-  );
 }
 
 function renderParsed(body, hl7) {
@@ -220,14 +217,6 @@ function renderParsed(body, hl7) {
   const raw = el("div", "raw");
   renderTokens(raw, record.content, { breakAfterCr: true, segments: true });
   body.appendChild(raw);
-
-  body.appendChild(
-    el(
-      "p",
-      "hint",
-      "Best effort, based on this single event: a message split over several reads, or several messages in one read, is not reassembled.",
-    ),
-  );
 }
 
 document.addEventListener("DOMContentLoaded", () => {

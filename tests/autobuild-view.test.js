@@ -115,7 +115,6 @@ function setup({ stored, active = "s1", sessions = ["s1"], invoke, storage } = {
 test("renders an empty state when there is no recent autobuild", () => {
   const t = setup();
   assert.equal(t.cards().length, 0);
-  assert.equal(t.$("ab-empty").classes.has("hidden"), false);
   assert.equal(t.$("ab-list").classes.has("hidden"), true);
   assert.equal(t.$("ab-clear").disabled, true);
 });
@@ -131,7 +130,6 @@ test("a successful Build records a card; a failed build or empty input does not"
   assert.equal(card.find("ab-load").find("ab-top").find("ab-kind").textContent, "ASTM");
   assert.match(card.text, /H\|a/);
   assert.equal(t.$("ab-clear").disabled, false);
-  assert.equal(t.$("ab-count-label").textContent, "(1)");
   assert.equal(t.log.shown.length, 0, "Build alone does not navigate");
 
   // failure
@@ -243,7 +241,6 @@ test("delete removes one entry; clear removes all", () => {
   t.$("ab-clear").fire("click");
   assert.equal(t.cards().length, 0);
   assert.equal(t.data.has(RECENT_BUILDS_KEY), false);
-  assert.equal(t.$("ab-empty").classes.has("hidden"), false);
   assert.equal(t.$("ab-clear").disabled, true);
 });
 
@@ -353,7 +350,7 @@ test("markup: dedicated nav view, no dialog, composer navigates to the view", ()
   assert.ok(html.includes('data-nav="autobuild"'));
   assert.equal(html.includes('<dialog id="autobuild"'), false);
   assert.equal(html.includes('commandfor="autobuild"'), false);
-  for (const id of ["ab-input", "ab-output", "ab-no-etb", "ab-list", "ab-clear", "ab-empty", "ab-note", "build-message", "autobuild-error"]) {
+  for (const id of ["ab-input", "ab-output", "ab-no-etb", "ab-list", "ab-clear", "ab-note", "build-message", "autobuild-error"]) {
     assert.ok(html.includes(`id="${id}"`), id);
   }
   for (const name of ["input", "output", "no-etb"]) {

@@ -198,13 +198,11 @@ function renderRecent() {
 
   list.replaceChildren();
   side.replaceChildren();
-  document.getElementById("recent-empty").classList.toggle("hidden", entries.length > 0);
   document.getElementById("recent-clear").classList.toggle("hidden", entries.length === 0);
   document.getElementById("side-recent-empty").classList.toggle("hidden", entries.length > 0);
 
   for (const entry of entries) {
     const client = entry.mode === "client";
-    const when = relativeTime(entry.lastUsed);
 
     const card = el("button", "rc");
     card.type = "button";
@@ -213,8 +211,6 @@ function renderRecent() {
     top.appendChild(el("span", "go", client ? "Connect ↗" : "Listen ↗"));
     card.appendChild(top);
     card.appendChild(el("div", "ep", endpointText(entry)));
-    card.appendChild(el("div", "ds", client ? "Connect as client" : "Listen on all interfaces"));
-    card.appendChild(el("div", "bt", when ? `Last used ${when}` : ""));
     card.addEventListener("click", () => useRecent(entry));
     list.appendChild(card);
   }

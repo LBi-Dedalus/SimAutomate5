@@ -478,11 +478,6 @@ function renderToolbar() {
 function renderList() {
   const list = $("ar-list");
   list.replaceChildren();
-  const active = rules.filter((r) => r.enabled).length;
-  $("ar-count").textContent = loaded
-    ? `${rules.length === 1 ? "1 rule" : `${rules.length} rules`} · ${active} enabled · evaluated top to bottom`
-    : "";
-  $("ar-empty").classList.toggle("hidden", !(loaded && rules.length === 0));
   if (!loaded) {
     list.appendChild(el("p", "empty-note", loading ? "Loading rules…" : "Rules unavailable."));
     return;
@@ -546,7 +541,6 @@ function renderList() {
 
 function renderForm() {
   const rule = selectedRule();
-  $("ar-dock-empty").classList.toggle("hidden", rule !== null);
   $("ar-form").classList.toggle("hidden", rule === null);
   if (!rule) return;
 
@@ -574,7 +568,6 @@ function renderForm() {
   $("ar-act-template").classList.toggle("hidden", rule.action !== "template");
   $("ar-act-literal").classList.toggle("hidden", rule.action !== "literal");
   $("ar-act-ack").classList.toggle("hidden", rule.action !== "hl7_ack");
-  $("ar-act-none").classList.toggle("hidden", rule.action !== "none");
   $("ar-delay-field").classList.toggle("hidden", rule.action === "none");
   renderTemplateOptions(rule);
 

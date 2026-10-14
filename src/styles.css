@@ -779,18 +779,6 @@ button[data-variant="primary"]:hover:not(:disabled) {
   flex-shrink: 0;
 }
 
-.vh h4 small {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--mu);
-}
-
-.stats {
-  font-size: 12px;
-  color: var(--mu);
-  white-space: nowrap;
-}
-
 /* Generic empty state */
 .empty-state {
   margin: auto;
@@ -1001,17 +989,6 @@ button[data-variant="primary"]:hover:not(:disabled) {
   font-family: var(--mono);
   font-size: 13.5px;
   font-weight: 700;
-}
-
-.rc .ds {
-  font-size: 11.5px;
-  color: var(--mu);
-}
-
-.rc .bt {
-  margin-top: 10px;
-  font-size: 11px;
-  color: var(--mu2);
 }
 
 /* ── Session ── */
@@ -1295,22 +1272,13 @@ button[data-variant="primary"]:hover:not(:disabled) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px 8px;
   padding: 0 10px 10px 12px;
 }
 
 .cf .btn {
   flex-shrink: 0;
-}
-
-.cf .h {
-  min-width: 0;
-  margin-right: auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  color: var(--mu2);
 }
 
 /* ── Inspector ── */
@@ -1705,11 +1673,6 @@ button[data-variant="primary"]:hover:not(:disabled) {
   color: var(--tl);
 }
 
-.tcard.new span {
-  font-size: 11.5px;
-  font-weight: 400;
-}
-
 .tlist .empty-note {
   padding: 6px 4px;
 }
@@ -1734,8 +1697,7 @@ button[data-variant="primary"]:hover:not(:disabled) {
   padding-bottom: 2px;
 }
 
-.title-input,
-.desc-input {
+.title-input {
   flex: 1;
   min-width: 0;
   margin-left: -7px;
@@ -1749,15 +1711,7 @@ button[data-variant="primary"]:hover:not(:disabled) {
   font-weight: 700;
 }
 
-.desc-input {
-  flex-basis: 160px;
-  padding: 1px 6px;
-  font-size: 12px;
-  color: var(--mu);
-}
-
-.title-input:hover,
-.desc-input:hover {
+.title-input:hover {
   border-color: var(--bd);
 }
 
@@ -1829,12 +1783,6 @@ button[data-variant="primary"]:hover:not(:disabled) {
 .tbar .k.v:hover:not(:disabled) {
   border-color: #f59e0b;
   color: #92400e;
-}
-
-.tbar .pos {
-  margin-left: auto;
-  font-family: var(--mono);
-  color: var(--mu2);
 }
 
 /* Payload editor: a transparent textarea over a mirror that highlights tokens. */
@@ -1999,12 +1947,6 @@ button[data-variant="primary"]:hover:not(:disabled) {
   opacity: 0.55;
 }
 
-.tpl-opts .hint {
-  flex: 1 1 100%;
-  margin: 0;
-  font-size: 11px;
-}
-
 #tpl-preview.pending {
   opacity: 0.6;
 }
@@ -2106,11 +2048,6 @@ button[data-variant="primary"]:hover:not(:disabled) {
 .ar-head h6 {
   font-size: 14px;
   font-weight: 700;
-}
-
-.ar-head .hint,
-.ar-intro {
-  margin: 0;
 }
 
 .ar-intro {
@@ -2591,14 +2528,6 @@ button[data-variant="primary"]:hover:not(:disabled) {
     padding: 3px 8px;
   }
 
-  .vh h4 small {
-    display: none;
-  }
-
-  .cf .h {
-    display: none;
-  }
-
   .cf {
     justify-content: flex-end;
   }
@@ -2624,10 +2553,6 @@ button[data-variant="primary"]:hover:not(:disabled) {
   .vh {
     gap: 10px;
     padding: 0 14px;
-  }
-
-  .stats {
-    display: none;
   }
 
   #messages {

@@ -295,7 +295,6 @@ test("No auto reply: hides the reply fields, saves {type:none} with delay 0, and
   getNode("ar-list").children.find((c) => c.classes.has("ar-item")).fire("click");
   getNode("ar-delay").type("abc");
   getNode("ar-action").choose("none");
-  assert.equal(getNode("ar-act-none").hidden, false);
   for (const id of ["ar-act-template", "ar-act-literal", "ar-act-ack", "ar-delay-field"]) {
     assert.equal(getNode(id).hidden, true, id);
   }
@@ -316,7 +315,6 @@ test("No auto reply: hides the reply fields, saves {type:none} with delay 0, and
 
   // Switching back to a reply action shows its fields and validates them again.
   getNode("ar-action").choose("literal");
-  assert.equal(getNode("ar-act-none").hidden, true);
   assert.equal(getNode("ar-delay-field").hidden, false);
   assert.match(errorsText(), /Type the text to send/);
   getNode("ar-save").fire("click");
@@ -632,7 +630,6 @@ test("removing the last rules leaves an explicit empty configuration (no hidden 
   tools[2].fire("click");
   tools[2].fire("click");
   assert.equal(rows().length, 0);
-  assert.equal(getNode("ar-empty").hidden, false);
   getNode("ar-save").fire("click");
   await tick();
   assert.deepEqual(calls("save_auto_reply")[0].args.config, { enabled: true, rules: [] });

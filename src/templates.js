@@ -67,11 +67,7 @@ async function init() {
   $("tpl-new-card").addEventListener("click", () => requestAction(newTemplate));
   $("tpl-search").addEventListener("input", renderList);
   $("tpl-name").addEventListener("input", onNameInput);
-  $("tpl-desc").addEventListener("input", onDescInput);
   $("tpl-payload").addEventListener("input", onPayloadInput);
-  for (const type of ["keyup", "click", "focus", "blur"]) {
-    $("tpl-payload").addEventListener(type, updateCursor);
-  }
   $("tpl-save").addEventListener("click", () => void save());
   $("tpl-delete").addEventListener("click", () => void onDelete());
   $("tpl-load").addEventListener("click", () => void loadInComposer());
@@ -534,12 +530,6 @@ function onNameInput() {
   afterEdit(false);
 }
 
-function onDescInput() {
-  if (editBlocked($("tpl-desc"), draft?.description)) return;
-  draft.description = $("tpl-desc").value;
-  afterEdit(false);
-}
-
 function onAutobuildChange() {
   if (!draft || saving) {
     syncAutobuildControls(); // restore the controls: the edit is refused
@@ -568,7 +558,6 @@ function onPayloadInput() {
   draft.payload = $("tpl-payload").value;
   draft.variables = syncVariables(draft.payload, draft.variables);
   renderPayloadDecor();
-  updateCursor();
   afterEdit(true);
 }
 
@@ -595,17 +584,6 @@ function insertVariable() {
   insertAtCursor("{{VAR}}");
   // Select the placeholder name so the user can type over it.
   area.setSelectionRange?.(start + 2, start + 5);
-  updateCursor();
-}
-
-function updateCursor() {
-  const area = $("tpl-payload");
-  if (document.activeElement !== area) {
-    $("tpl-cursor").textContent = "";
-    return;
-  }
-  const before = area.value.slice(0, area.selectionStart ?? 0).split("\n");
-  $("tpl-cursor").textContent = `Ln ${before.length}, Col ${before[before.length - 1].length + 1}`;
 }
 
 /** Protocol tag shown on cards and in the editor header. */
@@ -616,11 +594,6 @@ function templateKind(payload) {
   }
   if (info.kind === "astm") return { label: "ASTM", cls: "tag a" };
   return { label: "Text", cls: "tag c" };
-}
-
-function variableCount(payload) {
-  const count = syncVariables(payload, []).length;
-  return count === 1 ? "1 variable" : `${count} variables`;
 }
 
 /** Card preview: the first segment after the header (falls back to the payload start). */
@@ -637,11 +610,6 @@ function previewLine(payload) {
 function renderAll() {
   renderList();
   renderEditor();
-  $("tpl-count-label").textContent = loaded
-    ? templates.length === 1
-      ? "1 template"
-      : `${templates.length} templates`
-    : "";
 }
 
 function renderList() {
@@ -651,7 +619,7 @@ function renderList() {
 
   const matches = (t) =>
     query === "" ||
-    `${t.name}\n${t.description ?? ""}\n${t.payload}`.toLowerCase().includes(query);
+    `${t.name}\n${t.payload}`.toLowerCase().includes(query);
 
   const rows = templates.filter(matches);
   if (draft?.isNew) rows.unshift(draft);
@@ -681,7 +649,6 @@ function renderList() {
     const meta = el("div", "mt");
     const kind = templateKind(shown.payload);
     meta.appendChild(el("span", kind.cls, kind.label));
-    meta.appendChild(el("span", "", variableCount(shown.payload)));
     if (shown.autobuild) meta.appendChild(el("span", "tag ab", "Autobuild"));
     if (active && draft.isNew) meta.appendChild(el("span", "tag s", "unsaved"));
     card.appendChild(meta);
@@ -702,10 +669,8 @@ function renderEditor() {
   if (!has) return;
 
   if ($("tpl-name").value !== draft.name) $("tpl-name").value = draft.name;
-  if ($("tpl-desc").value !== draft.description) $("tpl-desc").value = draft.description;
   if ($("tpl-payload").value !== draft.payload) $("tpl-payload").value = draft.payload;
   renderPayloadDecor();
-  updateCursor();
   syncAutobuildControls();
   renderVars();
   renderPreview();
@@ -719,7 +684,6 @@ function renderPayloadDecor() {
   const tag = $("tpl-kind");
   tag.className = kind.cls;
   tag.textContent = kind.label;
-  $("tpl-var-count").textContent = variableCount(draft.payload);
 
   const mirror = $("tpl-payload-hl");
   mirror.replaceChildren();
@@ -753,7 +717,7 @@ function updateButtons() {
   const allowed = editingAllowed() && !saving;
   $("tpl-save").disabled = !allowed;
   $("tpl-delete").disabled = !allowed;
-  for (const id of ["tpl-name", "tpl-desc", "tpl-payload"]) $(id).readOnly = saving;
+  for (const id of ["tpl-name", "tpl-payload"]) $(id).readOnly = saving;
   for (const input of document.querySelectorAll("#tpl-vars input")) input.readOnly = saving;
   syncAutobuildControls();
   $("tpl-dirty").classList.toggle("hidden", !isDirty());
@@ -764,12 +728,8 @@ function renderVars() {
   const container = $("tpl-vars");
   container.replaceChildren();
   const names = extractVariables(draft.payload);
-  $("tpl-vars-label").textContent = names.length ? `Variables (${names.length})` : "Variables";
 
-  if (names.length === 0) {
-    container.appendChild(el("p", "empty-note", "No variable in this payload."));
-    return;
-  }
+  if (names.length === 0) return;
   for (const name of names) {
     const row = el("div", "vr");
     const label = el("label", "lbl");
@@ -840,16 +800,9 @@ function renderPreview(result) {
     const hl7 = parseHl7(resolved.text);
     if (hl7) {
       parts.push(hl7.version ? `HL7 ${hl7.version}` : "HL7");
-      const count = hl7.segments.length;
-      parts.push(count === 1 ? "1 segment" : `${count} segments`);
       if (hl7.messageType) parts.push(`MSH-9 = ${hl7.messageType}`);
     }
-    parts.push(`${resolved.text.length} chars`);
     validity.textContent = parts.join(" · ");
-    if (/[\r\n]/.test(resolved.text)) {
-      validity.className = "validity warn";
-      validity.textContent += " · real line breaks are sent as separate frames";
-    }
   } else {
     validity.className = "validity err";
     validity.textContent = resolved.errors.join(" ");

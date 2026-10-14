@@ -170,12 +170,6 @@ function renderHeader() {
   badge.classList.toggle("hidden", !session);
   badge.textContent = session?.mode === "server" ? "Server" : "Client";
 
-  const stats = $("session-stats");
-  const sent = session?.sent ?? 0;
-  const received = session?.received ?? 0;
-  stats.textContent = `↑ ${sent} sent · ↓ ${received} received`;
-  stats.classList.toggle("hidden", sent + received === 0);
-
   const disconnect = $("session-disconnect");
   disconnect.classList.toggle("hidden", !busy);
   disconnect.disabled = working;
