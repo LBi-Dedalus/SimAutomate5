@@ -1174,7 +1174,6 @@ button.icon {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 210px;
-  align-content: start;
   gap: 16px;
   padding: 12px var(--pad) 16px;
   overflow: auto;

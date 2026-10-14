@@ -821,9 +821,7 @@ function renderPreview(result) {
 function renderPreviewBox(resolved) {
   const seq = ++previewSeq;
   const out = $("tpl-preview");
-  const tag = $("tpl-preview-tag");
   const building = draft.autobuild && draft.payload !== "" && resolved.ok;
-  tag.classList.toggle("hidden", !draft.autobuild);
   if (!building) {
     builtShownFor = null;
     out.className = "raw";

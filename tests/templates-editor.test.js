@@ -677,10 +677,9 @@ test("single preview box: plain when off, built when on, no late overwrite", asy
 
   ipc.calls = [];
   assert.match(getNode("tpl-preview").text, /ALPHA 1/);
-  assert.equal(getNode("tpl-preview-tag").hidden, true, "no tag while off");
+  assert.doesNotMatch(html, /tpl-preview-tag/, "no After Autobuild pill");
   assert.equal(abCalls().length, 0, "off: no invoke");
   check("tpl-autobuild", true);
-  assert.equal(getNode("tpl-preview-tag").hidden, false, "tag shown while on");
   assert.equal(getNode("tpl-preview").classes.has("pending"), true);
   assert.match(getNode("tpl-preview").text, /ALPHA 1/, "plain text while pending");
   getNode("tpl-payload").type("ALPHA second");
@@ -698,7 +697,6 @@ test("single preview box: plain when off, built when on, no late overwrite", asy
   const pending = gates.at(-1);
   check("tpl-autobuild", false);
   assert.match(getNode("tpl-preview").text, /ALPHA third/);
-  assert.equal(getNode("tpl-preview-tag").hidden, true);
   pending.gate.resolve({ output: "LATE BUILT" });
   await tick();
   assert.match(getNode("tpl-preview").text, /ALPHA third/);
