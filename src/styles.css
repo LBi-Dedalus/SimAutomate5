@@ -1459,6 +1459,7 @@ button.icon {
 @media (max-width: 1100px) {
   .split > aside {
     --w: 300px;
+    flex: none;
   }
 
   .split > .tlist {
