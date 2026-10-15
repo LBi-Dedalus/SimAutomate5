@@ -544,7 +544,7 @@ test("autobuild flags: dirty tracking, save payload, badge and legacy defaults",
   check("tpl-autobuild", true);
   assert.equal(getNode("tpl-dirty").hidden, false, "toggling Autobuild makes the draft dirty");
   assert.equal(getNode("tpl-autobuild-noetb").disabled, false);
-  assert.ok(cardNamed("Alpha").text.includes("Autobuild"), "badge shown for the live draft");
+  assert.equal(cardNamed("Alpha").text.includes("Autobuild"), false, "no Autobuild badge on the card");
   check("tpl-autobuild", false);
   assert.equal(getNode("tpl-dirty").hidden, true, "back to the saved value: clean");
   check("tpl-autobuild", true);

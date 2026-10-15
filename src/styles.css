@@ -1103,26 +1103,42 @@ button.icon {
 
   & b {
     display: flex;
+    align-items: center;
     justify-content: space-between;
     gap: 6px;
     font-size: var(--text-7);
 
-    & span:nth-child(2) {
+    & .nm {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    & .nm-t {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    & .nm > .badge {
+      flex-shrink: 0;
+    }
+
+    & > span:nth-child(2) {
       color: var(--amber);
     }
   }
 
-  & .pv,
   & .ab-pv {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--mute);
     font: var(--text-8) var(--mono);
-  }
-
-  & .pv {
-    margin: 3px 0 6px;
   }
 
   & .mt {

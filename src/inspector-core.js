@@ -182,6 +182,9 @@ export function describeMessage(record) {
     return { kind: "hl7", title: hl7.messageType || "HL7", hl7 };
   }
   const starter = ASTM_STARTERS.find((token) => record.content.startsWith(token));
+  if (!starter && record.content.startsWith("H|")) {
+    return { kind: "astm", title: "ASTM frame", hl7: null };
+  }
   if (starter) {
     return {
       kind: "astm",

@@ -54,6 +54,7 @@ test("describeMessage classifies events", () => {
   assert.equal(describeMessage({ msg_type: "received", content: HL7 }).title, "ADR^A19");
   assert.equal(describeMessage({ msg_type: "sent", content: "<ENQ>" }).title, "ENQ");
   assert.equal(describeMessage({ msg_type: "sent", content: "<STX>1H|<CR><ETX>1A<CR><LF>" }).kind, "astm");
+  assert.equal(describeMessage({ msg_type: "sent", content: "H|@^|SIM\nL|1|N" }).kind, "astm");
   assert.equal(describeMessage({ msg_type: "received", content: "hello" }).kind, "text");
   assert.equal(describeMessage({ msg_type: "systemerror", content: "boom" }).kind, "system");
 });

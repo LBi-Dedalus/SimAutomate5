@@ -12,12 +12,12 @@ import {
   isAutoVariable,
 } from "./template-core.js";
 import { tokenPayload, splitTokens } from "./control-chars.js";
-import { describeMessage, parseHl7, stripHl7Framing } from "./inspector-core.js";
+import { describeMessage, parseHl7 } from "./inspector-core.js";
 import { showView, setLeaveGuard, currentView } from "./nav.js";
 import { sendMessage, setComposerText, activeSendTarget, activeSessionId } from "./messages.js";
 import { SAVE_AS_TEMPLATE_EVENT } from "./inspector.js";
 import { subscribeSendEligibility } from "./sessions.js";
-import { el, renderTokens } from "./render.js";
+import { el } from "./render.js";
 import { logError, logInfo } from "./log.js";
 import { publishSavedTemplates, clearSavedTemplates } from "./template-store.js";
 import { applyTemplateAutobuild } from "./autobuild-core.js";
@@ -671,19 +671,10 @@ function insertVariable() {
 function templateKind(payload) {
   const info = describeMessage({ msg_type: "sent", content: payload });
   if (info.kind === "hl7") {
-    return { label: info.hl7.version ? `HL7 ${info.hl7.version}` : "HL7", cls: "badge" };
+    return { label: "HL7", cls: "badge" };
   }
   if (info.kind === "astm") return { label: "ASTM", cls: "badge in" };
   return { label: "Text", cls: "badge mute" };
-}
-
-/** Card preview: the first segment after the header (falls back to the payload start). */
-function previewLine(payload) {
-  const lines = stripHl7Framing(payload)
-    .split(/<CR>|<LF>|\r\n|\r|\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  return (lines.find((line) => !line.startsWith("MSH")) ?? lines[0] ?? "").replace(/\s+/g, " ");
 }
 
 // ── Rendering ───────────────────────────────────────────────
@@ -719,18 +710,16 @@ function renderList() {
     const card = el("button", `card${active ? " on" : ""}`);
     card.type = "button";
     const title = el("b");
-    title.appendChild(el("span", "", shown.name.trim() || "Untitled"));
+    const label = el("span", "nm");
+    const nameText = el("span", "nm-t", shown.name.trim() || "Untitled");
+    nameText.title = nameText.textContent;
+    label.appendChild(nameText);
+    const kind = templateKind(shown.payload);
+    label.appendChild(el("span", kind.cls, kind.label));
+    title.appendChild(label);
     if (active && isDirty()) title.appendChild(el("span", "", "●"));
     card.appendChild(title);
-    const preview = el("div", "pv");
-    const line = previewLine(shown.payload);
-    if (line) renderTokens(preview, line, { segments: true });
-    else preview.textContent = "(empty)";
-    card.appendChild(preview);
     const meta = el("div", "mt");
-    const kind = templateKind(shown.payload);
-    meta.appendChild(el("span", kind.cls, kind.label));
-    if (shown.autobuild) meta.appendChild(el("span", "badge outline", "Autobuild"));
     if (active && draft.isNew) meta.appendChild(el("span", "badge warn", "unsaved"));
     card.appendChild(meta);
     card.addEventListener("click", () => {
@@ -885,11 +874,7 @@ function renderPreview(result) {
   } else if (resolved.ok) {
     validity.className = "ok";
     const parts = ["✓ Ready"];
-    const hl7 = parseHl7(resolved.text);
-    if (hl7) {
-      parts.push(hl7.version ? `HL7 ${hl7.version}` : "HL7");
-      if (hl7.messageType) parts.push(`MSH-9 = ${hl7.messageType}`);
-    }
+    if (parseHl7(resolved.text)) parts.push("HL7");
     validity.textContent = parts.join(" · ");
   } else {
     validity.className = "error";
