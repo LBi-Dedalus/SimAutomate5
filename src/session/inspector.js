@@ -6,8 +6,8 @@ import {
   hl7Ack,
   HL7_SEGMENT_NAMES,
 } from "./inspector-core.js";
-import { renderTokens, el } from "./render.js";
-import { logError } from "./log.js";
+import { renderTokens, el } from "../render.js";
+import { logError } from "../log.js";
 
 export const SAVE_AS_TEMPLATE_EVENT = "simautomate:save-as-template";
 

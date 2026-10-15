@@ -1,0 +1,283 @@
+/* Session view: conversation, composer and inspector. */
+
+#messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 24px;
+}
+
+.msgs {
+  display: contents;
+}
+
+.sys {
+  align-self: center;
+  max-width: 90%;
+  display: flex;
+  gap: var(--space-2);
+  padding: 3px 12px;
+  border-radius: 12px;
+  font-size: var(--text-8);
+  cursor: pointer;
+
+  &.sel,
+  &:focus-visible {
+    outline: 2px solid var(--c);
+  }
+
+  & span:first-child {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  & span:last-child {
+    opacity: 0.7;
+    white-space: nowrap;
+  }
+}
+
+.systemwarn {
+  --c: var(--amber);
+}
+
+.systemerror {
+  --c: var(--red);
+}
+
+.system {
+  --c: var(--mute);
+}
+
+.msg {
+  align-self: flex-start;
+  max-width: 78%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+  outline: none;
+
+  &.out {
+    align-self: flex-end;
+    align-items: flex-end;
+  }
+
+  & > div:first-child {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--mute);
+    font-size: var(--text-8);
+  }
+}
+
+.bub {
+  max-width: 100%;
+  padding: 9px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-large);
+  background: var(--paper);
+  font: var(--text-7) / 1.55 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-all;
+
+  .out & {
+    border-color: var(--teal);
+    border-bottom-right-radius: 4px;
+    background: var(--teal);
+    color: var(--on);
+  }
+
+  .in & {
+    border-bottom-left-radius: 4px;
+  }
+
+  .out & .sg {
+    color: var(--teal-l);
+  }
+
+  .out & .cc {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--on) 20%, transparent);
+    color: var(--on);
+  }
+
+  .sel &,
+  .msg:focus-visible & {
+    box-shadow:
+      0 0 0 2px var(--paper),
+      0 0 0 4px var(--c);
+  }
+}
+
+#message-form {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0 var(--pad) 14px;
+  padding: 0;
+  box-shadow: 0 6px 20px -8px color-mix(in srgb, var(--ink) 18%, transparent);
+
+  &:focus-within {
+    border-color: var(--teal);
+  }
+
+  & textarea {
+    min-height: 68px;
+    max-height: 200px;
+    margin: 0;
+    padding: 7px 12px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  & div {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    padding: 9px 12px 0;
+    color: var(--mute);
+    font-size: var(--text-8);
+  }
+
+  & div:last-child {
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 0 10px 10px;
+  }
+}
+
+/* ── Inspector ── */
+#insp-body {
+  flex: 1;
+  padding: 12px 16px 14px;
+  overflow: auto;
+  font-size: var(--text-7);
+
+  & > p {
+    margin-top: 30px;
+    text-align: center;
+  }
+
+  & > small {
+    display: block;
+    margin-top: 14px;
+  }
+}
+
+/* Parsed view: segment heading (a button) + its fields. */
+.sgh {
+  justify-content: flex-start;
+  align-items: baseline;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font-size: var(--text-7);
+  white-space: normal;
+
+  & span:nth-child(2) {
+    font-family: var(--mono);
+  }
+
+  & em {
+    color: var(--mute);
+    font-size: var(--text-8);
+    font-style: normal;
+    font-weight: 400;
+  }
+
+  &.bad {
+    display: flex;
+    gap: var(--space-2);
+  }
+}
+
+.fl {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  gap: 4px;
+  margin-left: 5px;
+  padding: 2px 0 2px 14px;
+  border-left: 1px dashed var(--line);
+  font-family: var(--mono);
+
+  .collapsed > & {
+    display: none;
+  }
+
+  & span:first-child {
+    color: var(--teal);
+    font-size: var(--text-8);
+  }
+
+  & span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &.hl span:last-child {
+    justify-self: start;
+    padding: 0 4px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--red) var(--tint), var(--paper));
+    color: var(--red);
+  }
+}
+
+#no-connection[data-busy] .es-off,
+#no-connection:not([data-busy]) .es-on {
+  display: none;
+}
+
+#insp-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Inspector tabs */
+[role="tablist"] {
+  display: flex;
+  gap: 2px;
+  padding: 0;
+  background: none;
+
+  &:empty {
+    display: none;
+  }
+
+  & button {
+    padding: 6px 10px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: var(--mute);
+    font-size: var(--text-7);
+    font-weight: var(--font-semibold);
+
+    &.on {
+      border-bottom-color: var(--teal);
+      color: var(--fg);
+    }
+  }
+}
+
+#close-confirm {
+  max-width: 420px;
+
+  & ul {
+    color: var(--mute);
+  }
+}
+
+@media (max-height: 520px) {
+  #message-form textarea {
+    min-height: 40px;
+  }
+}

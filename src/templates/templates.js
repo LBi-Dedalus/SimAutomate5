@@ -11,16 +11,16 @@ import {
   newTemplateId,
   isAutoVariable,
 } from "./template-core.js";
-import { tokenPayload, splitTokens } from "./control-chars.js";
-import { describeMessage, parseHl7 } from "./inspector-core.js";
-import { showView, setLeaveGuard, currentView } from "./nav.js";
-import { sendMessage, setComposerText, activeSendTarget, activeSessionId } from "./messages.js";
-import { SAVE_AS_TEMPLATE_EVENT } from "./inspector.js";
-import { subscribeSendEligibility } from "./sessions.js";
-import { el } from "./render.js";
-import { logError, logInfo } from "./log.js";
+import { tokenPayload, splitTokens } from "../control-chars.js";
+import { describeMessage, parseHl7 } from "../session/inspector-core.js";
+import { showView, setLeaveGuard, currentView } from "../nav.js";
+import { sendMessage, setComposerText, activeSendTarget, activeSessionId } from "../session/messages.js";
+import { SAVE_AS_TEMPLATE_EVENT } from "../session/inspector.js";
+import { subscribeSendEligibility } from "../session/sessions.js";
+import { el } from "../render.js";
+import { logError, logInfo } from "../log.js";
 import { publishSavedTemplates, clearSavedTemplates } from "./template-store.js";
-import { applyTemplateAutobuild } from "./autobuild-core.js";
+import { applyTemplateAutobuild } from "../autobuild/autobuild-core.js";
 
 const { invoke } = window.__TAURI__.core;
 

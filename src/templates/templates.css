@@ -1,0 +1,162 @@
+/* Templates view: list cards, payload editor and variables. */
+
+#tpl-form header .hstack > .badge {
+  flex: none;
+}
+
+/* Template card: the load button and, on the selected card, its delete ✕ side by side. */
+.tlist .tcard {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+
+  & .tload {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-weight: 400;
+    text-align: left;
+    white-space: normal;
+  }
+
+  & .k-x {
+    margin-block: -2px;
+    margin-right: -6px;
+  }
+}
+
+.bd {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 210px;
+  gap: 16px;
+  padding: 12px var(--pad) 16px;
+  overflow: auto;
+}
+
+.tbar {
+  margin-bottom: 6px;
+  color: var(--mute);
+  font-size: var(--text-8);
+}
+
+/* Payload editor: a transparent textarea over a mirror that highlights tokens. */
+.ed-wrap {
+  position: relative;
+  margin-bottom: var(--space-3);
+}
+
+.ed-hl,
+.code-input {
+  padding: 10px 12px;
+  border-radius: var(--radius-large);
+  font: var(--text-7) / 1.75 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 8;
+}
+
+.ed-hl {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+  color: transparent;
+  pointer-events: none;
+
+  & span {
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--teal) 15%, var(--paper));
+  }
+
+  & .mv {
+    background: color-mix(in srgb, var(--amber) 15%, var(--paper));
+  }
+}
+
+.code-input {
+  position: relative;
+  z-index: 1;
+  display: block;
+  min-height: 140px;
+  margin: 0;
+  background: transparent;
+  field-sizing: content;
+  resize: none;
+}
+
+.var {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--amber) 15%, var(--paper));
+  color: var(--amber);
+  font: var(--font-bold) var(--text-8) var(--font-mono);
+}
+
+.vars {
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+
+  & label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  & em {
+    font-style: normal;
+    font-weight: 500;
+  }
+
+  & #tpl-vars > div {
+    margin-bottom: 10px;
+  }
+
+  & :is(input, output) {
+    font: var(--text-8) var(--mono);
+  }
+}
+
+#tpl-form .hstack label {
+  padding: 5px 10px;
+}
+
+#tpl-form {
+  position: relative;
+
+  & .k-float {
+    bottom: 70px;
+  }
+
+  &.pending .bd {
+    padding-bottom: 72px;
+  }
+}
+
+#tpl-validity {
+  display: block;
+  margin-top: 8px;
+}
+
+#tpl-preview {
+  margin-top: 4px;
+}
+
+@media (max-width: 1100px) {
+  .bd {
+    grid-template-columns: 1fr;
+  }
+
+  .vars {
+    padding: 12px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+}

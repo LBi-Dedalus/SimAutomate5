@@ -94,7 +94,7 @@ The repository also includes `test-socket-client.js` and `test-socket-server.js`
 
 ## Project Structure
 
-- `src/` - Frontend HTML, CSS, and Vanilla JS.
+- `src/` - Frontend HTML, CSS, and Vanilla JS. Shared files (`index.html`, `styles.css`, `config.js`, `nav.js`, `render.js`, ...) live at the root; each view has its own folder with its JS and CSS: `home/`, `session/`, `templates/`, `autoreply/`, `autobuild/`.
 - `src-tauri/` - Rust backend and Tauri configuration.
 - `SPECIFICATION.md` - Functional requirements and behavior notes.
 - `test-socket-client.js` / `test-socket-server.js` - Manual socket test helpers.

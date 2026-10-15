@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildForTarget, deliverToTarget, applyTemplateAutobuild } from "../src/autobuild-core.js";
+import { buildForTarget, deliverToTarget, applyTemplateAutobuild } from "../src/autobuild/autobuild-core.js";
 
 test("applyTemplateAutobuild: off returns the text and never invokes", async () => {
   const calls = [];

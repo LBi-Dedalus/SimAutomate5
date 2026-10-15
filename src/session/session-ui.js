@@ -1,8 +1,8 @@
 // Sidebar "Sessions" list, session header (title, status, stats, actions) and the
 // close confirmation. Everything is rendered from the session store.
-import { el } from "./render.js";
+import { el } from "../render.js";
 import { sessions, store } from "./sessions.js";
-import { showView } from "./nav.js";
+import { showView } from "../nav.js";
 import { isBusyStatus, isTerminalStatus } from "./sessions-core.js";
 
 const STATUS_TEXT = {

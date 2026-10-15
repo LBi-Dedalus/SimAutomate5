@@ -1,7 +1,7 @@
 // The application's session controller, wired to Tauri. Only this module listens to the
 // backend events, so every status/message is routed by its session id and attempt.
 import { createSessionController } from "./sessions-controller.js";
-import { logError, logWarn } from "./log.js";
+import { logError, logWarn } from "../log.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;

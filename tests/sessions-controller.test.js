@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createSessionController } from "../src/sessions-controller.js";
-import { createSessionStore } from "../src/sessions-core.js";
-import { buildForTarget } from "../src/autobuild-core.js";
+import { createSessionController } from "../src/session/sessions-controller.js";
+import { createSessionStore } from "../src/session/sessions-core.js";
+import { buildForTarget } from "../src/autobuild/autobuild-core.js";
 
 const memoryStorage = () => {
   const data = {};

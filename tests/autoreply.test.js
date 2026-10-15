@@ -1,4 +1,4 @@
-// Integration tests for src/autoreply.js driven through a minimal fake DOM and a mocked
+// Integration tests for src/autoreply/autoreply.js driven through a minimal fake DOM and a mocked
 // Tauri IPC (the real module: events, guards, rendering, persistence calls).
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -103,8 +103,8 @@ globalThis.window = {
 };
 
 const { showView, currentView } = await import("../src/nav.js");
-const { publishSavedTemplates, clearSavedTemplates } = await import("../src/template-store.js");
-await import("../src/autoreply.js");
+const { publishSavedTemplates, clearSavedTemplates } = await import("../src/templates/template-store.js");
+await import("../src/autoreply/autoreply.js");
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const deferred = () => {

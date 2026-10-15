@@ -7,7 +7,7 @@ import {
   makeContext,
   manualValues,
   resolveTemplate,
-} from "./template-core.js";
+} from "../templates/template-core.js";
 
 export const MAX_DELAY_MS = 60000;
 export const MAX_LITERAL_LEN = 4096;

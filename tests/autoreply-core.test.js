@@ -14,7 +14,7 @@ import {
   templateProblems,
   validateRule,
   validateRules,
-} from "../src/autoreply-core.js";
+} from "../src/autoreply/autoreply-core.js";
 
 const TPL = [
   { id: "adr", name: "ADR", payload: "MSH|^~\\&|X|{{NOW}}||ADR^A19|{{CONTROL_ID}}\rMSA|AA|{{REQ_CONTROL_ID}}", variables: [{ name: "REQ_CONTROL_ID", default: "" }] },

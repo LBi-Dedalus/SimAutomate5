@@ -9,7 +9,7 @@ import {
   makeContext,
   formatNow,
   snapshot,
-} from "../src/template-core.js";
+} from "../src/templates/template-core.js";
 
 test("tokenPayload maps data-token values to control payloads", () => {
   assert.equal(tokenPayload("VT"), "<VT>");

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createSessionStore, MAX_MESSAGES, takeLegacyDraft } from "../src/sessions-core.js";
+import { createSessionStore, MAX_MESSAGES, takeLegacyDraft } from "../src/session/sessions-core.js";
 
 const make = () => {
   let n = 0;

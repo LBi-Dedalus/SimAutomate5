@@ -5,7 +5,7 @@ import {
   activateInspector,
   forgetInspector,
 } from "./inspector.js";
-import { renderTokens, el } from "./render.js";
+import { renderTokens, el } from "../render.js";
 import { sessions, store, subscribeSendEligibility } from "./sessions.js";
 
 /**

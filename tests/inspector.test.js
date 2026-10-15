@@ -7,7 +7,7 @@ import {
   describeMessage,
   toHexDump,
   hasRawBytes,
-} from "../src/inspector-core.js";
+} from "../src/session/inspector-core.js";
 
 const HL7 =
   "<VT>MSH|^~\\&|App|Fac|Rcv|Dst|20250722084438||ADR^A19|1753166763|P|2.4||AL|NE|<CR>" +

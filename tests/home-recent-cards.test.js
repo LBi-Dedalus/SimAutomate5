@@ -83,7 +83,7 @@ globalThis.window = {
   connection_status: { get: () => "disconnected", set() {}, subscribe() {} },
 };
 
-await import("../src/connection.js");
+await import("../src/home/connection.js");
 for (const fn of winListeners.DOMContentLoaded) await fn();
 
 const goOf = (card) => card.children[0].children.find((n) => n.classes.has("go"));

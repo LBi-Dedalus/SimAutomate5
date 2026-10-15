@@ -99,7 +99,7 @@ globalThis.window = {
   connection_status: { get: () => "disconnected", set() {}, subscribe() {} },
 };
 
-await import("../src/connection.js");
+await import("../src/home/connection.js");
 for (const fn of winListeners.DOMContentLoaded) await fn();
 
 const connects = () => calls.filter((c) => c.cmd === "connect_socket");

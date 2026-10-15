@@ -8,7 +8,7 @@ import {
   loadRecent,
   recordRecent,
   clearRecent,
-} from "../src/recent-core.js";
+} from "../src/home/recent-core.js";
 
 function memoryStorage(initial = {}) {
   const data = { ...initial };

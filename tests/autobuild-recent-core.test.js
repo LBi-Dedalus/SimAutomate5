@@ -10,7 +10,7 @@ import {
   clearRecentBuilds,
   formatShortTime,
   previewInput,
-} from "../src/autobuild-recent-core.js";
+} from "../src/autobuild/autobuild-recent-core.js";
 
 function memoryStorage(initial = {}, { limit = Infinity } = {}) {
   const data = new Map(Object.entries(initial));

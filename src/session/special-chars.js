@@ -1,6 +1,6 @@
-import { tokenPayload } from "./control-chars.js";
+import { tokenPayload } from "../control-chars.js";
 import { sendMessage, activeSendTarget } from "./messages.js";
-import { logError } from "./log.js";
+import { logError } from "../log.js";
 import { subscribeSendEligibility } from "./sessions.js";
 
 window.addEventListener("DOMContentLoaded", init);

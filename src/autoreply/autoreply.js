@@ -21,10 +21,10 @@ import {
   validateRules,
   variableSources,
 } from "./autoreply-core.js";
-import { getSavedTemplates, subscribeSavedTemplates } from "./template-store.js";
-import { setLeaveGuard } from "./nav.js";
-import { el, renderTokens } from "./render.js";
-import { logError, logInfo } from "./log.js";
+import { getSavedTemplates, subscribeSavedTemplates } from "../templates/template-store.js";
+import { setLeaveGuard } from "../nav.js";
+import { el, renderTokens } from "../render.js";
+import { logError, logInfo } from "../log.js";
 
 const { invoke } = window.__TAURI__.core;
 

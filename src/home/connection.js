@@ -5,10 +5,10 @@ import {
   clearRecent,
   describeEndpoint,
 } from "./recent-core.js";
-import { el } from "./render.js";
-import { logWarn } from "./log.js";
-import { sessions, store } from "./sessions.js";
-import { showView } from "./nav.js";
+import { el } from "../render.js";
+import { logWarn } from "../log.js";
+import { sessions, store } from "../session/sessions.js";
+import { showView } from "../nav.js";
 
 let mode = "client";
 /** Guards against a double submit while the backend answers; it never blocks other sessions. */

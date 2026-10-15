@@ -1,4 +1,4 @@
-// Integration tests for src/templates.js driven through a minimal fake DOM and a
+// Integration tests for src/templates/templates.js driven through a minimal fake DOM and a
 // mocked Tauri IPC. They exercise the real module: events, guards, rendering.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -114,7 +114,7 @@ const SEED = [
 ];
 
 const { showView, currentView } = await import("../src/nav.js");
-await import("../src/templates.js");
+await import("../src/templates/templates.js");
 
 /** Deferred promise helper. */
 const deferred = () => {
@@ -456,7 +456,7 @@ test("failed delete re-enables Save/Delete and a retry succeeds", async () => {
 });
 
 test("the saved-template store only follows confirmed load / save / delete results", async () => {
-  const { getSavedTemplates } = await import("../src/template-store.js");
+  const { getSavedTemplates } = await import("../src/templates/template-store.js");
   await boot();
   assert.deepEqual(getSavedTemplates().map((t) => t.id), ["a", "b"], "published after load");
 
@@ -524,7 +524,7 @@ async function openFresh(name) {
 }
 
 async function twoSessions() {
-  const { sessions, store } = await import("../src/sessions.js");
+  const { sessions, store } = await import("../src/session/sessions.js");
   const ids = [];
   for (const port of [9001, 9002]) {
     const { id, done } = sessions.start({ mode: "client", label: `h:${port}`, req: { type: "ClientConnectRequest", ip: "h", port } });
@@ -560,7 +560,7 @@ test("autobuild flags: dirty tracking, save payload, badge and legacy defaults",
   assert.equal(alpha.autobuild_no_etb, true);
   assert.equal(getNode("tpl-dirty").hidden, true);
 
-  const { getSavedTemplates } = await import("../src/template-store.js");
+  const { getSavedTemplates } = await import("../src/templates/template-store.js");
   assert.equal(getSavedTemplates().find((t) => t.id === "a").autobuild, true);
   assert.equal(getSavedTemplates().find((t) => t.id === "b").autobuild_no_etb, false);
 

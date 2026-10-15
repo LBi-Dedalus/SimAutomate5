@@ -1,9 +1,9 @@
-// Integration tests for src/autobuild-view.js with a minimal fake DOM and injected backend/storage.
+// Integration tests for src/autobuild/autobuild-view.js with a minimal fake DOM and injected backend/storage.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { initAutobuildView } from "../src/autobuild-view.js";
-import { RECENT_BUILDS_KEY } from "../src/autobuild-recent-core.js";
+import { initAutobuildView } from "../src/autobuild/autobuild-view.js";
+import { RECENT_BUILDS_KEY } from "../src/autobuild/autobuild-recent-core.js";
 
 class FakeNode {
   constructor(tag = "div", id = "") {

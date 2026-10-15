@@ -1,0 +1,182 @@
+/* Auto reply view. */
+
+.ar-row {
+  display: grid;
+  grid-template-columns: 38px minmax(110px, 1.3fr) minmax(90px, 1.1fr) minmax(110px, 1.3fr) 64px 112px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-bottom-color: var(--line);
+  border-radius: var(--radius-medium);
+  font-size: var(--text-7);
+
+  & > span {
+    overflow-wrap: anywhere;
+  }
+
+  & input {
+    margin: 0;
+  }
+}
+
+.ar-th {
+  color: var(--mute);
+  font-size: var(--text-8);
+  font-weight: var(--font-medium);
+}
+
+.ar-item {
+  cursor: pointer;
+
+  &:hover {
+    background: var(--wash);
+  }
+
+  &.on {
+    border-color: var(--teal);
+    background: color-mix(in srgb, var(--teal) 8%, var(--paper));
+  }
+
+  &.off > :not(:first-child, :last-child) {
+    opacity: 0.55;
+  }
+
+  & > :nth-child(n + 3):nth-child(-n + 5),
+  & .ar-sub {
+    font: var(--text-8) var(--mono);
+  }
+
+  & > :nth-child(2) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  & > :last-child {
+    display: flex;
+    justify-content: flex-end;
+    gap: 2px;
+  }
+}
+
+.ar-bad {
+  align-self: flex-start;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--red) var(--tint), var(--paper));
+  color: var(--red);
+}
+
+/* The floating pill sits above the rule editor, so it is centred on the list column. */
+#view-autoreply {
+  --k-right: 340px;
+  position: relative;
+
+  & .card > header {
+    justify-content: flex-start;
+  }
+
+  &.pending .scroll,
+  &.pending #ar-form {
+    padding-bottom: 84px;
+  }
+}
+
+#ar-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#ar-form {
+  padding: 14px 16px 18px;
+
+  & fieldset {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: 0;
+    border-radius: var(--radius-large);
+  }
+
+  & legend {
+    color: var(--teal);
+    font-size: var(--text-8);
+    font-weight: var(--font-semibold);
+  }
+
+  & fieldset > div:not(.row) {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  & ul:not([role]) {
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+    color: var(--mute);
+    font: var(--text-8) var(--mono);
+  }
+
+  & p {
+    font-size: var(--text-8);
+  }
+}
+
+#ar-preview {
+  max-height: 140px;
+  overflow: auto;
+}
+
+@media (max-width: 1100px) {
+  #view-autoreply {
+    --k-right: 300px;
+  }
+}
+
+@media (max-width: 960px) {
+  /* Stacked: the rule editor is below the list, so the pill centres on the whole view. */
+  #view-autoreply {
+    --k-right: 0px;
+
+    &.pending .scroll {
+      padding-bottom: 16px;
+    }
+  }
+
+  .ar-th {
+    display: none;
+  }
+
+  .ar-row {
+    grid-template-columns: 34px 1fr 1fr auto;
+    grid-template-areas:
+      "on when when tools"
+      ". cond reply delay";
+
+    & > :nth-child(1) {
+      grid-area: on;
+    }
+
+    & > :nth-child(2) {
+      grid-area: when;
+    }
+
+    & > :nth-child(3) {
+      grid-area: cond;
+    }
+
+    & > :nth-child(4) {
+      grid-area: reply;
+    }
+
+    & > :nth-child(5) {
+      grid-area: delay;
+    }
+
+    & > :nth-child(6) {
+      grid-area: tools;
+    }
+  }
+}

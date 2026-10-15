@@ -129,10 +129,10 @@ globalThis.window = {
   connection_status: { get: () => "disconnected", set() {}, subscribe() {} },
 };
 
-const { sessions, store } = await import("../src/sessions.js");
-await import("../src/messages.js");
-await import("../src/special-chars.js");
-await import("../src/templates.js");
+const { sessions, store } = await import("../src/session/sessions.js");
+await import("../src/session/messages.js");
+await import("../src/session/special-chars.js");
+await import("../src/templates/templates.js");
 
 for (const fn of [...(winListeners.DOMContentLoaded ?? []), ...(docListeners.DOMContentLoaded ?? [])]) await fn();
 

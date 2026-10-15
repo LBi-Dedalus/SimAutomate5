@@ -1,8 +1,8 @@
-import { showView } from "./nav.js";
-import { store } from "./sessions.js";
-import { setComposerText } from "./messages.js";
+import { showView } from "../nav.js";
+import { store } from "../session/sessions.js";
+import { setComposerText } from "../session/messages.js";
 import { initAutobuildView } from "./autobuild-view.js";
-import { logError } from "./log.js";
+import { logError } from "../log.js";
 
 const { invoke } = window.__TAURI__.core;
 

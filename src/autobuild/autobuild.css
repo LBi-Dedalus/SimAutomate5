@@ -1,0 +1,87 @@
+/* Autobuild view: builder and recent list. */
+
+/* Autobuild: recent list on the right. */
+#view-autobuild .split > .tlist {
+  border-right: 0;
+  border-left: 1px solid var(--line);
+}
+
+.ab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ab-body {
+  padding: 14px 18px;
+}
+
+.ab-card {
+  position: relative;
+  padding: 9px 12px 7px;
+
+  & .ab-load {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-weight: 400;
+    text-align: left;
+    white-space: normal;
+  }
+
+  & .ab-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-right: 24px;
+  }
+
+  & .ab-time {
+    margin-left: auto;
+    color: var(--mute);
+    font-size: var(--text-8);
+  }
+
+  & .ab-use {
+    position: absolute;
+    top: 4px;
+    right: 34px;
+    margin: 0;
+    padding: 2px 8px;
+    color: var(--teal);
+  }
+
+  & .ab-del {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    margin: 0;
+  }
+
+  /* The tools take the place of the time while the card is hovered, focused or selected. */
+  & .ab-time {
+    transition: opacity 0.12s;
+  }
+
+  &:is(:hover, :focus-within, .on) .ab-time {
+    opacity: 0;
+  }
+}
+
+@media (hover: none) {
+  .ab-card .ab-time {
+    opacity: 0;
+  }
+}
+
+.sw-pill {
+  display: inline-flex;
+  width: fit-content;
+  padding: 5px 10px;
+}
