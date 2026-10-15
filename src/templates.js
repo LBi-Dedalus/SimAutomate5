@@ -68,7 +68,6 @@ async function init() {
   });
 
   $("tpl-new").addEventListener("click", () => requestAction(newTemplate));
-  $("tpl-new-card").addEventListener("click", () => requestAction(newTemplate));
   $("tpl-search").addEventListener("input", renderList);
   $("tpl-name").addEventListener("input", onNameInput);
   $("tpl-payload").addEventListener("input", onPayloadInput);
@@ -735,7 +734,6 @@ function renderEditor() {
   $("tpl-empty").classList.toggle("hidden", has);
   $("tpl-form").classList.toggle("hidden", !has);
   $("tpl-new").disabled = !editingAllowed();
-  $("tpl-new-card").disabled = !editingAllowed();
   if (!has) return;
 
   if ($("tpl-name").value !== draft.name) $("tpl-name").value = draft.name;

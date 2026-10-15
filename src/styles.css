@@ -533,6 +533,12 @@ footer {
   background: var(--paper);
 }
 
+/* Autobuild: recent list on the right. */
+#view-autobuild .split > .tlist {
+  border-right: 0;
+  border-left: 1px solid var(--line);
+}
+
 #tpl-form header .hstack {
   margin-bottom: 2px;
 }
@@ -1501,6 +1507,10 @@ button.icon {
     & > .dock {
       border: 0;
       border-top: 1px solid var(--line);
+    }
+
+    & > .tlist {
+      border-left: 0;
     }
 
     & .ab-body {

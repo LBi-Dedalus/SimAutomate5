@@ -169,12 +169,6 @@
 
         <!-- ───────────── Templates ───────────── -->
         <section id="view-templates" class="view hidden" data-view-panel="templates">
-          <header>
-            <h4>Templates</h4>
-            <div class="sp"></div>
-            <button type="button" class="small" id="tpl-new">＋ New</button>
-          </header>
-
           <div id="tpl-banner" class="banner hidden" role="status" aria-live="polite">
             <span id="tpl-banner-text"></span>
             <button type="button" class="small outline hidden" id="tpl-banner-retry">Retry</button>
@@ -190,9 +184,9 @@
 
           <div class="split">
             <aside class="tlist">
+              <button type="button" class="card new" id="tpl-new">＋ New template</button>
               <input type="search" id="tpl-search" placeholder="⌕  Search templates" autocomplete="off" />
               <div id="tpl-list"></div>
-              <button type="button" class="card new" id="tpl-new-card">＋ New template</button>
             </aside>
 
             <section class="dock" id="tpl-editor">
@@ -448,19 +442,7 @@
 
         <!-- Autobuild -->
         <section id="view-autobuild" class="view hidden" data-view-panel="autobuild">
-          <header>
-            <h4>Autobuild</h4>
-            <div class="sp"></div>
-            <button type="button" class="small ghost" id="ab-clear" disabled>Clear recent</button>
-          </header>
-
           <div class="split stack">
-            <aside class="tlist">
-              <h5 id="ab-list-label">Recent autobuilds</h5>
-              <p id="ab-note" class="hidden" role="alert" data-variant="danger"></p>
-              <ul id="ab-list" aria-labelledby="ab-list-label"></ul>
-            </aside>
-
             <form id="ab-form" class="dock" novalidate>
               <div class="ab-body">
                 <label>
@@ -499,6 +481,13 @@
                 <button type="submit" class="small" id="build-copy">Build and copy to input</button>
               </footer>
             </form>
+
+            <aside class="tlist">
+              <h5 id="ab-list-label">Recent autobuilds</h5>
+              <p id="ab-note" class="hidden" role="alert" data-variant="danger"></p>
+              <ul id="ab-list" aria-labelledby="ab-list-label"></ul>
+              <button type="button" class="small ghost" id="ab-clear" disabled>Clear recent</button>
+            </aside>
           </div>
         </section>
       </div>
