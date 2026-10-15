@@ -160,19 +160,6 @@ function renderHex(body) {
 }
 
 function renderParsed(body, hl7) {
-  const summary = el("div", "kv");
-  for (const [label, value] of [
-    ["Type", hl7.messageType],
-    ["Control ID", hl7.controlId],
-    ["Version", hl7.version],
-  ]) {
-    const cell = el("div");
-    cell.appendChild(el("small", "", label));
-    cell.appendChild(el("b", "", value || "—"));
-    summary.appendChild(cell);
-  }
-  body.appendChild(summary);
-
   const ack = hl7Ack(hl7);
   const flagged = new Set(ack && !ack.ok ? ["MSA-1", "MSA-3"] : []);
 
@@ -205,7 +192,6 @@ function renderParsed(body, hl7) {
     for (const field of segment.fields) {
       const row = el("div", flagged.has(field.id) ? "fl hl" : "fl");
       row.appendChild(el("span", "", field.id));
-      row.appendChild(el("span", "", field.label));
       row.appendChild(el("span", "", field.value));
       row.title = field.label ? `${field.id} · ${field.label}` : field.id;
       block.appendChild(row);

@@ -38,6 +38,10 @@ let draft = null;
 let baseline = null;
 let ctx = makeContext();
 let saving = false;
+/** Latest variable values per saved template id (persisted in the background, never via the draft). */
+const liveVariables = new Map();
+let varSavePromise = null;
+let varSaveQueued = false;
 let pendingAction = null;
 let deleteArmed = false;
 let deleteTimer = null;
@@ -93,7 +97,7 @@ async function init() {
   );
 
   window.addEventListener("beforeunload", (ev) => {
-    if (isDirty()) {
+    if (isDirty() || saving || varSavePromise !== null || varSaveQueued) {
       ev.preventDefault();
       ev.returnValue = "";
     }
@@ -113,7 +117,7 @@ async function init() {
  * Resolves true when the collection is loaded.
  */
 function loadAll() {
-  if (saving) return Promise.resolve(loaded); // never replace the list under a pending write
+  if (saving || varSavePromise) return Promise.resolve(loaded); // never replace the list under a pending write
   if (!loadPromise) {
     loadPromise = doLoad().finally(() => {
       loadPromise = null;
@@ -129,6 +133,7 @@ async function doLoad() {
   try {
     const result = await invoke("load_templates");
     templates = result.templates;
+    liveVariables.clear();
     loadError = null;
     loaded = true;
     ok = true;
@@ -136,6 +141,7 @@ async function doLoad() {
     if (result.seeded) logInfo("Built-in templates provided (no saved templates yet)", "templates.js:load");
   } catch (err) {
     templates = [];
+    liveVariables.clear();
     loadError = String(err);
     loaded = false;
     clearSavedTemplates();
@@ -157,6 +163,17 @@ function isDirty() {
   return baseline === null || snapshot(draft) !== baseline;
 }
 
+/** Overlay `overrides` on a copy of `base` (update in place or append). */
+function mergeVariables(base = [], overrides = []) {
+  const merged = base.map((v) => ({ name: v.name, default: v.default }));
+  for (const { name, default: val } of overrides) {
+    const existing = merged.find((v) => v.name === name);
+    if (existing) existing.default = val;
+    else merged.push({ name, default: val });
+  }
+  return merged;
+}
+
 function cloneForEditor(template) {
   return {
     id: template.id,
@@ -165,7 +182,7 @@ function cloneForEditor(template) {
     payload: template.payload,
     autobuild: Boolean(template.autobuild),
     autobuildNoEtb: Boolean(template.autobuild_no_etb),
-    variables: syncVariables(template.payload, template.variables ?? []),
+    variables: syncVariables(template.payload, mergeVariables(template.variables, liveVariables.get(template.id))),
     isNew: false,
   };
 }
@@ -183,6 +200,57 @@ function toPersisted(d) {
       default: v.default,
     })),
   };
+}
+
+/** Saved templates with the latest live variable values applied (nothing else changes). */
+function withLiveVariables(list) {
+  return list.map((t) => ({
+    ...t,
+    variables: syncVariables(t.payload, mergeVariables(t.variables, liveVariables.get(t.id))).map((v) => ({
+      name: v.name,
+      default: v.default,
+    })),
+  }));
+}
+
+function scheduleVariableSave() {
+  if (varSavePromise) {
+    varSaveQueued = true;
+    return;
+  }
+  varSavePromise = persistVariables().finally(() => {
+    varSavePromise = null;
+  });
+}
+
+/** Serialized background write of variable values only; coalesces edits made meanwhile. */
+async function persistVariables() {
+  do {
+    varSaveQueued = false;
+    if (saving || !loaded) return;
+    const next = withLiveVariables(templates);
+    const same = JSON.stringify(next.map((t) => t.variables)) ===
+      JSON.stringify(templates.map((t) => (t.variables ?? []).map((v) => ({ name: v.name, default: v.default }))));
+    if (same) continue;
+    try {
+      await invoke("save_templates", { templates: next });
+    } catch (err) {
+      logError(`Failed to save variable values: ${String(err)}`, "templates.js:variables");
+      if (!saving) showBanner(`Could not save: ${String(err)}.`, "error");
+      if (varSaveQueued && !saving && editingAllowed()) continue;
+      return;
+    }
+    if (loaded && !loading) {
+      templates = next;
+      publishSavedTemplates(templates);
+      hideBanner();
+    }
+    if (saving || !loaded) return;
+  } while (varSaveQueued);
+}
+
+function savedVariablesFor(id) {
+  return mergeVariables(templates.find((t) => t.id === id)?.variables ?? [], liveVariables.get(id) ?? []);
 }
 
 /** Persisted-collection operations (new/select/save/delete) need a loaded, idle collection. */
@@ -342,17 +410,22 @@ async function save() {
   }
 
   const saved = toPersisted(draft);
-  const next = draft.isNew
-    ? [...templates, saved]
-    : templates.map((t) => (t.id === saved.id ? saved : t));
-
+  const resumeVarSave = varSaveQueued || varSavePromise !== null;
+  varSaveQueued = false;
   saving = true;
   updateButtons();
+  if (varSavePromise !== null) await varSavePromise.catch(() => {});
+  const base = withLiveVariables(templates);
+  const next = draft.isNew
+    ? [...base, saved]
+    : base.map((t) => (t.id === saved.id ? saved : t));
   try {
     await invoke("save_templates", { templates: next });
   } catch (err) {
     logError(`Failed to save templates: ${String(err)}`, "templates.js:save");
     showBanner(`Could not save: ${String(err)}. Your edits are kept.`, "error");
+    saving = false;
+    if (resumeVarSave) scheduleVariableSave();
     return false;
   } finally {
     saving = false;
@@ -361,11 +434,12 @@ async function save() {
 
   // The draft is locked while saving, so it still equals what was written.
   templates = next;
+  liveVariables.set(saved.id, saved.variables.map((v) => ({ ...v })));
   publishSavedTemplates(templates);
   draft.isNew = false;
   draft.name = saved.name;
   baseline = snapshot(draft);
-  showBanner(`Saved “${saved.name}” at ${new Date().toLocaleTimeString()}.`, "ok");
+  hideBanner();
   renderAll();
   return true;
 }
@@ -398,25 +472,31 @@ async function onDelete() {
     return;
   }
 
-  const next = templates.filter((t) => t.id !== draft.id);
+  const resumeVarSave = varSaveQueued || varSavePromise !== null;
+  varSaveQueued = false;
   saving = true;
   updateButtons();
+  if (varSavePromise !== null) await varSavePromise.catch(() => {});
+  const next = withLiveVariables(templates).filter((t) => t.id !== draft.id);
   try {
     await invoke("save_templates", { templates: next });
   } catch (err) {
     logError(`Failed to delete template: ${String(err)}`, "templates.js:delete");
     showBanner(`Could not delete: ${String(err)}. Nothing was changed.`, "error");
-    return;
+        saving = false;
+        if (resumeVarSave) scheduleVariableSave();
+        return;
   } finally {
     saving = false;
     updateButtons();
   }
-  const name = draft.name;
+  const deletedId = draft.id;
   templates = next;
+  liveVariables.delete(deletedId);
   publishSavedTemplates(templates);
   draft = null;
   baseline = null;
-  showBanner(`Deleted “${name}”.`, "ok");
+  hideBanner();
   renderAll();
 }
 
@@ -473,10 +553,8 @@ async function sendNow() {
   const text = await buildForDelivery(result.text, autobuildOptions(), "sent");
   if (text === null) return;
   const ok = await sendMessage(text, target);
-  showBanner(
-    ok ? `Template sent to ${target.label}.` : `Sending to ${target.label} failed, see its conversation log.`,
-    ok ? "ok" : "error",
-  );
+  if (ok) hideBanner();
+  else showBanner(`Sending to ${target.label} failed, see its conversation log.`, "error");
 }
 
 /** Autobuild options of the draft as they are right now (captured before any await). */
@@ -556,7 +634,10 @@ function syncAutobuildControls() {
 function onPayloadInput() {
   if (editBlocked($("tpl-payload"), draft?.payload)) return;
   draft.payload = $("tpl-payload").value;
-  draft.variables = syncVariables(draft.payload, draft.variables);
+  draft.variables = syncVariables(
+    draft.payload,
+    mergeVariables(draft.isNew ? [] : savedVariablesFor(draft.id), draft.variables),
+  );
   renderPayloadDecor();
   afterEdit(true);
 }
@@ -758,6 +839,13 @@ function renderVars() {
         }
         const target = draft.variables.find((v) => v.name === name);
         if (target) target.default = input.value;
+        if (!draft.isNew) {
+          liveVariables.set(
+            draft.id,
+            mergeVariables(savedVariablesFor(draft.id), [{ name, default: input.value }]),
+          );
+          scheduleVariableSave();
+        }
         afterEdit(false);
       });
       row.appendChild(input);

@@ -487,7 +487,7 @@ test("the saved-template store only follows confirmed load / save / delete resul
   assert.equal(getSavedTemplates(), null, "unknown library after a failed load");
 });
 
-// ── Autobuild option ────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬ Autobuild option Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 globalThis.localStorage ??= { getItem: () => null, setItem() {} };
 const abCalls = () => ipc.calls.filter((c) => c.cmd === "auto_build_message_cmd");
@@ -594,7 +594,7 @@ test("Send builds first and keeps the target captured before the await; double c
   assert.deepEqual(sendBuild.args, { req: { input: "ALPHA 1", no_etb: true } });
   assert.equal(store.get(s2).draft ?? "", "", "nothing leaked to the other session");
   assert.equal(getNode("tpl-send").disabled, false, "re-enabled after the build");
-  assert.match(getNode("tpl-banner-text").textContent, /sent/);
+  assert.equal(getNode("tpl-banner").hidden, true);
 
   // Option off: the resolved text goes out untouched and nothing is built.
   check("tpl-autobuild", false);
@@ -673,7 +673,7 @@ test("single preview box: plain when off, built when on, no late overwrite", asy
   const html = (await import("node:fs")).readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
   assert.equal((html.match(/id="tpl-preview"/g) ?? []).length, 1, "exactly one preview element");
   assert.doesNotMatch(html, /tpl-built/, "no second preview box");
-  assert.doesNotMatch(html, /Preview — after Autobuild/);
+  assert.doesNotMatch(html, /Preview Ã¢â‚¬â€ after Autobuild/);
 
   ipc.calls = [];
   assert.match(getNode("tpl-preview").text, /ALPHA 1/);
@@ -751,4 +751,212 @@ test("late Load result does not navigate away from another view nor bypass its l
   await tick();
   assert.equal(store.get(s1).draft, "NORMAL");
   assert.equal(currentView(), "session");
+});
+
+
+/** Types into a variable input (its `type` property is the HTML type, not the helper). */
+const typeVar = (node, value) => {
+  node.value = value;
+  node.fire("input");
+};
+
+test("save, delete and send show no confirmation banner and clear a previous error", async () => {
+  await boot();
+  useBackend(SEED, () => ({ output: "x" }));
+  open("Alpha");
+  getNode("tpl-payload").type("ALPHA z");
+  getNode("tpl-banner").className = "banner error";
+  getNode("tpl-save").fire("click");
+  await tick();
+  assert.equal(savedOk().length, 1);
+  assert.equal(getNode("tpl-banner").hidden, true, "save: no banner");
+
+  getNode("tpl-banner").className = "banner error";
+  getNode("tpl-delete").fire("click");
+  getNode("tpl-delete").fire("click");
+  await tick();
+  assert.equal(getNode("tpl-banner").hidden, true, "delete: no banner");
+});
+
+test("changing a variable value persists it without dirtying, guarding or locking the editor", async () => {
+  await boot();
+  open("Alpha");
+  const input = () => getNode("tpl-vars").find((n) => n.tag === "input")[0];
+  ipc.calls = [];
+  typeVar(input(), "42");
+  assert.equal(getNode("tpl-dirty").hidden, true);
+  assert.equal(getNode("tpl-saved").hidden, false);
+  assert.equal(input().readOnly, false, "editor not locked");
+  await tick();
+  assert.equal(savedOk().length, 1);
+  const written = savedOk()[0].args.templates;
+  assert.deepEqual(written.find((t) => t.id === "a").variables, [{ name: "X", default: "42" }]);
+  assert.equal(written.find((t) => t.id === "a").payload, "ALPHA {{X}}");
+  assert.equal(getNode("tpl-banner").hidden, true);
+
+  // Switching templates is not guarded and reopening keeps the new value.
+  cardNamed("Beta").fire("click");
+  assert.equal(guard().hidden, true);
+  open("Alpha");
+  assert.equal(input().value, "42");
+});
+
+test("beforeunload is prevented while a background variable write is in flight", async () => {
+  await boot();
+  open("Alpha");
+  const gate = deferred();
+  ipc.handler = async (cmd) => (cmd === "save_templates" ? gate.promise : undefined);
+  const unload = () => {
+    const ev = { prevented: false, returnValue: undefined, preventDefault() { this.prevented = true; } };
+    for (const fn of winListeners.beforeunload ?? []) fn(ev);
+    return ev.prevented;
+  };
+  assert.equal(unload(), false, "idle: unloading allowed");
+  typeVar(getNode("tpl-vars").find((n) => n.tag === "input")[0], "7");
+  assert.equal(unload(), true, "write in flight: unloading prevented");
+  gate.resolve(undefined);
+  await tick();
+  await tick();
+  assert.equal(unload(), false, "settled: unloading allowed again");
+});
+
+test("variable writes never persist unsaved template edits; discard keeps the value", async () => {
+  await boot();
+  open("Alpha");
+  getNode("tpl-name").type("Renamed");
+  getNode("tpl-payload").type("ALPHA {{X}} more");
+  getNode("tpl-autobuild").checked = true;
+  getNode("tpl-autobuild").fire("change");
+  ipc.calls = [];
+  typeVar(getNode("tpl-vars").find((n) => n.tag === "input")[0], "7");
+  await tick();
+  const a = savedOk().at(-1).args.templates.find((t) => t.id === "a");
+  assert.equal(a.name, "Alpha");
+  assert.equal(a.payload, "ALPHA {{X}}");
+  assert.equal(Boolean(a.autobuild), false);
+  assert.deepEqual(a.variables, [{ name: "X", default: "7" }]);
+  assert.equal(getNode("tpl-dirty").hidden, false, "template edits still dirty");
+
+  showView("templates", { force: true });
+  showView("home");
+  assert.equal(guard().hidden, false);
+  getNode("tpl-guard-discard").fire("click");
+  await tick();
+  showView("templates", { force: true });
+  assert.equal(getNode("tpl-name").value, "Alpha");
+  assert.equal(getNode("tpl-payload").value, "ALPHA {{X}}");
+  assert.equal(getNode("tpl-autobuild").checked, false);
+  assert.equal(getNode("tpl-vars").find((n) => n.tag === "input")[0].value, "7");
+});
+
+test("a rejected variable write shows an error and keeps the typed value", async () => {
+  await boot();
+  open("Alpha");
+  ipc.handler = async (cmd) => {
+    if (cmd === "save_templates") throw "used by a rule";
+    return undefined;
+  };
+  const input = () => getNode("tpl-vars").find((n) => n.tag === "input")[0];
+  typeVar(input(), "");
+  await tick();
+  assert.equal(getNode("tpl-banner").hidden, false);
+  assert.match(getNode("tpl-banner-text").textContent, /Could not save: used by a rule/);
+  assert.equal(input().value, "");
+  assert.equal(input().readOnly, false);
+});
+
+const XY = [{ id: "xy", name: "Pair", description: "", payload: "{{X}} {{Y}}", variables: [{ name: "X", default: "1" }, { name: "Y", default: "2" }] }];
+
+test("an unsaved payload edit that drops a placeholder never erases its saved value", async () => {
+  await boot(XY);
+  open("Pair");
+  getNode("tpl-payload").type("{{Y}}");
+  ipc.calls = [];
+  const inputs = () => getNode("tpl-vars").find((n) => n.tag === "input");
+  assert.equal(inputs().length, 1);
+  typeVar(inputs()[0], "9");
+  await tick();
+  const written = savedOk().at(-1).args.templates.find((t) => t.id === "xy");
+  assert.equal(written.payload, "{{X}} {{Y}}");
+  assert.deepEqual(written.variables, [{ name: "X", default: "1" }, { name: "Y", default: "9" }]);
+
+  // Re-typing the placeholder restores its value; discarding keeps both values.
+  getNode("tpl-payload").type("{{X}} {{Y}}");
+  assert.deepEqual(inputs().map((n) => n.value), ["1", "9"]);
+  getNode("tpl-payload").type("{{Y}}");
+  showView("templates", { force: true });
+  showView("home");
+  getNode("tpl-guard-discard").fire("click");
+  await tick();
+  showView("templates", { force: true });
+  assert.equal(getNode("tpl-payload").value, "{{X}} {{Y}}");
+  assert.deepEqual(inputs().map((n) => n.value), ["1", "9"]);
+});
+
+test("a rejected variable write does not drop a newer queued value", async () => {
+  await boot();
+  open("Alpha");
+  const first = deferred();
+  let n = 0;
+  ipc.handler = async (cmd) => {
+    if (cmd !== "save_templates") return undefined;
+    if (++n === 1) return first.promise;
+    return undefined;
+  };
+  ipc.calls = [];
+  const input = () => getNode("tpl-vars").find((x) => x.tag === "input")[0];
+  typeVar(input(), "");
+  typeVar(input(), "5");
+  first.reject("empty value");
+  await tick();
+  await tick();
+  const calls = savedOk();
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1].args.templates.find((t) => t.id === "a").variables, [{ name: "X", default: "5" }]);
+  assert.equal(getNode("tpl-banner").hidden, true);
+});
+
+test("removing and restoring a placeholder before any variable edit keeps its saved default", async () => {
+  await boot(XY);
+  open("Pair");
+  const inputs = () => getNode("tpl-vars").find((n) => n.tag === "input");
+  getNode("tpl-payload").type("{{Y}}");
+  getNode("tpl-payload").type("{{X}} {{Y}}");
+  assert.deepEqual(inputs().map((n) => n.value), ["1", "2"]);
+  ipc.calls = [];
+  typeVar(inputs()[1], "9");
+  await tick();
+  const written = savedOk().at(-1).args.templates.find((t) => t.id === "xy");
+  assert.deepEqual(written.variables, [{ name: "X", default: "1" }, { name: "Y", default: "9" }]);
+});
+
+test("a failed delete resumes the variable write queued behind a background write", async () => {
+  await boot();
+  open("Alpha");
+  const first = deferred();
+  let n = 0;
+  ipc.handler = async (cmd) => {
+    if (cmd !== "save_templates") return undefined;
+    n++;
+    if (n === 1) return first.promise;
+    if (n === 2) throw "delete refused";
+    return undefined;
+  };
+  ipc.calls = [];
+  const input = () => getNode("tpl-vars").find((x) => x.tag === "input")[0];
+  typeVar(input(), "2");
+  typeVar(input(), "3");
+  cardNamed("Beta").fire("click");
+  getNode("tpl-delete").fire("click");
+  getNode("tpl-delete").fire("click");
+  first.resolve();
+  await tick();
+  await tick();
+  await tick();
+  const calls = savedOk();
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0].args.templates.find((t) => t.id === "a").variables[0].default, "2");
+  assert.equal(calls[1].args.templates.some((t) => t.id === "b"), false, "second call is the failed delete");
+  assert.deepEqual(calls[2].args.templates.find((t) => t.id === "a").variables, [{ name: "X", default: "3" }]);
+  assert.equal(calls[2].args.templates.some((t) => t.id === "b"), true);
 });

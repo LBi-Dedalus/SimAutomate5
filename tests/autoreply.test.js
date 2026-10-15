@@ -266,7 +266,7 @@ test("add, edit, validate, save: persisted shape is exact and the draft becomes 
   );
   assert.equal(getNode("ar-dirty").hidden, true);
   assert.equal(getNode("ar-save").disabled, true);
-  assert.match(bannerText(), /Saved 1 rule/);
+  assert.equal(getNode("ar-banner").hidden, true);
 });
 
 test("switching the action stores the literal or the generated acknowledgement in the rule", async () => {

@@ -97,6 +97,11 @@ test("snapshot ignores unused variables so dirty state is stable", () => {
   const withExtra = { ...base, variables: [...base.variables, { name: "Old", default: "q" }] };
   assert.equal(snapshot(base), snapshot(withExtra));
   assert.notEqual(snapshot(base), snapshot({ ...base, payload: "{{X}}!" }));
+  // Variable values are saved automatically: they never make a template dirty.
+  assert.equal(snapshot(base), snapshot({ ...base, variables: [{ name: "X", default: "2" }] }));
+  assert.notEqual(snapshot(base), snapshot({ ...base, name: "m" }));
+  assert.notEqual(snapshot(base), snapshot({ ...base, autobuild: true }));
+  assert.notEqual(snapshot(base), snapshot({ ...base, autobuildNoEtb: true }));
 });
 
 test("snapshot includes the Autobuild flags (missing flags equal false)", () => {

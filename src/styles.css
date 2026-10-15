@@ -1034,34 +1034,6 @@ button.icon {
   }
 }
 
-.kv {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  margin-bottom: 10px;
-
-  & div {
-    padding: 6px 8px;
-    border-radius: var(--radius-medium);
-    background: var(--wash);
-  }
-
-  & small {
-    display: block;
-    font-size: 10px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-
-  & b {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font: var(--font-semibold) var(--text-7) var(--font-mono);
-  }
-}
-
 /* Parsed view: segment heading (a button) + its fields. */
 .sgh {
   justify-content: flex-start;
@@ -1092,7 +1064,7 @@ button.icon {
 
 .fl {
   display: grid;
-  grid-template-columns: 62px 104px 1fr;
+  grid-template-columns: 62px 1fr;
   gap: 4px;
   margin-left: 5px;
   padding: 2px 0 2px 14px;
@@ -1108,12 +1080,10 @@ button.icon {
     font-size: var(--text-8);
   }
 
-  & span:nth-child(2) {
+  & span:last-child {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--mute);
-    font-family: var(--font-sans);
   }
 
   &.hl span:last-child {

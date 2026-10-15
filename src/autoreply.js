@@ -356,7 +356,8 @@ async function save() {
       note = ` The previous settings could not be removed (${String(err)}).`;
     }
   }
-  showBanner(`Saved ${rules.length} rule(s) at ${new Date().toLocaleTimeString()}.${note}`, note ? "warn" : "ok");
+  if (note) showBanner(note.trim(), "warn");
+  else hideBanner();
   renderAll();
   return true;
 }
