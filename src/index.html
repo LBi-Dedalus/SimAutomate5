@@ -268,19 +268,6 @@
 
         <!-- ───────────── Auto reply ───────────── -->
         <section id="view-autoreply" class="view hidden" data-view-panel="autoreply">
-          <header>
-            <h4>Auto reply</h4>
-            <div class="sp"></div>
-            <small id="ar-dirty" class="warn hidden">● Unsaved changes</small>
-            <small id="ar-saved" class="ok hidden">Saved</small>
-            <button type="button" class="small outline" id="ar-discard" disabled>Discard</button>
-            <button type="button" class="small" id="ar-save" disabled>Save rules</button>
-            <label title="Applied immediately; it does not save the rules you are editing">
-              Enabled
-              <input type="checkbox" id="ar-enabled" role="switch" disabled />
-            </label>
-          </header>
-
           <div id="ar-banner" class="banner hidden" role="status" aria-live="polite">
             <span id="ar-banner-text"></span>
             <button type="button" class="small outline hidden" id="ar-banner-retry">Retry</button>
@@ -300,6 +287,14 @@
                 <header>
                   <h6 id="ar-title">Rules</h6>
                   <div class="sp"></div>
+                  <small id="ar-dirty" class="warn hidden">● Unsaved changes</small>
+                  <small id="ar-saved" class="ok hidden">Saved</small>
+                  <button type="button" class="small outline" id="ar-discard" disabled>Discard</button>
+                  <button type="button" class="small" id="ar-save" disabled>Save rules</button>
+                  <label title="Applied immediately; it does not save the rules you are editing">
+                    Enabled
+                    <input type="checkbox" id="ar-enabled" role="switch" disabled />
+                  </label>
                   <button type="button" class="small" id="ar-add" disabled>＋ Add rule</button>
                 </header>
                 <p>
