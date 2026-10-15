@@ -75,7 +75,7 @@ export function initAutobuildView(deps) {
 
   function cardFor(entry) {
     const li = doc.createElement("li");
-    li.className = `card ab-card${isLoaded(entry) ? " on" : ""}`;
+    li.className = `card ab-card k-hover${isLoaded(entry) ? " on" : ""}`;
     li.dataset.id = entry.id;
 
     const load = doc.createElement("button");
@@ -118,7 +118,7 @@ export function initAutobuildView(deps) {
 
     const use = doc.createElement("button");
     use.setAttribute("type", "button");
-    use.className = "small ghost ab-use";
+    use.className = "small ghost ab-use k-tool";
     use.textContent = "Use in session";
     use.setAttribute("aria-label", `Use this ${entry.kind} message in the active session`);
     use.addEventListener("click", () => {
@@ -132,7 +132,7 @@ export function initAutobuildView(deps) {
 
     const del = doc.createElement("button");
     del.setAttribute("type", "button");
-    del.className = "ghost icon ab-del";
+    del.className = "ghost icon ab-del k-tool";
     del.textContent = "×";
     del.setAttribute("aria-label", `Delete this ${entry.kind} autobuild from the recent list`);
     del.setAttribute("title", "Delete");

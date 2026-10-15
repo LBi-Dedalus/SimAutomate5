@@ -634,3 +634,49 @@ test("removing the last rules leaves an explicit empty configuration (no hidden 
   await tick();
   assert.deepEqual(calls("save_auto_reply")[0].args.config, { enabled: true, rules: [] });
 });
+
+test("the status strip, rule count and pending state mirror the confirmed configuration", async () => {
+  await fresh({ enabled: true, rules: [PERSISTED_RULE, { ...PERSISTED_RULE, id: "r-2", name: "Second" }] });
+  assert.equal(getNode("ar-strip").classes.has("is-off"), false);
+  assert.equal(getNode("ar-state-badge").textContent, "● ON");
+  assert.equal(getNode("ar-state-badge").classes.has("ok"), true);
+  assert.match(getNode("ar-state-text").textContent, /active/);
+  assert.equal(getNode("view-autoreply").classes.has("pending"), false);
+  assert.equal(getNode("ar-dirty").hidden, true);
+
+  addRule({ name: "Third" });
+  assert.equal(getNode("view-autoreply").classes.has("pending"), true, "room is reserved under the pill");
+  assert.equal(getNode("ar-dirty").hidden, false);
+  assert.equal(getNode("ar-strip").classes.has("is-off"), false, "the draft does not change the applied state");
+  getNode("ar-discard").fire("click");
+  await tick();
+  assert.equal(getNode("view-autoreply").classes.has("pending"), false);
+});
+
+test("the status strip shows paused, unavailable and loading states", async () => {
+  await fresh({ enabled: false, rules: [] });
+  assert.equal(getNode("ar-strip").classes.has("is-off"), true);
+  assert.equal(getNode("ar-state-badge").textContent, "● OFF");
+  assert.equal(getNode("ar-state-badge").classes.has("mute"), true);
+  assert.match(getNode("ar-state-text").textContent, /paused/);
+
+  ipc.handler = async () => {
+    throw new Error("offline");
+  };
+  getNode("ar-banner-retry").fire("click");
+  await tick();
+  assert.equal(getNode("ar-state-badge").textContent, "● —");
+  assert.match(getNode("ar-state-text").textContent, /unavailable/);
+  assert.equal(getNode("ar-strip").classes.has("is-off"), true);
+
+  const gate = deferred();
+  ipc.handler = () => gate.promise;
+  getNode("ar-banner-retry").fire("click");
+  assert.equal(getNode("ar-state-badge").textContent, "● —");
+  assert.match(getNode("ar-state-text").textContent, /Loading/);
+
+  gate.reject(new Error("offline"));
+  await tick();
+  assert.match(getNode("ar-state-text").textContent, /unavailable/);
+  ipc.handler = backendHandler;
+});

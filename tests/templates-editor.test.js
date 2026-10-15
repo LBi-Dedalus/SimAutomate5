@@ -154,7 +154,10 @@ async function boot(stored = SEED) {
 
 const cards = () => getNode("tpl-list").children;
 const cardNamed = (name) => cards().find((c) => c.text.includes(name));
-const open = (name) => cardNamed(name).fire("click");
+const loadBtn = (card) => card.find((n) => n.classes.has("tload"))[0];
+const open = (name) => loadBtn(cardNamed(name)).fire("click");
+/** The delete ✕ only exists on the selected card. */
+const delBtn = () => cards().find((c) => c.classes.has("on"))?.find((n) => n.classes.has("k-x"))[0];
 const form = () => getNode("tpl-form");
 const guard = () => getNode("tpl-guard");
 const savedOk = () => ipc.calls.filter((c) => c.cmd === "save_templates");
@@ -202,8 +205,8 @@ test("deferred initial load: New/Save/shortcuts are refused and the persisted co
     ["a", "b"],
   );
   assert.equal(savedOk().at(-1).args.templates.length, 3);
-  getNode("tpl-delete").fire("click");
-  getNode("tpl-delete").fire("click");
+  delBtn().fire("click");
+  delBtn().fire("click");
   await tick();
 });
 
@@ -236,8 +239,8 @@ test("failed load refuses writes and requests; retry then user repeat succeeds; 
   for (const fn of docListeners["simautomate:save-as-template"] ?? []) fn({ detail: { payload: "RETRY ME" } });
   assert.equal(getNode("tpl-payload").value, "RETRY ME");
   assert.equal(savedOk().length, 0);
-  getNode("tpl-delete").fire("click"); // discard the unsaved draft (new)
-  getNode("tpl-delete").fire("click");
+  delBtn().fire("click"); // discard the unsaved draft (new)
+  delBtn().fire("click");
 });
 
 test("a pending reload cannot clobber a draft and writes wait for it", async () => {
@@ -269,8 +272,8 @@ test("a pending reload cannot clobber a draft and writes wait for it", async () 
   wgate.resolve();
   await tick();
   assert.equal(getNode("tpl-dirty").hidden, true);
-  getNode("tpl-delete").fire("click");
-  getNode("tpl-delete").fire("click");
+  delBtn().fire("click");
+  delBtn().fire("click");
   await tick();
 });
 
@@ -299,7 +302,7 @@ test("pending save locks the draft: edits and selection cannot be lost", async (
   assert.equal(getNode("tpl-name").value, "Alpha");
 
   // Selection / new are refused while pending.
-  cardNamed("Beta").fire("click");
+  open("Beta");
   getNode("tpl-new").fire("click");
   assert.equal(getNode("tpl-payload").value, "ALPHA changed");
 
@@ -393,7 +396,7 @@ test("failed save keeps the draft dirty, shows the error, and can be retried", a
   await tick();
   assert.equal(getNode("tpl-dirty").hidden, false);
   assert.equal(getNode("tpl-save").disabled, false);
-  assert.equal(getNode("tpl-delete").disabled, false);
+  assert.equal(delBtn().disabled, false);
   assert.equal(getNode("tpl-payload").readOnly, false);
   assert.match(getNode("tpl-banner-text").textContent, /disk full/);
   ipc.handler = async () => undefined;
@@ -436,17 +439,17 @@ test("failed delete re-enables Save/Delete and a retry succeeds", async () => {
   ipc.handler = async () => {
     throw "locked file";
   };
-  getNode("tpl-delete").fire("click");
-  getNode("tpl-delete").fire("click"); // confirm
+  delBtn().fire("click");
+  delBtn().fire("click"); // confirm
   await tick();
   assert.equal(getNode("tpl-save").disabled, false);
-  assert.equal(getNode("tpl-delete").disabled, false);
+  assert.equal(delBtn().disabled, false);
   assert.match(getNode("tpl-banner-text").textContent, /locked file/);
   assert.equal(form().hidden, false);
 
   ipc.handler = async () => undefined;
-  getNode("tpl-delete").fire("click");
-  getNode("tpl-delete").fire("click");
+  delBtn().fire("click");
+  delBtn().fire("click");
   await tick();
   assert.equal(form().hidden, true);
   assert.equal(cardNamed("Beta"), undefined);
@@ -474,8 +477,8 @@ test("the saved-template store only follows confirmed load / save / delete resul
   await tick();
   assert.equal(getSavedTemplates().find((t) => t.id === "b").name, "Beta edited", "published after save");
 
-  getNode("tpl-delete").fire("click");
-  getNode("tpl-delete").fire("click");
+  delBtn().fire("click");
+  delBtn().fire("click");
   await tick();
   assert.deepEqual(getSavedTemplates().map((t) => t.id), ["a"], "published after delete");
 
@@ -565,8 +568,8 @@ test("autobuild flags: dirty tracking, save payload, badge and legacy defaults",
   getNode("tpl-new").fire("click");
   assert.equal(getNode("tpl-autobuild").checked, false);
   assert.equal(getNode("tpl-autobuild-noetb").checked, false);
-  getNode("tpl-delete").fire("click");
-  getNode("tpl-delete").fire("click");
+  delBtn().fire("click");
+  delBtn().fire("click");
 });
 
 test("Send builds first and keeps the target captured before the await; double click sends once", async () => {
@@ -772,8 +775,8 @@ test("save, delete and send show no confirmation banner and clear a previous err
   assert.equal(getNode("tpl-banner").hidden, true, "save: no banner");
 
   getNode("tpl-banner").className = "banner error";
-  getNode("tpl-delete").fire("click");
-  getNode("tpl-delete").fire("click");
+  delBtn().fire("click");
+  delBtn().fire("click");
   await tick();
   assert.equal(getNode("tpl-banner").hidden, true, "delete: no banner");
 });
@@ -785,7 +788,6 @@ test("changing a variable value persists it without dirtying, guarding or lockin
   ipc.calls = [];
   typeVar(input(), "42");
   assert.equal(getNode("tpl-dirty").hidden, true);
-  assert.equal(getNode("tpl-saved").hidden, false);
   assert.equal(input().readOnly, false, "editor not locked");
   await tick();
   assert.equal(savedOk().length, 1);
@@ -795,7 +797,7 @@ test("changing a variable value persists it without dirtying, guarding or lockin
   assert.equal(getNode("tpl-banner").hidden, true);
 
   // Switching templates is not guarded and reopening keeps the new value.
-  cardNamed("Beta").fire("click");
+  open("Beta");
   assert.equal(guard().hidden, true);
   open("Alpha");
   assert.equal(input().value, "42");
@@ -946,9 +948,9 @@ test("a failed delete resumes the variable write queued behind a background writ
   const input = () => getNode("tpl-vars").find((x) => x.tag === "input")[0];
   typeVar(input(), "2");
   typeVar(input(), "3");
-  cardNamed("Beta").fire("click");
-  getNode("tpl-delete").fire("click");
-  getNode("tpl-delete").fire("click");
+  open("Beta");
+  delBtn().fire("click");
+  delBtn().fire("click");
   first.resolve();
   await tick();
   await tick();
@@ -959,4 +961,79 @@ test("a failed delete resumes the variable write queued behind a background writ
   assert.equal(calls[1].args.templates.some((t) => t.id === "b"), false, "second call is the failed delete");
   assert.deepEqual(calls[2].args.templates.find((t) => t.id === "a").variables, [{ name: "X", default: "3" }]);
   assert.equal(calls[2].args.templates.some((t) => t.id === "b"), true);
+});
+
+const crosses = () => cards().flatMap((c) => c.find((n) => n.classes.has("k-x")));
+
+test("the delete ✕ exists only on the selected card and needs two clicks", async () => {
+  await boot();
+  open("Alpha");
+  assert.equal(crosses().length, 1);
+  assert.equal(cardNamed("Alpha").find((n) => n.classes.has("k-x")).length, 1);
+  assert.equal(delBtn().textContent, "✕");
+
+  delBtn().fire("click");
+  assert.equal(delBtn().textContent, "Sure?");
+  assert.equal(delBtn().classes.has("armed"), true);
+  assert.equal(savedOk().length, 0, "the first click only arms");
+
+  delBtn().fire("click");
+  await tick();
+  assert.equal(cardNamed("Alpha"), undefined);
+  assert.equal(form().hidden, true);
+});
+
+test("selecting another card moves the ✕ and disarms it", async () => {
+  await boot();
+  open("Alpha");
+  delBtn().fire("click");
+  assert.equal(delBtn().classes.has("armed"), true);
+  open("Beta");
+  assert.equal(crosses().length, 1);
+  assert.equal(cardNamed("Beta").find((n) => n.classes.has("k-x")).length, 1);
+  assert.equal(delBtn().textContent, "✕");
+  assert.equal(delBtn().classes.has("armed"), false);
+  delBtn().fire("click");
+  delBtn().fire("click");
+  await tick();
+});
+
+test("the save pill shows only while the draft has unsaved changes", async () => {
+  await boot();
+  open("Alpha");
+  assert.equal(getNode("tpl-dirty").hidden, true);
+  assert.equal(form().classes.has("pending"), false);
+
+  getNode("tpl-payload").type("ALPHA edited");
+  assert.equal(getNode("tpl-dirty").hidden, false);
+  assert.equal(form().classes.has("pending"), true, "room is reserved under the pill");
+
+  getNode("tpl-save").fire("click");
+  await tick();
+  assert.equal(getNode("tpl-dirty").hidden, true);
+  assert.equal(form().classes.has("pending"), false);
+});
+
+test("a new unsaved template has no 'unsaved' badge on its card", async () => {
+  await boot();
+  getNode("tpl-new").fire("click");
+  await tick();
+  assert.equal(
+    getNode("tpl-list").find((n) => n.classes?.has("badge") && n.textContent === "unsaved").length,
+    0,
+  );
+});
+
+test("a search that excludes the open template still lists it, so it stays deletable", async () => {
+  await boot();
+  open("Beta");
+  getNode("tpl-search").type("alpha");
+  assert.equal(cardNamed("Alpha") !== undefined, true);
+  assert.equal(cardNamed("Beta") !== undefined, true, "the open template stays listed");
+  assert.equal(delBtn() !== undefined, true);
+
+  getNode("tpl-search").type("");
+  delBtn().fire("click");
+  delBtn().fire("click");
+  await tick();
 });

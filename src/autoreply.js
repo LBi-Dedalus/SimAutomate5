@@ -463,7 +463,7 @@ function renderAll() {
 function renderToolbar() {
   const dirty = isDirty();
   $("ar-dirty").classList.toggle("hidden", !dirty);
-  $("ar-saved").classList.toggle("hidden", dirty || !loaded);
+  $("view-autoreply").classList.toggle("pending", dirty);
   $("ar-save").disabled = !loaded || loading || saving || togglingMaster || !dirty;
   $("ar-discard").disabled = !loaded || loading || saving || togglingMaster || !dirty;
   $("ar-add").disabled = !editable();
@@ -474,6 +474,22 @@ function renderToolbar() {
   $("ar-guard-cancel").disabled = saving;
   // The badge shows what the backend applies, never the draft or an unconfirmed toggle.
   $("autoreply-badge").classList.toggle("hidden", !(loaded && enabled));
+  renderStatus();
+}
+
+/** Status strip: the confirmed master state, like the sidebar badge. */
+function renderStatus() {
+  const on = loaded && enabled;
+  $("ar-strip").classList.toggle("is-off", !on);
+  $("ar-state-badge").className = `badge ${on ? "ok" : "mute"}`;
+  $("ar-state-badge").textContent = on ? "● ON" : loaded ? "● OFF" : "● —";
+  $("ar-state-text").textContent = on
+    ? "Automatic replies are active"
+    : loaded
+      ? "Automatic replies are paused"
+      : loading
+        ? "Loading automatic replies…"
+        : "Automatic replies unavailable";
 }
 
 function renderList() {
@@ -485,7 +501,7 @@ function renderList() {
   }
   const problems = failingRules();
   rules.forEach((rule, index) => {
-    const row = el("div", `ar-row ar-item${rule.id === selectedId ? " on" : ""}${rule.enabled ? "" : " off"}`);
+    const row = el("div", `ar-row ar-item k-hover${rule.id === selectedId ? " on" : ""}${rule.enabled ? "" : " off"}`);
     row.setAttribute("role", "listitem");
     row.tabIndex = 0;
     row.addEventListener("click", () => select(rule.id));
@@ -517,7 +533,7 @@ function renderList() {
     row.appendChild(el("span", "", describeAction(rule, templates)));
     row.appendChild(el("span", "", describeDelay(rule)));
 
-    const tools = el("span");
+    const tools = el("span", "k-tool");
     const mk = (label, title, onClick, disabled, danger = false) => {
       const b = el("button", "small ghost", label);
       if (danger) b.dataset.variant = "danger";

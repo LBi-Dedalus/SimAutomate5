@@ -53,6 +53,7 @@ function setMode(next) {
   document.getElementById("client-host-field").classList.toggle("hidden", !client);
   document.getElementById("client-port-field").classList.toggle("hidden", !client);
   document.getElementById("server-port-field").classList.toggle("hidden", client);
+  document.getElementById("connect-hint").classList.toggle("hidden", client);
 
   syncModeFields();
   document.getElementById("connect-btn").textContent = client ? "Connect" : "Start server";
@@ -208,7 +209,10 @@ function renderRecent() {
     card.type = "button";
     const top = el("div");
     top.appendChild(el("span", client ? "badge" : "badge mute", client ? "Client" : "Server"));
-    top.appendChild(el("small", "", client ? "Connect ↗" : "Listen ↗"));
+    const go = el("small", "go");
+    go.appendChild(el("span", "verb", client ? "Connect " : "Listen "));
+    go.appendChild(el("span", "", "↗"));
+    top.appendChild(go);
     card.appendChild(top);
     card.appendChild(el("b", "", endpointText(entry)));
     card.addEventListener("click", () => useRecent(entry));

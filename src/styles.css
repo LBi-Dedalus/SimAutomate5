@@ -220,7 +220,7 @@ small:is(.ok, .warn, .error),
   text-align: left;
   white-space: normal;
 
-  &:is(button, li):hover,
+  &:is(button, li, .tcard):hover,
   &.on {
     border-color: var(--teal);
   }
@@ -262,6 +262,137 @@ small:is(.ok, .warn, .error),
 @keyframes pulse {
   50% {
     opacity: 0.35;
+  }
+}
+
+/* ── Page actions ──
+   Shared by Auto reply, Templates, Autobuild and Home:
+   .k-strip  status strip with the one global switch of a view
+   .k-float  floating pill holding Save / Discard, only while there are unsaved edits
+   .k-add    dashed row that adds an item where it will land
+   .k-help   collapsed explainer
+   .k-hover  row whose .k-tool controls appear on hover, keyboard focus or selection
+   .k-x      small ✕ that turns into a red "Sure?" once armed */
+.k-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--teal) 35%, var(--line));
+  border-radius: var(--radius-large);
+  background: color-mix(in srgb, var(--teal) 7%, var(--paper));
+
+  &.is-off {
+    border-color: var(--line);
+    background: var(--paper);
+  }
+
+  & > b {
+    font-size: var(--text-7);
+  }
+
+  & > label {
+    flex-shrink: 0;
+  }
+}
+
+.k-float {
+  position: absolute;
+  bottom: 16px;
+  left: calc((100% - var(--k-right, 0px)) / 2);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 8px 7px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: var(--paper);
+  box-shadow: 0 8px 28px rgb(15 42 58 / 0.2);
+  transform: translateX(-50%);
+
+  & small {
+    margin-right: var(--space-2);
+    font-size: var(--text-7);
+    white-space: nowrap;
+  }
+}
+
+.k-add {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-3);
+}
+
+.k-help {
+  margin: 8px 0 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--mute);
+  font-size: var(--text-8);
+
+  & summary {
+    width: fit-content;
+    padding: 0;
+    cursor: pointer;
+    font-weight: var(--font-medium);
+  }
+
+  & p {
+    margin: 6px 0 0;
+  }
+}
+
+.k-count {
+  margin-left: var(--space-2);
+  font-weight: 400;
+}
+
+.k-hover .k-tool {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.k-hover:is(:hover, :focus-within, .on) .k-tool {
+  opacity: 1;
+}
+
+/* No hover on touch screens: the tools stay visible. */
+@media (hover: none) {
+  .k-hover .k-tool {
+    opacity: 1;
+  }
+}
+
+.k-x {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-medium);
+  background: transparent;
+  color: var(--mute);
+  font-size: var(--text-8);
+  font-weight: var(--font-semibold);
+  line-height: 1;
+
+  &:hover:not(:disabled, .armed) {
+    background: color-mix(in srgb, var(--red) 12%, var(--paper));
+    color: var(--red);
+  }
+
+  &.armed {
+    width: auto;
+    padding: 0 8px;
+    background: var(--red);
+    color: #fff;
   }
 }
 
@@ -528,6 +659,23 @@ footer {
     list-style: none;
     overflow: hidden auto;
   }
+
+  /* List title with its single list-level action. */
+  & > .tl-head {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 24px;
+    overflow: visible;
+
+    & button {
+      margin: 0 -6px 0 0;
+
+      &:disabled {
+        display: none;
+      }
+    }
+  }
 }
 
 .dock {
@@ -540,8 +688,8 @@ footer {
   border-left: 1px solid var(--line);
 }
 
-#tpl-form header .hstack {
-  margin-bottom: 2px;
+#tpl-form header .hstack > .badge {
+  flex: none;
 }
 
 /* Inspector tabs */
@@ -859,9 +1007,23 @@ button.icon {
   }
 
   & small {
-    color: var(--teal);
+    color: var(--mute);
     font-size: var(--text-7);
     font-weight: var(--font-bold);
+  }
+
+  /* Quiet arrow; the verb shows up when the card is hovered or focused. */
+  & .verb {
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+
+  & .card:is(:hover, :focus-visible) small {
+    color: var(--teal);
+  }
+
+  & .card:is(:hover, :focus-visible) .verb {
+    opacity: 1;
   }
 
   & b {
@@ -1155,12 +1317,41 @@ button.icon {
   }
 }
 
-.tlist button.new {
+.tlist button.card.new,
+button.card.k-add {
   border-style: dashed;
   background: transparent;
   color: var(--mute);
   font-weight: var(--font-semibold);
   text-align: center;
+}
+
+/* Template card: the load button and, on the selected card, its delete ✕ side by side. */
+.tlist .tcard {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+
+  & .tload {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-weight: 400;
+    text-align: left;
+    white-space: normal;
+  }
+
+  & .k-x {
+    margin-block: -2px;
+    margin-right: -6px;
+  }
 }
 
 .bd {
@@ -1259,6 +1450,18 @@ button.icon {
   padding: 5px 10px;
 }
 
+#tpl-form {
+  position: relative;
+
+  & .k-float {
+    bottom: 70px;
+  }
+
+  &.pending .bd {
+    padding-bottom: 72px;
+  }
+}
+
 #tpl-validity {
   display: block;
   margin-top: 8px;
@@ -1334,6 +1537,21 @@ button.icon {
   border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--red) var(--tint), var(--paper));
   color: var(--red);
+}
+
+/* The floating pill sits above the rule editor, so it is centred on the list column. */
+#view-autoreply {
+  --k-right: 340px;
+  position: relative;
+
+  & .card > header {
+    justify-content: flex-start;
+  }
+
+  &.pending .scroll,
+  &.pending #ar-form {
+    padding-bottom: 84px;
+  }
 }
 
 #ar-form,
@@ -1422,7 +1640,11 @@ button.icon {
   }
 
   & .ab-use {
-    padding-left: 0;
+    position: absolute;
+    top: 4px;
+    right: 34px;
+    margin: 0;
+    padding: 2px 8px;
     color: var(--teal);
   }
 
@@ -1432,6 +1654,27 @@ button.icon {
     right: 6px;
     margin: 0;
   }
+
+  /* The tools take the place of the time while the card is hovered, focused or selected. */
+  & .ab-time {
+    transition: opacity 0.12s;
+  }
+
+  &:is(:hover, :focus-within, .on) .ab-time {
+    opacity: 0;
+  }
+}
+
+@media (hover: none) {
+  .ab-card .ab-time {
+    opacity: 0;
+  }
+}
+
+.sw-pill {
+  display: inline-flex;
+  width: fit-content;
+  padding: 5px 10px;
 }
 
 #close-confirm {
@@ -1458,6 +1701,10 @@ button.icon {
 }
 
 @media (max-width: 1100px) {
+  #view-autoreply {
+    --k-right: 300px;
+  }
+
   .split > aside {
     --w: 300px;
     flex: none;
@@ -1481,6 +1728,15 @@ button.icon {
 @media (max-width: 960px) {
   :root {
     --pad: 14px;
+  }
+
+  /* Stacked: the rule editor is below the list, so the pill centres on the whole view. */
+  #view-autoreply {
+    --k-right: 0px;
+
+    &.pending .scroll {
+      padding-bottom: 16px;
+    }
   }
 
   #sidebar {

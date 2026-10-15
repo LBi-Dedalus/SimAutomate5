@@ -45,6 +45,8 @@ let varSaveQueued = false;
 let pendingAction = null;
 let deleteArmed = false;
 let deleteTimer = null;
+/** The ✕ rendered on the selected card, if any. */
+let deleteButton = null;
 /** True while a template is being built by Autobuild before send/load (blocks double actions). */
 let delivering = false;
 /** Template id whose built text the preview box currently shows (null: plain text or error). */
@@ -72,7 +74,6 @@ async function init() {
   $("tpl-name").addEventListener("input", onNameInput);
   $("tpl-payload").addEventListener("input", onPayloadInput);
   $("tpl-save").addEventListener("click", () => void save());
-  $("tpl-delete").addEventListener("click", () => void onDelete());
   $("tpl-load").addEventListener("click", () => void loadInComposer());
   $("tpl-send").addEventListener("click", () => void sendNow());
   $("tpl-autobuild").addEventListener("change", onAutobuildChange);
@@ -446,15 +447,25 @@ async function save() {
 function disarmDelete() {
   deleteArmed = false;
   clearTimeout(deleteTimer);
-  const button = $("tpl-delete");
-  button.textContent = "Delete";
+  syncDeleteButton();
+}
+
+/** The ✕ of the selected card: asks for a second click, which deletes the template. */
+function syncDeleteButton() {
+  if (!deleteButton) return;
+  const name = draft ? draft.name.trim() || "Untitled" : "";
+  deleteButton.textContent = deleteArmed ? "Sure?" : "✕";
+  deleteButton.classList.toggle("armed", deleteArmed);
+  const label = deleteArmed ? `Click again to delete template ${name}` : `Delete template ${name}`;
+  deleteButton.title = deleteArmed ? "Click again to delete" : "Delete template";
+  deleteButton.setAttribute("aria-label", label);
 }
 
 async function onDelete() {
   if (!draft || saving) return;
   if (!deleteArmed) {
     deleteArmed = true;
-    $("tpl-delete").textContent = "Click again to confirm";
+    syncDeleteButton();
     deleteTimer = setTimeout(disarmDelete, 4000);
     return;
   }
@@ -687,9 +698,12 @@ function renderList() {
   const list = $("tpl-list");
   const query = $("tpl-search").value.trim().toLowerCase();
   list.replaceChildren();
+  deleteButton = null;
 
+  // The open template stays listed so its ✕ is always reachable.
   const matches = (t) =>
     query === "" ||
+    draft?.id === t.id ||
     `${t.name}\n${t.payload}`.toLowerCase().includes(query);
 
   const rows = templates.filter(matches);
@@ -706,7 +720,8 @@ function renderList() {
     const active = draft && draft.id === row.id;
     // The editor holds the live copy of the selected template.
     const shown = active ? draft : row;
-    const card = el("button", `card${active ? " on" : ""}`);
+    const item = el("div", `card tcard${active ? " on" : ""}`);
+    const card = el("button", "tload");
     card.type = "button";
     const title = el("b");
     const label = el("span", "nm");
@@ -719,13 +734,22 @@ function renderList() {
     if (active && isDirty()) title.appendChild(el("span", "", "●"));
     card.appendChild(title);
     const meta = el("div", "mt");
-    if (active && draft.isNew) meta.appendChild(el("span", "badge warn", "unsaved"));
     card.appendChild(meta);
     card.addEventListener("click", () => {
       if (active) return;
       requestAction(() => openTemplate(row.id));
     });
-    list.appendChild(card);
+    item.appendChild(card);
+    if (active) {
+      const del = el("button", "k-x", "✕");
+      del.type = "button";
+      del.disabled = !editingAllowed() || saving;
+      del.addEventListener("click", () => void onDelete());
+      item.appendChild(del);
+      deleteButton = del;
+      syncDeleteButton();
+    }
+    list.appendChild(item);
   }
 }
 
@@ -784,12 +808,12 @@ function updateButtons() {
   if (!draft) return;
   const allowed = editingAllowed() && !saving;
   $("tpl-save").disabled = !allowed;
-  $("tpl-delete").disabled = !allowed;
+  if (deleteButton) deleteButton.disabled = !allowed;
   for (const id of ["tpl-name", "tpl-payload"]) $(id).readOnly = saving;
   for (const input of document.querySelectorAll("#tpl-vars input")) input.readOnly = saving;
   syncAutobuildControls();
   $("tpl-dirty").classList.toggle("hidden", !isDirty());
-  $("tpl-saved").classList.toggle("hidden", isDirty() || Boolean(draft.isNew));
+  $("tpl-form").classList.toggle("pending", isDirty());
 }
 
 function renderVars() {
