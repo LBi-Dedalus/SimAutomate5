@@ -6,7 +6,11 @@ import {
   forgetInspector,
 } from "./inspector.js";
 import { renderTokens, el } from "../render.js";
+import { cloneTemplate } from "../include.js";
 import { sessions, store, subscribeSendEligibility } from "./sessions.js";
+
+const SYSTEM_MESSAGE = "session/system-message.html";
+const MESSAGE_BUBBLE = "session/message-bubble.html";
 
 /**
  * One conversation container per session (display: contents inside #messages): switching
@@ -224,31 +228,33 @@ function addNode(session, view, record) {
 }
 
 function buildSystemNode(record) {
-  const node = el("div", `sys ${record.msg_type}`);
-  node.appendChild(el("span", "txt", record.content));
-  node.appendChild(el("span", "t", formatTime(record.timestamp)));
+  const node = cloneTemplate(SYSTEM_MESSAGE, { text: record.content, time: formatTime(record.timestamp) });
+  node.classList.add(record.msg_type);
   return node;
 }
 
 function buildBubbleNode(record, info) {
   const outgoing = record.msg_type === "sent";
-  const node = el("div", `msg ${outgoing ? "out" : "in"} ${record.msg_type}`);
-
-  const meta = el("div", "meta");
-  meta.appendChild(el("span", record.msg_type === "received" ? "badge in" : "badge", info.title));
-  meta.appendChild(el("span", "", formatTime(record.timestamp)));
   const ack = hl7Ack(info.hl7);
-  if (ack) meta.appendChild(el("span", ack.ok ? "ack ok" : "ack error", `${ack.ok ? "✓" : "✕"} ${ack.code}`));
-  node.appendChild(meta);
+  const node = cloneTemplate(MESSAGE_BUBBLE, {
+    title: info.title,
+    time: formatTime(record.timestamp),
+    ...(ack && { ack: `${ack.ok ? "✓" : "✕"} ${ack.code}` }),
+  });
+  const part = (name) => node.querySelector(`[data-slot="${name}"]`);
+  node.classList.add(outgoing ? "out" : "in", record.msg_type);
+  part("title").classList.toggle("in", record.msg_type === "received");
+  const ackNode = part("ack");
+  if (ack) ackNode.className = ack.ok ? "ack ok" : "ack error";
+  else ackNode.remove();
 
-  const bubble = el("div", "bub");
+  const bubble = part("content");
   // ASTM frames stay on one line (as before); other content breaks after <CR>.
   renderTokens(bubble, record.content, {
     breakAfterCr: !record.content.startsWith("<STX>"),
     segments: info.kind === "hl7",
   });
   bubble.title = record.content;
-  node.appendChild(bubble);
   return node;
 }
 

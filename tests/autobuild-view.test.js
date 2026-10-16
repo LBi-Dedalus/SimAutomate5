@@ -1,8 +1,7 @@
 // Integration tests for src/autobuild/autobuild-view.js with a minimal fake DOM and injected backend/storage.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readMarkup } from "./helpers/markup.js";
-import { initAutobuildView } from "../src/autobuild/autobuild-view.js";
+import { readMarkup, installTemplates } from "./helpers/markup.js";
 import { RECENT_BUILDS_KEY } from "../src/autobuild/autobuild-recent-core.js";
 
 class FakeNode {
@@ -60,6 +59,15 @@ class FakeNode {
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
+// The cards come from cloneTemplate, which builds its nodes with the global document.
+let currentDoc;
+globalThis.document = {
+  createElement: (tag) => Object.assign(new FakeNode(tag), { doc: currentDoc }),
+  querySelectorAll: () => [],
+};
+await installTemplates(["autobuild/recent-card.html", "autobuild/recent-preview-line.html"]);
+const { initAutobuildView } = await import("../src/autobuild/autobuild-view.js");
+
 function setup({ stored, active = "s1", sessions = ["s1"], invoke, storage } = {}) {
   const nodes = new Map();
   const doc = {
@@ -70,6 +78,7 @@ function setup({ stored, active = "s1", sessions = ["s1"], invoke, storage } = {
     },
     createElement: (tag) => Object.assign(new FakeNode(tag), { doc }),
   };
+  currentDoc = doc;
   const data = new Map(stored ? [[RECENT_BUILDS_KEY, stored]] : []);
   const store = storage ?? {
     getItem: (k) => (data.has(k) ? data.get(k) : null),

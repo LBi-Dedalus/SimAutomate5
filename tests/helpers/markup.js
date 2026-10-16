@@ -32,9 +32,14 @@ function parseTemplate(html, create) {
       for (const [, name, value = ""] of (attrs ?? "").matchAll(/([^\s=]+)(?:="([^"]*)")?/g)) {
         if (name === "class") node.className = value;
         else if (name.startsWith("data-")) node.dataset[camel(name.slice(5))] = value;
-        else node[name] = value;
+        else {
+          node.setAttribute?.(name, value);
+          node[name] = value;
+        }
       }
-      (stack.at(-1)?.children ?? roots).push(node);
+      const parent = stack.at(-1);
+      node.parent = parent;
+      (parent?.children ?? roots).push(node);
       stack.push(node);
       if (/\/>$/.test(all)) stack.pop();
     } else if (text.trim()) {
@@ -68,17 +73,17 @@ export async function installTemplates(urls) {
   proto.querySelector ??= function (selector) {
     return this.querySelectorAll(selector)[0] ?? null;
   };
-  proto.cloneNode ??= function (deep) {
-    const copy = create(this.tag);
-    Object.assign(copy, this, { children: deep ? this.children.map((child) => child.cloneNode(true)) : [] });
-    copy.dataset = { ...this.dataset };
-    return copy;
+  proto.remove ??= function () {
+    if (this.parent) this.parent.children = this.parent.children.filter((child) => child !== this);
   };
   document.createElement = (tag) =>
     tag === "template"
       ? {
           set innerHTML(html) {
-            this.content = { children: parseTemplate(html, create), querySelectorAll: () => [] };
+            const roots = parseTemplate(html, create);
+            // Clones are parsed again: fake nodes are not copyable, but a parse always gives a fresh tree.
+            for (const root of roots) root.cloneNode = () => parseTemplate(html, create)[0];
+            this.content = { children: roots, querySelectorAll: () => [] };
           },
         }
       : create(tag);

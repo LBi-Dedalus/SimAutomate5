@@ -3,6 +3,7 @@
 // rule, sessions.sendTarget(), including while a disconnect/close is pending.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { installTemplates } from "./helpers/markup.js";
 
 class FakeNode {
   constructor(tag = "div", id = "") {
@@ -129,6 +130,7 @@ globalThis.window = {
   connection_status: { get: () => "disconnected", set() {}, subscribe() {} },
 };
 
+await installTemplates(["templates/template-card.html", "templates/variable-auto-row.html", "templates/variable-value-row.html"]);
 const { sessions, store } = await import("../src/session/sessions.js");
 await import("../src/session/messages.js");
 await import("../src/session/special-chars.js");

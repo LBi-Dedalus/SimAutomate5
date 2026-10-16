@@ -24,7 +24,10 @@ import {
 import { getSavedTemplates, subscribeSavedTemplates } from "../templates/template-store.js";
 import { setLeaveGuard } from "../nav.js";
 import { el, renderTokens } from "../render.js";
+import { cloneTemplate } from "../include.js";
 import { logError, logInfo } from "../log.js";
+
+const RULE_ROW = "autoreply/rule-row.html";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -499,43 +502,36 @@ function renderList() {
   }
   const problems = failingRules();
   rules.forEach((rule, index) => {
-    const row = el("div", `ar-row ar-item k-hover${rule.id === selectedId ? " on" : ""}${rule.enabled ? "" : " off"}`);
-    row.setAttribute("role", "listitem");
-    row.tabIndex = 0;
+    const armed = deleteArmedId === rule.id;
+    const row = cloneTemplate(RULE_ROW, {
+      name: rule.name.trim() || "Untitled",
+      trigger: describeTrigger(rule),
+      condition: describeCondition(rule),
+      action: describeAction(rule, templates),
+      delay: describeDelay(rule),
+      remove: armed ? "Sure?" : "✕",
+    });
+    const part = (name) => row.querySelector(`[data-slot="${name}"]`);
+    row.classList.toggle("on", rule.id === selectedId);
+    row.classList.toggle("off", !rule.enabled);
     row.addEventListener("click", () => select(rule.id));
     row.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter" && ev.target === row) select(rule.id);
     });
 
-    const on = el("span");
-    const box = el("input");
-    box.type = "checkbox";
+    const box = part("enabled");
     box.checked = rule.enabled;
     box.disabled = !editable();
     box.setAttribute("aria-label", `Enable rule ${rule.name}`);
     box.addEventListener("click", (ev) => ev.stopPropagation?.());
     box.addEventListener("change", () => toggleRule(rule));
-    on.appendChild(box);
-    row.appendChild(on);
 
-    const when = el("span");
-    when.appendChild(el("b", "", rule.name.trim() || "Untitled"));
-    when.appendChild(el("span", "ar-sub", describeTrigger(rule)));
-    if (problems.has(rule.id)) {
-      const bad = el("span", "ar-bad", "!");
-      bad.title = problems.get(rule.id)[0].message;
-      when.appendChild(bad);
-    }
-    row.appendChild(when);
-    row.appendChild(el("span", "", describeCondition(rule)));
-    row.appendChild(el("span", "", describeAction(rule, templates)));
-    row.appendChild(el("span", "", describeDelay(rule)));
+    const bad = part("problem");
+    if (problems.has(rule.id)) bad.title = problems.get(rule.id)[0].message;
+    else bad.remove();
 
-    const tools = el("span", "k-tool");
-    const mk = (label, title, onClick, disabled, danger = false) => {
-      const b = el("button", "small ghost", label);
-      if (danger) b.dataset.variant = "danger";
-      b.type = "button";
+    const tool = (name, title, onClick, disabled) => {
+      const b = part(name);
       b.title = title;
       b.disabled = disabled || !editable();
       b.setAttribute("aria-label", `${title}: ${rule.name}`);
@@ -543,13 +539,10 @@ function renderList() {
         ev.stopPropagation?.();
         onClick();
       });
-      tools.appendChild(b);
     };
-    mk("↑", "Move up (higher priority)", () => move(rule, -1), index === 0);
-    mk("↓", "Move down", () => move(rule, 1), index === rules.length - 1);
-    const armed = deleteArmedId === rule.id;
-    mk(armed ? "Sure?" : "✕", armed ? "Click again to delete" : "Delete rule", () => deleteRule(rule), false, true);
-    row.appendChild(tools);
+    tool("up", "Move up (higher priority)", () => move(rule, -1), index === 0);
+    tool("down", "Move down", () => move(rule, 1), index === rules.length - 1);
+    tool("remove", armed ? "Click again to delete" : "Delete rule", () => deleteRule(rule), false);
     list.appendChild(row);
   });
 }

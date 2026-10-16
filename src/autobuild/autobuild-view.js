@@ -10,11 +10,16 @@ import {
   previewInput,
   recordBuild,
 } from "./autobuild-recent-core.js";
+import { cloneTemplate } from "../include.js";
+
+const CARD = "autobuild/recent-card.html";
+const PREVIEW_LINE = "autobuild/recent-preview-line.html";
 
 /**
  * deps: { doc, storage, invoke, activeId(), hasSession(id), setDraft(id, text),
  *         showSession(target), logError(message, where), now() }
  * `showSession(target)` must show the session view (honouring leave guards) and select target.
+ * The recent cards come from cloneTemplate, so the global document must hold the preloaded templates.
  */
 export function initAutobuildView(deps) {
   const { doc, storage } = deps;
@@ -74,52 +79,24 @@ export function initAutobuildView(deps) {
     buildKey(norm(entry.input), entry.noEtb) === buildKey(norm(inputField.value), noEtbField.checked);
 
   function cardFor(entry) {
-    const li = doc.createElement("li");
-    li.className = `card ab-card k-hover${isLoaded(entry) ? " on" : ""}`;
+    const li = cloneTemplate(CARD, { kind: entry.kind, time: formatShortTime(entry.lastUsed, now()) });
+    const part = (name) => li.querySelector(`[data-slot="${name}"]`);
+    const loaded = isLoaded(entry);
+    li.classList.toggle("on", loaded);
     li.dataset.id = entry.id;
 
-    const load = doc.createElement("button");
-    load.setAttribute("type", "button");
-    load.className = "ab-load";
-    load.setAttribute("aria-pressed", isLoaded(entry) ? "true" : "false");
-    load.setAttribute("title", "Load into the builder");
-
-    const top = doc.createElement("span");
-    top.className = "ab-top";
-    const kind = doc.createElement("span");
-    kind.className = "badge ab-kind";
-    kind.textContent = entry.kind;
-    top.appendChild(kind);
-    if (entry.noEtb) {
-      const marker = doc.createElement("span");
-      marker.className = "badge in ab-noetb";
-      marker.textContent = "No ETB";
-      top.appendChild(marker);
-    }
-    const time = doc.createElement("span");
-    time.className = "ab-time";
-    time.textContent = formatShortTime(entry.lastUsed, now());
-    top.appendChild(time);
-    load.appendChild(top);
-
-    for (const line of previewInput(entry.input)) {
-      const pv = doc.createElement("span");
-      pv.className = "ab-pv";
-      pv.textContent = line;
-      load.appendChild(pv);
-    }
+    const load = part("load");
+    load.setAttribute("aria-pressed", loaded ? "true" : "false");
+    if (!entry.noEtb) part("noetb").remove();
+    for (const line of previewInput(entry.input)) load.appendChild(cloneTemplate(PREVIEW_LINE, { line }));
     load.addEventListener("click", () => {
       showError(null);
       setFields(entry);
       // Update in place so the clicked button keeps keyboard focus.
       updateSelection();
     });
-    li.appendChild(load);
 
-    const use = doc.createElement("button");
-    use.setAttribute("type", "button");
-    use.className = "small ghost ab-use k-tool";
-    use.textContent = "Use in session";
+    const use = part("use");
     use.setAttribute("aria-label", `Use this ${entry.kind} message in the active session`);
     use.addEventListener("click", () => {
       showError(null);
@@ -128,14 +105,9 @@ export function initAutobuildView(deps) {
       if (!result.delivered) return showError(result.error);
       deps.showSession(result.target);
     });
-    li.appendChild(use);
 
-    const del = doc.createElement("button");
-    del.setAttribute("type", "button");
-    del.className = "ghost icon ab-del k-tool";
-    del.textContent = "×";
+    const del = part("delete");
     del.setAttribute("aria-label", `Delete this ${entry.kind} autobuild from the recent list`);
-    del.setAttribute("title", "Delete");
     del.addEventListener("click", () => {
       const index = entries.findIndex((e) => e.id === entry.id);
       const result = deleteBuild(storage, entry.id);
@@ -146,7 +118,6 @@ export function initAutobuildView(deps) {
       const target = loadButtons[Math.min(Math.max(index, 0), loadButtons.length - 1)] ?? inputField;
       focusNode(target);
     });
-    li.appendChild(del);
     loadButtons.push(load);
     return li;
   }

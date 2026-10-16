@@ -1,0 +1,10 @@
+<!-- A sent or received message. Text slots: title, time, ack. Handles: ack (removed when the message
+     has no acknowledgement), content (rendered by the code, as it holds control chips). -->
+<div class="msg">
+  <div class="meta">
+    <span class="badge" data-slot="title"></span>
+    <span data-slot="time"></span>
+    <span data-slot="ack"></span>
+  </div>
+  <div class="bub" data-slot="content"></div>
+</div>

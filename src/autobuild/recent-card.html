@@ -1,0 +1,13 @@
+<!-- One recent autobuild. Text slots: kind, time. Handles: load (preview lines go inside it),
+     noetb (removed when the build had no ETB), use, delete. -->
+<li class="card ab-card k-hover">
+  <button type="button" class="ab-load" title="Load into the builder" data-slot="load">
+    <span class="ab-top">
+      <span class="badge ab-kind" data-slot="kind"></span>
+      <span class="badge in ab-noetb" data-slot="noetb">No ETB</span>
+      <span class="ab-time" data-slot="time"></span>
+    </span>
+  </button>
+  <button type="button" class="small ghost ab-use k-tool" data-slot="use">Use in session</button>
+  <button type="button" class="ghost icon ab-del k-tool" title="Delete" data-slot="delete">×</button>
+</li>

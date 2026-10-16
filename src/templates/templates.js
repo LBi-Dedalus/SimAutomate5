@@ -18,9 +18,14 @@ import { sendMessage, setComposerText, activeSendTarget, activeSessionId } from 
 import { SAVE_AS_TEMPLATE_EVENT } from "../session/inspector.js";
 import { subscribeSendEligibility } from "../session/sessions.js";
 import { el } from "../render.js";
+import { cloneTemplate } from "../include.js";
 import { logError, logInfo } from "../log.js";
 import { publishSavedTemplates, clearSavedTemplates } from "./template-store.js";
 import { applyTemplateAutobuild } from "../autobuild/autobuild-core.js";
+
+const TEMPLATE_CARD = "templates/template-card.html";
+const VARIABLE_AUTO_ROW = "templates/variable-auto-row.html";
+const VARIABLE_VALUE_ROW = "templates/variable-value-row.html";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -718,34 +723,30 @@ function renderList() {
     const active = draft && draft.id === row.id;
     // The editor holds the live copy of the selected template.
     const shown = active ? draft : row;
-    const item = el("div", `card tcard${active ? " on" : ""}`);
-    const card = el("button", "tload");
-    card.type = "button";
-    const title = el("b");
-    const label = el("span", "nm");
-    const nameText = el("span", "nm-t", shown.name.trim() || "Untitled");
-    nameText.title = nameText.textContent;
-    label.appendChild(nameText);
+    const name = shown.name.trim() || "Untitled";
+    const item = cloneTemplate(TEMPLATE_CARD, { name });
+    const part = (slot) => item.querySelector(`[data-slot="${slot}"]`);
+    item.classList.toggle("on", Boolean(active));
+    const nameText = part("name");
+    nameText.title = name;
     const kind = templateKind(shown.payload);
-    label.appendChild(el("span", kind.cls, kind.label));
-    title.appendChild(label);
-    if (active && isDirty()) title.appendChild(el("span", "", "●"));
-    card.appendChild(title);
-    const meta = el("div", "mt");
-    card.appendChild(meta);
+    const kindTag = part("kind");
+    kindTag.className = kind.cls;
+    kindTag.textContent = kind.label;
+    if (!(active && isDirty())) part("dirty").remove();
+    const card = part("load");
     card.addEventListener("click", () => {
       if (active) return;
       requestAction(() => openTemplate(row.id));
     });
-    item.appendChild(card);
+    const del = part("delete");
     if (active) {
-      const del = el("button", "k-x", "✕");
-      del.type = "button";
       del.disabled = !editingAllowed() || saving;
       del.addEventListener("click", () => void onDelete());
-      item.appendChild(del);
       deleteButton = del;
       syncDeleteButton();
+    } else {
+      del.remove();
     }
     list.appendChild(item);
   }
@@ -821,44 +822,38 @@ function renderVars() {
 
   if (names.length === 0) return;
   for (const name of names) {
-    const row = el("div");
-    const label = el("label");
-    label.appendChild(el("span", "var", name));
     if (isAutoVariable(name)) {
-      label.appendChild(el("em", "", "auto"));
-      row.appendChild(label);
-      row.appendChild(
-        el("output", "", name === "NOW" ? "yyyyMMddHHmmss" : "unique per send"),
+      container.appendChild(
+        cloneTemplate(VARIABLE_AUTO_ROW, {
+          name,
+          sample: name === "NOW" ? "yyyyMMddHHmmss" : "unique per send",
+        }),
       );
-    } else {
-      label.appendChild(el("em", "", "value"));
-      row.appendChild(label);
-      const variable = draft.variables.find((v) => v.name === name);
-      const input = el("input");
-      input.type = "text";
-      input.value = variable ? variable.default : "";
-      input.placeholder = "required";
-      input.setAttribute("aria-label", `Value of ${name}`);
-      input.readOnly = saving;
-      input.addEventListener("input", () => {
-        if (!draft || saving) {
-          const current = draft?.variables.find((v) => v.name === name);
-          input.value = current ? current.default : "";
-          return;
-        }
-        const target = draft.variables.find((v) => v.name === name);
-        if (target) target.default = input.value;
-        if (!draft.isNew) {
-          liveVariables.set(
-            draft.id,
-            mergeVariables(savedVariablesFor(draft.id), [{ name, default: input.value }]),
-          );
-          scheduleVariableSave();
-        }
-        afterEdit(false);
-      });
-      row.appendChild(input);
+      continue;
     }
+    const row = cloneTemplate(VARIABLE_VALUE_ROW, { name });
+    const variable = draft.variables.find((v) => v.name === name);
+    const input = row.querySelector('[data-slot="input"]');
+    input.value = variable ? variable.default : "";
+    input.setAttribute("aria-label", `Value of ${name}`);
+    input.readOnly = saving;
+    input.addEventListener("input", () => {
+      if (!draft || saving) {
+        const current = draft?.variables.find((v) => v.name === name);
+        input.value = current ? current.default : "";
+        return;
+      }
+      const target = draft.variables.find((v) => v.name === name);
+      if (target) target.default = input.value;
+      if (!draft.isNew) {
+        liveVariables.set(
+          draft.id,
+          mergeVariables(savedVariablesFor(draft.id), [{ name, default: input.value }]),
+        );
+        scheduleVariableSave();
+      }
+      afterEdit(false);
+    });
     container.appendChild(row);
   }
 }

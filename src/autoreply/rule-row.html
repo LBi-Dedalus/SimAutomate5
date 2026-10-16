@@ -1,0 +1,18 @@
+<!-- One rule of the Auto reply list. Text slots: name, trigger, condition, action, delay, remove.
+     Handles: enabled, problem (removed when the rule is valid), up, down, remove. -->
+<div class="ar-row ar-item k-hover" role="listitem" tabindex="0">
+  <span><input type="checkbox" data-slot="enabled" /></span>
+  <span>
+    <b data-slot="name"></b>
+    <span class="ar-sub" data-slot="trigger"></span>
+    <span class="ar-bad" data-slot="problem">!</span>
+  </span>
+  <span data-slot="condition"></span>
+  <span data-slot="action"></span>
+  <span data-slot="delay"></span>
+  <span class="k-tool">
+    <button type="button" class="small ghost" data-slot="up">↑</button>
+    <button type="button" class="small ghost" data-slot="down">↓</button>
+    <button type="button" class="small ghost" data-variant="danger" data-slot="remove">✕</button>
+  </span>
+</div>
