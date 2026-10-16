@@ -1,3 +1,3 @@
 - [ ] Voir les x-preload links sont tous nécessaires. Beaucoup pourraient être chargés dans le code JS notamment les templates à cloner
 - [ ] Connexion Client via SSH (pour atteindre une VM AWS par exemple). A étudier, peut-être qu'un tunnel / port-forwarding est nécessaire.
-- [ ] Add default auto replies
+- [x] Add default auto replies

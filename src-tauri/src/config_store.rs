@@ -22,7 +22,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::auto_reply::{AutoReplyConfig, RuleSet};
+use crate::auto_reply::{Action, AutoReplyConfig, Condition, Operator, Rule, RuleSet, Trigger};
 
 pub const CONFIG_FILE_NAME: &str = "config.json";
 const TEMPLATES_KEY: &str = "templates";
@@ -117,6 +117,78 @@ pub fn builtin_templates() -> Vec<Template> {
             autobuild_no_etb: false,
         },
     ]
+}
+
+/// Default auto reply configuration, used until the `auto_reply` key is first saved.
+pub fn default_auto_reply() -> AutoReplyConfig {
+    let rule = |id: &str, name: &str, trigger, condition, action| Rule {
+        id: id.to_string(),
+        name: name.to_string(),
+        enabled: true,
+        trigger,
+        condition,
+        action,
+        delay_ms: 0,
+    };
+    let literal_ack = || Action::Literal {
+        text: "<ACK>".to_string(),
+    };
+    AutoReplyConfig {
+        enabled: true,
+        rules: vec![
+            rule(
+                "default-astm-enq",
+                "Reply to ASTM ENQ",
+                Trigger::AstmEnq,
+                None,
+                literal_ack(),
+            ),
+            rule(
+                "default-astm-frame",
+                "Reply to ASTM frames",
+                Trigger::AstmFrame,
+                None,
+                literal_ack(),
+            ),
+            rule(
+                "default-hl7-no-reply-ack",
+                "No reply to HL7 acknowledgements",
+                Trigger::Hl7 {
+                    message_type: "*".to_string(),
+                },
+                Some(Condition {
+                    segment: "MSA".to_string(),
+                    field: 1,
+                    operator: Operator::Glob,
+                    value: "*".to_string(),
+                }),
+                Action::None,
+            ),
+            rule(
+                "default-cobas-infinity",
+                "Reply to Cobas Infinity",
+                Trigger::Hl7 {
+                    message_type: "OML^O21".to_string(),
+                },
+                None,
+                Action::Hl7Ack {
+                    message_type: "ACK^O21".to_string(),
+                    code: "CA".to_string(),
+                },
+            ),
+            rule(
+                "default-hl7-ack",
+                "Reply to HL7 messages",
+                Trigger::Hl7 {
+                    message_type: "*".to_string(),
+                },
+                None,
+                Action::Template {
+                    template_id: "builtin-hl7-ack-o21".to_string(),
+                },
+            ),
+        ],
+    }
 }
 
 fn is_valid_variable_name(name: &str) -> bool {
@@ -234,6 +306,26 @@ fn existing_auto_reply(
         .transpose()
 }
 
+/// Existing rules, or the default rules (the empty configuration when a template they use was
+/// removed) when the key is absent.
+fn auto_reply_or_default(
+    root: &Map<String, Value>,
+    templates: &[Template],
+    path: &Path,
+) -> Result<AutoReplyConfig, String> {
+    Ok(match existing_auto_reply(root, path)? {
+        Some(config) => config,
+        None => {
+            let defaults = default_auto_reply();
+            if RuleSet::compile(&defaults, templates).is_ok() {
+                defaults
+            } else {
+                AutoReplyConfig::default()
+            }
+        }
+    })
+}
+
 fn compile_with(
     config: &AutoReplyConfig,
     templates: &[Template],
@@ -254,7 +346,7 @@ pub fn load_auto_reply_from(path: &Path) -> Result<LoadedAutoReply, String> {
     let root = read_root(path)?.unwrap_or_default();
     let templates = effective_templates(&root, path)?;
     let present = root.contains_key(AUTO_REPLY_KEY);
-    let config = existing_auto_reply(&root, path)?.unwrap_or_default();
+    let config = auto_reply_or_default(&root, &templates, path)?;
     compile_with(&config, &templates, path)?;
     Ok(LoadedAutoReply { config, present })
 }
@@ -263,7 +355,7 @@ pub fn load_auto_reply_from(path: &Path) -> Result<LoadedAutoReply, String> {
 pub fn load_rule_set_from(path: &Path) -> Result<Arc<RuleSet>, String> {
     let root = read_root(path)?.unwrap_or_default();
     let templates = effective_templates(&root, path)?;
-    let config = existing_auto_reply(&root, path)?.unwrap_or_default();
+    let config = auto_reply_or_default(&root, &templates, path)?;
     compile_with(&config, &templates, path)
 }
 
@@ -285,7 +377,7 @@ pub fn save_auto_reply_to(path: &Path, config: &AutoReplyConfig) -> Result<Arc<R
 pub fn set_auto_reply_enabled_in(path: &Path, enabled: bool) -> Result<Arc<RuleSet>, String> {
     let mut root = read_root(path)?.unwrap_or_default();
     let templates = effective_templates(&root, path)?;
-    let mut config = existing_auto_reply(&root, path)?.unwrap_or_default();
+    let mut config = auto_reply_or_default(&root, &templates, path)?;
     config.enabled = enabled;
     let rules = compile_with(&config, &templates, path)?;
     root.insert(
@@ -598,14 +690,24 @@ mod tests {
     }
 
     #[test]
-    fn missing_auto_reply_loads_empty_and_disabled_without_writing() {
+    fn missing_auto_reply_loads_default_rules_without_writing() {
         let dir = temp_dir("ar-missing");
         let path = config_path(&dir);
         let loaded = load_auto_reply_from(&path).unwrap();
         assert!(!loaded.present);
-        assert!(!loaded.config.enabled && loaded.config.rules.is_empty());
-        assert!(!load_rule_set_from(&path).unwrap().is_enabled());
+        assert_eq!(loaded.config, default_auto_reply());
+        assert!(loaded.config.enabled && loaded.config.rules.len() == 5);
+        assert!(load_rule_set_from(&path).unwrap().is_enabled());
         assert!(!dir.exists());
+    }
+
+    #[test]
+    fn default_rules_fall_back_to_empty_when_their_template_is_missing() {
+        let (dir, path) = setup_file("ar-default-fallback", r#"{"templates":[]}"#);
+        let loaded = load_auto_reply_from(&path).unwrap();
+        assert!(!loaded.present);
+        assert!(!loaded.config.enabled && loaded.config.rules.is_empty());
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -724,11 +826,12 @@ mod tests {
             .unwrap()
             .is_enabled());
 
-        // Without an existing key the empty configuration is created with that flag.
+        // Without an existing key the default rules are persisted with that flag.
         let (dir2, path2) = setup_file("ar-enable2", r#"{"x":1}"#);
-        set_auto_reply_enabled_in(&path2, true).unwrap();
+        set_auto_reply_enabled_in(&path2, false).unwrap();
         let loaded = load_auto_reply_from(&path2).unwrap();
-        assert!(loaded.present && loaded.config.enabled && loaded.config.rules.is_empty());
+        assert!(loaded.present && !loaded.config.enabled);
+        assert_eq!(loaded.config.rules, default_auto_reply().rules);
         let _ = fs::remove_dir_all(dir);
         let _ = fs::remove_dir_all(dir2);
     }
