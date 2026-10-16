@@ -781,7 +781,7 @@ function renderPayloadDecor() {
   mirror.replaceChildren();
   for (const part of splitTokens(draft.payload)) {
     if (part.type === "ctrl") {
-      mirror.appendChild(el("span", "mc", `<${part.value}>`));
+      mirror.appendChild(el("span", "", `<${part.value}>`));
       continue;
     }
     for (const piece of part.value.split(/(\{\{[^}]*\}\})/)) {

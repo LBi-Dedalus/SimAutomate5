@@ -346,11 +346,6 @@ small:is(.ok, .warn, .error),
   }
 }
 
-.k-count {
-  margin-left: var(--space-2);
-  font-weight: 400;
-}
-
 .k-hover .k-tool {
   opacity: 0;
   transition: opacity 0.12s;
