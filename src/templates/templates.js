@@ -12,7 +12,7 @@ import {
   isAutoVariable,
 } from "./template-core.js";
 import { tokenPayload, splitTokens } from "../control-chars.js";
-import { describeMessage, parseHl7 } from "../session/inspector-core.js";
+import { describeMessage } from "../session/inspector-core.js";
 import { showView, setLeaveGuard, currentView } from "../nav.js";
 import { sendMessage, setComposerText, activeSendTarget, activeSessionId } from "../session/messages.js";
 import { SAVE_AS_TEMPLATE_EVENT } from "../session/inspector.js";
@@ -894,9 +894,7 @@ function renderPreview(result) {
     validity.textContent = "Empty payload: nothing to send.";
   } else if (resolved.ok) {
     validity.className = "ok";
-    const parts = ["✓ Ready"];
-    if (parseHl7(resolved.text)) parts.push("HL7");
-    validity.textContent = parts.join(" · ");
+    validity.textContent = "✓ Ready";
   } else {
     validity.className = "error";
     validity.textContent = resolved.errors.join(" ");
