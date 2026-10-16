@@ -368,6 +368,6 @@ test("markup: dedicated nav view, no dialog, composer navigates to the view", ()
     assert.ok(html.includes(`id="${id}"`), id);
   }
   for (const name of ["input", "output", "no-etb"]) {
-    assert.match(html, new RegExp(`name="${name}"[^>]*data-persist|data-persist[^>]*name="${name}"`, "s"));
+    assert.match(html, new RegExp(`name="${name}"[^>]*config\\.persist|config\\.persist[^>]*name="${name}"`, "s"));
   }
 });

@@ -15,17 +15,17 @@
 
       <label id="client-host-field">
         Host
-        <input type="text" placeholder="localhost" name="host" data-persist data-action="change:config.persist" required />
+        <input type="text" placeholder="localhost" name="host" data-action="change:config.persist" required />
       </label>
 
       <label id="client-port-field">
         Port
-        <input type="number" placeholder="12345" name="port" min="1" max="65535" step="1" data-persist data-action="change:config.persist" required />
+        <input type="number" placeholder="12345" name="port" min="1" max="65535" step="1" data-action="change:config.persist" required />
       </label>
 
       <label class="hidden" id="server-port-field">
         Port
-        <input type="number" placeholder="12345" name="server-port" min="1" max="65535" step="1" data-persist data-action="change:config.persist" />
+        <input type="number" placeholder="12345" name="server-port" min="1" max="65535" step="1" data-action="change:config.persist" />
       </label>
 
       <button id="connect-btn" type="submit">Connect</button>

@@ -13,7 +13,6 @@
           required
           name="input"
           spellcheck="false"
-          data-persist
           data-action="input:ab.input change:config.persist"
         ></textarea>
       </label>
@@ -26,13 +25,12 @@
           readonly
           name="output"
           spellcheck="false"
-          data-persist
           data-action="change:config.persist"
         ></textarea>
       </label>
       <label class="sw-pill">
         No ETB
-        <input type="checkbox" role="switch" id="ab-no-etb" name="no-etb" data-persist data-action="change:config.persist change:ab.noEtb" />
+        <input type="checkbox" role="switch" id="ab-no-etb" name="no-etb" data-action="change:config.persist change:ab.noEtb" />
       </label>
       <p id="autobuild-error" class="hidden" role="alert" data-variant="danger"></p>
     </div>

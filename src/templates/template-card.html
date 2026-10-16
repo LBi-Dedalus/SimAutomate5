@@ -1,7 +1,7 @@
 <!-- One template of the list. Text slots: name. Handles: kind (class and text set by the code),
      dirty (removed unless the open template has unsaved changes), delete (removed unless open). -->
 <div class="card tcard">
-  <button type="button" class="tload" data-slot="load" data-action="click:tpl.open">
+  <button type="button" class="tload" data-action="click:tpl.open">
     <b>
       <span class="nm"><span class="nm-t" data-slot="name"></span><span data-slot="kind"></span></span>
       <span data-slot="dirty">●</span>

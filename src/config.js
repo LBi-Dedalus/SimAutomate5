@@ -2,20 +2,12 @@ import { logError } from "./log.js";
 
 const CONFIG_KEY = "simautomate:config";
 
-// Only fields explicitly marked with the `data-persist` attribute (and a name) are
-// stored. Template editor, search and variable inputs are intentionally not marked.
-const PERSISTED_FIELDS =
-  "input[data-persist][name], select[data-persist][name], textarea[data-persist][name]";
+// A field is persisted when its markup declares data-action="change:config.persist" and a name:
+// that attribute stores it when edited, and the stored value is restored into the field with the
+// same name at startup. Names are unique across the app.
 
 function init() {
   hydrateConfig();
-}
-
-function persistedField(name) {
-  for (const field of document.querySelectorAll(PERSISTED_FIELDS)) {
-    if (field.name === name) return field;
-  }
-  return null;
 }
 
 function hydrateConfig() {
@@ -25,8 +17,7 @@ function hydrateConfig() {
     const data = JSON.parse(raw);
 
     for (const key in data) {
-      if (key === "") continue;
-      const field = persistedField(key);
+      const field = document.querySelector(`[name="${key}"]`);
       if (!field) continue;
       if (field.getAttribute("type") === "checkbox") {
         field.checked = data[key];
@@ -40,7 +31,6 @@ function hydrateConfig() {
   }
 }
 
-// A data-persist field also declares data-action="change:config.persist" to be stored when edited.
 window.actions ??= {};
 window.actions.config = {
   persist: (ev, field) =>

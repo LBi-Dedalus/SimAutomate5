@@ -54,7 +54,7 @@ export function initAutobuildView(deps) {
     if (error) deps.logError(error, where);
   };
 
-  /** Programmatic changes do not fire `change`; config.js needs it to persist data-persist fields. */
+  /** Programmatic changes do not fire `change`; config.js needs it to persist the config.persist fields. */
   const notifyChange = (field) => {
     if (typeof field.dispatchEvent === "function" && typeof Event === "function") {
       field.dispatchEvent(new Event("change", { bubbles: true }));
