@@ -50,6 +50,30 @@ function parseTemplate(html, create) {
 }
 
 /**
+ * Binds the data-action attributes declared by the static markup of a src file onto fake nodes, as
+ * include.js does at startup: `getNode(id)` returns the test's node for an element id. The nodes'
+ * other data-* attributes are copied too, since the handlers read them. Call it after installTemplates.
+ */
+export function staticActionNodes(path, getNode) {
+  const nodes = [];
+  for (const [, attrs] of readSrc(path).matchAll(/<\w+((?:\s+[^\s=>]+(?:="[^"]*")?)*)\s*\/?>/g)) {
+    const read = Object.fromEntries([...attrs.matchAll(/([^\s=]+)(?:="([^"]*)")?/g)].map(([, name, value = ""]) => [name, value]));
+    if (read.id === undefined || read["data-action"] === undefined) continue;
+    const node = getNode(read.id);
+    node.dataset ??= {};
+    for (const [name, value] of Object.entries(read)) if (name.startsWith("data-")) node.dataset[camel(name.slice(5))] = value;
+    nodes.push(node);
+  }
+  return nodes;
+}
+
+export async function bindStaticActions(path, getNode) {
+  const { bindActions } = await import("../../src/include.js");
+  const nodes = staticActionNodes(path, getNode);
+  bindActions({ querySelectorAll: () => nodes });
+}
+
+/**
  * Makes the fake `document` able to parse template files and has include.js preload them, reading
  * the real files from src/. Call it after `globalThis.document` is set and before anything imports
  * include.js (its startup runs once, at the first import).

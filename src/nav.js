@@ -46,12 +46,8 @@ function activate(name) {
   }
 }
 
-function init() {
-  for (const item of document.querySelectorAll("[data-view], [data-nav]")) {
-    item.addEventListener("click", () =>
-      showView(item.dataset.view ?? item.dataset.nav),
-    );
-  }
-}
-
-init();
+// A button with data-view / data-nav declares data-action="click:nav.go".
+window.actions ??= {};
+window.actions.nav = {
+  go: (ev, item) => showView(item.dataset.view ?? item.dataset.nav),
+};

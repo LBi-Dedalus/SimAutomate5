@@ -2,15 +2,15 @@
 <script type="after-include" src="autoreply/autoreply.js"></script>
 <div id="ar-banner" class="banner hidden" role="status" aria-live="polite">
   <span id="ar-banner-text"></span>
-  <button type="button" class="small outline hidden" id="ar-banner-retry">Retry</button>
-  <button type="button" class="small ghost" id="ar-banner-close">Dismiss</button>
+  <button type="button" class="small outline hidden" id="ar-banner-retry" data-action="click:ar.retry">Retry</button>
+  <button type="button" class="small ghost" id="ar-banner-close" data-action="click:ar.bannerClose">Dismiss</button>
 </div>
 
 <div id="ar-guard" class="banner warn hidden" role="alertdialog" aria-live="assertive">
   <span>Unsaved auto reply rules.</span>
-  <button type="button" class="small" id="ar-guard-save">Save</button>
-  <button type="button" class="small outline" data-variant="danger" id="ar-guard-discard">Discard</button>
-  <button type="button" class="small outline" id="ar-guard-cancel">Cancel</button>
+  <button type="button" class="small" id="ar-guard-save" data-action="click:ar.guardSave">Save</button>
+  <button type="button" class="small outline" data-variant="danger" id="ar-guard-discard" data-action="click:ar.guardDiscard">Discard</button>
+  <button type="button" class="small outline" id="ar-guard-cancel" data-action="click:ar.guardCancel">Cancel</button>
 </div>
 
 <div class="split stack">
@@ -21,7 +21,7 @@
       <span class="sp"></span>
       <label>
         Enabled
-        <input type="checkbox" id="ar-enabled" role="switch" disabled />
+        <input type="checkbox" id="ar-enabled" role="switch" data-action="change:ar.master" disabled />
       </label>
     </div>
 
@@ -49,30 +49,30 @@
         </div>
         <div id="ar-list"></div>
       </div>
-      <button type="button" class="card new k-add" id="ar-add" disabled>＋ Add rule</button>
+      <button type="button" class="card new k-add" id="ar-add" data-action="click:ar.add" disabled>＋ Add rule</button>
     </section>
   </div>
 
   <aside id="ar-dock" aria-label="Rule editor">
-    <form class="hidden" id="ar-form" autocomplete="off" novalidate>
+    <form class="hidden" id="ar-form" autocomplete="off" novalidate data-action="submit:ar.noSubmit">
       <header>
         <h6>Rule details</h6>
         <label>
-          <input type="checkbox" id="ar-rule-enabled" />
+          <input type="checkbox" id="ar-rule-enabled" data-field="enabled" data-action="change:ar.check" />
           Enabled
         </label>
       </header>
       <ul class="hidden" id="ar-errors" role="alert" data-variant="danger"></ul>
       <label>
         Name
-        <input type="text" id="ar-name" maxlength="100" />
+        <input type="text" id="ar-name" maxlength="100" data-field="name" data-action="input:ar.text" />
       </label>
 
       <fieldset>
         <legend>When receiving</legend>
         <label>
           Trigger
-          <select id="ar-trigger">
+          <select id="ar-trigger" data-field="trigger" data-action="change:ar.choose">
             <option value="hl7">HL7 message</option>
             <option value="astm_frame">ASTM frame</option>
             <option value="astm_enq">ASTM ENQ</option>
@@ -81,31 +81,31 @@
         <div id="ar-hl7-fields">
           <label>
             Message type (MSH-9)
-            <input type="text" id="ar-type" placeholder="QRY^A19 or ORU^* or *" />
+            <input type="text" id="ar-type" placeholder="QRY^A19 or ORU^* or *" data-field="messageType" data-action="input:ar.text" />
           </label>
           <label>
-            <input type="checkbox" id="ar-cond-use" />
+            <input type="checkbox" id="ar-cond-use" data-field="useCondition" data-action="change:ar.check" />
             Only when a field matches
           </label>
           <div id="ar-cond-fields" class="row">
             <label class="col-4">
               Segment
-              <input type="text" id="ar-cond-seg" placeholder="QRD" maxlength="3" />
+              <input type="text" id="ar-cond-seg" placeholder="QRD" maxlength="3" data-field="condSegment" data-action="input:ar.text" />
             </label>
             <label class="col-4">
               Field
-              <input type="number" id="ar-cond-field" min="1" max="999" placeholder="8" />
+              <input type="number" id="ar-cond-field" min="1" max="999" placeholder="8" data-field="condField" data-action="input:ar.text" />
             </label>
             <label class="col-4">
               Operator
-              <select id="ar-cond-op">
+              <select id="ar-cond-op" data-field="condOperator" data-action="change:ar.choose">
                 <option value="exact">equals</option>
                 <option value="glob">matches *</option>
               </select>
             </label>
             <label class="col-12">
               Value
-              <input type="text" id="ar-cond-value" placeholder="AAZ*" />
+              <input type="text" id="ar-cond-value" placeholder="AAZ*" data-field="condValue" data-action="input:ar.text" />
             </label>
           </div>
         </div>
@@ -115,7 +115,7 @@
         <legend>Reply with</legend>
         <label>
           Action
-          <select id="ar-action">
+          <select id="ar-action" data-field="action" data-action="change:ar.choose">
             <option value="template">Saved template</option>
             <option value="literal">Literal text</option>
             <option value="hl7_ack">Generated HL7 acknowledgement</option>
@@ -125,7 +125,7 @@
         <div id="ar-act-template">
           <label>
             Template (from the Templates library)
-            <select id="ar-template"></select>
+            <select id="ar-template" data-field="templateId" data-action="change:ar.choose"></select>
           </label>
           <div id="ar-preview-box">
             <small>Preview</small>
@@ -136,22 +136,22 @@
         <div id="ar-act-literal" class="hidden">
           <label>
             Response
-            <textarea id="ar-literal" rows="3" placeholder="&lt;ACK&gt;"></textarea>
+            <textarea id="ar-literal" rows="3" placeholder="&lt;ACK&gt;" data-field="literal" data-action="input:ar.text"></textarea>
           </label>
         </div>
         <div id="ar-act-ack" class="row hidden">
           <label class="col-8">
             Type (MSH-9)
-            <input type="text" id="ar-ack-type" placeholder="ACK^O21" />
+            <input type="text" id="ar-ack-type" placeholder="ACK^O21" data-field="ackType" data-action="input:ar.text" />
           </label>
           <label class="col-4">
             Code (MSA-1)
-            <input type="text" id="ar-ack-code" maxlength="2" placeholder="AA" />
+            <input type="text" id="ar-ack-code" maxlength="2" placeholder="AA" data-field="ackCode" data-action="input:ar.text" />
           </label>
         </div>
         <label id="ar-delay-field">
           Delay before replying (ms, 0 to 60000)
-          <input type="number" id="ar-delay" min="0" max="60000" step="1" />
+          <input type="number" id="ar-delay" min="0" max="60000" step="1" data-field="delay" data-action="input:ar.text" />
         </label>
       </fieldset>
 
@@ -172,6 +172,6 @@
 
 <div id="ar-dirty" class="k-float hidden" role="region" aria-label="Unsaved changes">
   <small class="warn">● Unsaved changes</small>
-  <button type="button" class="small outline" id="ar-discard" disabled>Discard</button>
-  <button type="button" class="small" id="ar-save" disabled>Save rules</button>
+  <button type="button" class="small outline" id="ar-discard" data-action="click:ar.discard" disabled>Discard</button>
+  <button type="button" class="small" id="ar-save" data-action="click:ar.save" disabled>Save rules</button>
 </div>

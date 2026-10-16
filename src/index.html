@@ -27,20 +27,20 @@
         <h1><img src="assets/logo.png" alt="" width="24" height="24" aria-hidden="true" />SimAutomate</h1>
 
         <nav id="nav" aria-label="Main">
-          <button type="button" class="on" data-view="home"><b aria-hidden="true">⌂</b>Home</button>
-          <button type="button" data-view="session"><b aria-hidden="true">◉</b>Session</button>
-          <button type="button" data-view="templates"><b aria-hidden="true">▤</b>Templates</button>
-          <button type="button" data-view="autoreply">
+          <button type="button" class="on" data-view="home" data-action="click:nav.go"><b aria-hidden="true">⌂</b>Home</button>
+          <button type="button" data-view="session" data-action="click:nav.go"><b aria-hidden="true">◉</b>Session</button>
+          <button type="button" data-view="templates" data-action="click:nav.go"><b aria-hidden="true">▤</b>Templates</button>
+          <button type="button" data-view="autoreply" data-action="click:nav.go">
             <b aria-hidden="true">↺</b>Auto reply
             <span id="autoreply-badge" class="badge hidden">ON</span>
           </button>
-          <button type="button" data-view="autobuild"><b aria-hidden="true">⚒</b>Autobuild</button>
+          <button type="button" data-view="autobuild" data-action="click:nav.go"><b aria-hidden="true">⚒</b>Autobuild</button>
         </nav>
 
         <div id="side-lists">
           <h6>
             <span>Sessions</span>
-            <button type="button" id="session-new" class="ghost icon" title="New session (go to Home)" aria-label="New session">＋</button>
+            <button type="button" id="session-new" data-action="click:sess.new" class="ghost icon" title="New session (go to Home)" aria-label="New session">＋</button>
           </h6>
           <div id="side-sessions"></div>
           <p id="side-sessions-empty">No session open</p>

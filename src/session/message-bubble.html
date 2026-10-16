@@ -1,6 +1,6 @@
 <!-- A sent or received message. Text slots: title, time, ack. Handles: ack (removed when the message
      has no acknowledgement), content (rendered by the code, as it holds control chips). -->
-<div class="msg">
+<div class="msg" data-action="click:msg.choose keydown:msg.key">
   <div class="meta">
     <span class="badge" data-slot="title"></span>
     <span data-slot="time"></span>

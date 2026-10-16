@@ -28,8 +28,6 @@ export function initAutobuildView(deps) {
   const inputField = $("ab-input");
   const outputField = $("ab-output");
   const noEtbField = $("ab-no-etb");
-  const form = $("ab-form");
-  const buildButton = $("build-message");
   const errorNode = $("autobuild-error");
   const noteNode = $("ab-note");
   const listNode = $("ab-list");
@@ -89,35 +87,12 @@ export function initAutobuildView(deps) {
     load.setAttribute("aria-pressed", loaded ? "true" : "false");
     if (!entry.noEtb) part("noetb").remove();
     for (const line of previewInput(entry.input)) load.appendChild(cloneTemplate(PREVIEW_LINE, { line }));
-    load.addEventListener("click", () => {
-      showError(null);
-      setFields(entry);
-      // Update in place so the clicked button keeps keyboard focus.
-      updateSelection();
-    });
 
     const use = part("use");
     use.setAttribute("aria-label", `Use this ${entry.kind} message in the active session`);
-    use.addEventListener("click", () => {
-      showError(null);
-      // The target is captured now: nothing asynchronous can redirect the output.
-      const result = deliverToTarget(deps, entry.output);
-      if (!result.delivered) return showError(result.error);
-      deps.showSession(result.target);
-    });
 
     const del = part("delete");
     del.setAttribute("aria-label", `Delete this ${entry.kind} autobuild from the recent list`);
-    del.addEventListener("click", () => {
-      const index = entries.findIndex((e) => e.id === entry.id);
-      const result = deleteBuild(storage, entry.id);
-      entries = result.entries;
-      report(result.error, "autobuild-view.js:delete");
-      renderList();
-      // Next card, else previous, else the builder.
-      const target = loadButtons[Math.min(Math.max(index, 0), loadButtons.length - 1)] ?? inputField;
-      focusNode(target);
-    });
     loadButtons.push(load);
     return li;
   }
@@ -174,35 +149,65 @@ export function initAutobuildView(deps) {
     }
   }
 
-  buildButton.addEventListener("click", () => {
-    void run(false);
-  });
-
-  form.addEventListener("submit", (ev) => {
-    ev.preventDefault();
-    void run(true).then((result) => {
-      if (!result || !result.delivered) return;
+  // Handlers of the data-action attributes of autobuild.html and recent-card.html. They are looked
+  // up when an event fires, so the view created last (tests build several) is the one that answers.
+  const entryOf = (node) => entries.find((e) => e.id === node.closest("[data-id]")?.dataset.id);
+  window.actions ??= {};
+  window.actions.ab = {
+    build: () => void run(false),
+    buildAndSend: (ev) => {
+      ev.preventDefault();
+      void run(true).then((result) => {
+        if (!result || !result.delivered) return;
+        deps.showSession(result.target);
+      });
+    },
+    clear: () => {
+      const error = clearRecentBuilds(storage);
+      entries = error ? entries : [];
+      report(error, "autobuild-view.js:clear");
+      renderList();
+      focusNode(inputField);
+    },
+    // The highlighted card always reflects what is currently in the builder.
+    input: () => {
+      revision += 1;
+      updateSelection();
+    },
+    noEtb: () => {
+      revision += 1;
+      updateSelection();
+    },
+    load: (ev, node) => {
+      const entry = entryOf(node);
+      if (!entry) return;
+      showError(null);
+      setFields(entry);
+      // Update in place so the clicked button keeps keyboard focus.
+      updateSelection();
+    },
+    use: (ev, node) => {
+      const entry = entryOf(node);
+      if (!entry) return;
+      showError(null);
+      // The target is captured now: nothing asynchronous can redirect the output.
+      const result = deliverToTarget(deps, entry.output);
+      if (!result.delivered) return showError(result.error);
       deps.showSession(result.target);
-    });
-  });
-
-  clearButton.addEventListener("click", () => {
-    const error = clearRecentBuilds(storage);
-    entries = error ? entries : [];
-    report(error, "autobuild-view.js:clear");
-    renderList();
-    focusNode(inputField);
-  });
-
-  // The highlighted card always reflects what is currently in the builder.
-  inputField.addEventListener("input", () => {
-    revision += 1;
-    updateSelection();
-  });
-  noEtbField.addEventListener("change", () => {
-    revision += 1;
-    updateSelection();
-  });
+    },
+    remove: (ev, node) => {
+      const entry = entryOf(node);
+      if (!entry) return;
+      const index = entries.findIndex((e) => e.id === entry.id);
+      const result = deleteBuild(storage, entry.id);
+      entries = result.entries;
+      report(result.error, "autobuild-view.js:delete");
+      renderList();
+      // Next card, else previous, else the builder.
+      const target = loadButtons[Math.min(Math.max(index, 0), loadButtons.length - 1)] ?? inputField;
+      focusNode(target);
+    },
+  };
 
   const loaded = loadRecentBuilds(storage);
   entries = loaded.entries;

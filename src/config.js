@@ -9,7 +9,6 @@ const PERSISTED_FIELDS =
 
 function init() {
   hydrateConfig();
-  setupConfigPersistence();
 }
 
 function persistedField(name) {
@@ -41,16 +40,12 @@ function hydrateConfig() {
   }
 }
 
-function setupConfigPersistence() {
-  for (const field of document.querySelectorAll(PERSISTED_FIELDS)) {
-    field.addEventListener("change", () =>
-      persistConfig(
-        field.name,
-        field.getAttribute("type") === "checkbox" ? field.checked : field.value,
-      ),
-    );
-  }
-}
+// A data-persist field also declares data-action="change:config.persist" to be stored when edited.
+window.actions ??= {};
+window.actions.config = {
+  persist: (ev, field) =>
+    persistConfig(field.name, field.getAttribute("type") === "checkbox" ? field.checked : field.value),
+};
 
 function persistConfig(name, value) {
   try {

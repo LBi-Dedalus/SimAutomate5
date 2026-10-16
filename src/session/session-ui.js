@@ -1,9 +1,12 @@
 // Sidebar "Sessions" list, session header (title, status, stats, actions) and the
 // close confirmation. Everything is rendered from the session store.
 import { el } from "../render.js";
+import { cloneTemplate } from "../include.js";
 import { sessions, store } from "./sessions.js";
 import { showView } from "../nav.js";
 import { isBusyStatus, isTerminalStatus } from "./sessions-core.js";
+
+const SESSION_ITEM = "session/session-item.html";
 
 const STATUS_TEXT = {
   disconnected: "Disconnected",
@@ -16,22 +19,25 @@ const STATUS_TEXT = {
 const $ = (id) => document.getElementById(id);
 
 function init() {
-  $("session-new").addEventListener("click", () => {
+  window.actions ??= {};
+  window.actions.sess = {
     // Home is where new connections are configured; the navigation guard still applies.
-    showView("home");
-  });
-  $("session-disconnect").addEventListener("click", () => {
-    const id = store.activeId;
-    if (id) void sessions.disconnect(id);
-  });
-  $("session-reconnect").addEventListener("click", () => {
-    const id = store.activeId;
-    if (id) void sessions.reconnect(id);
-  });
-  $("session-close").addEventListener("click", () => {
-    const id = store.activeId;
-    if (id) void requestClose(id);
-  });
+    new: () => showView("home"),
+    disconnect() {
+      const id = store.activeId;
+      if (id) void sessions.disconnect(id);
+    },
+    reconnect() {
+      const id = store.activeId;
+      if (id) void sessions.reconnect(id);
+    },
+    close() {
+      const id = store.activeId;
+      if (id) void requestClose(id);
+    },
+    open: (_ev, button) => openSession(button.closest("[data-session-id]").dataset.sessionId),
+    closeItem: (_ev, button) => void requestClose(button.closest("[data-session-id]").dataset.sessionId),
+  };
   store.subscribe((event) => {
     if (event.type === "draft" || event.type === "record-selected") {
       // Only the close impact depends on these; nothing visible changes.
@@ -117,36 +123,24 @@ function renderSidebar() {
 
   for (const session of all) {
     const active = session.id === store.activeId;
-    const item = el("div", "ses-item");
+    const item = cloneTemplate(SESSION_ITEM, {
+      label: endpointLabel(session),
+      detail: `${session.mode === "client" ? "Client" : "Server"} · ${STATUS_TEXT[session.status] ?? session.status}`,
+      ...(session.unread > 0 && !active && { unread: String(Math.min(session.unread, 99)) }),
+    });
+    const part = (slot) => item.querySelector(`[data-slot="${slot}"]`);
+    item.dataset.sessionId = session.id;
     item.classList.toggle("on", active);
 
-    const open = el("button", "ses");
-    open.type = "button";
-    open.dataset.sessionId = session.id;
+    const open = part("open");
     if (active) open.setAttribute("aria-current", "true");
-    const dot = el("i");
-    dot.dataset.st = session.status;
-    open.appendChild(dot);
-    const tx = el("span");
-    tx.appendChild(el("span", "", endpointLabel(session)));
-    tx.appendChild(
-      el("small", "", `${session.mode === "client" ? "Client" : "Server"} · ${STATUS_TEXT[session.status] ?? session.status}`),
-    );
-    open.appendChild(tx);
-    if (session.unread > 0 && !active) {
-      open.appendChild(el("em", "", String(Math.min(session.unread, 99))));
-    }
-    open.addEventListener("click", () => openSession(session.id));
-    item.appendChild(open);
+    part("dot").dataset.st = session.status;
+    if (!(session.unread > 0 && !active)) part("unread").remove();
 
-    const close = el("button", "ghost icon", "×");
-    close.type = "button";
+    const close = part("close");
     close.title = `Close ${session.label}`;
     close.setAttribute("aria-label", `Close session ${session.label}`);
     close.disabled = session.op === "closing";
-    close.addEventListener("click", () => void requestClose(session.id));
-    item.appendChild(close);
-
     list.appendChild(item);
     if (active) activeItem = item;
   }

@@ -1,7 +1,7 @@
 // Integration tests for src/autobuild/autobuild-view.js with a minimal fake DOM and injected backend/storage.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readMarkup, installTemplates } from "./helpers/markup.js";
+import { readMarkup, installTemplates, staticActionNodes } from "./helpers/markup.js";
 import { RECENT_BUILDS_KEY } from "../src/autobuild/autobuild-recent-core.js";
 
 class FakeNode {
@@ -61,12 +61,14 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 
 // The cards come from cloneTemplate, which builds its nodes with the global document.
 let currentDoc;
+globalThis.window = {};
 globalThis.document = {
   createElement: (tag) => Object.assign(new FakeNode(tag), { doc: currentDoc }),
   querySelectorAll: () => [],
 };
 await installTemplates(["autobuild/recent-card.html", "autobuild/recent-preview-line.html"]);
 const { initAutobuildView } = await import("../src/autobuild/autobuild-view.js");
+const { bindActions } = await import("../src/include.js");
 
 function setup({ stored, active = "s1", sessions = ["s1"], invoke, storage } = {}) {
   const nodes = new Map();
@@ -107,6 +109,9 @@ function setup({ stored, active = "s1", sessions = ["s1"], invoke, storage } = {
     now: () => (clock += 1000),
   });
   const $ = (id) => doc.getElementById(id);
+  // The static markup is bound by include.js in the app; bind the real autobuild.html here.
+  const staticNodes = staticActionNodes("autobuild/autobuild.html", $);
+  bindActions({ querySelectorAll: () => staticNodes });
   return {
     $,
     doc,

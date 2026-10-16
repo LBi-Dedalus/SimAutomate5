@@ -63,7 +63,7 @@ function runAction(name, event, element) {
 }
 
 /** Adds the listeners declared by the [data-action] elements of root (root included). */
-function bindActions(root) {
+export function bindActions(root) {
   const nodes = [...root.querySelectorAll("[data-action]")];
   if (root.dataset?.action !== undefined) nodes.unshift(root);
   for (const node of nodes) {

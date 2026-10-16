@@ -2,7 +2,7 @@
 // Tauri IPC (the real module: events, guards, rendering, persistence calls).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { installTemplates } from "./helpers/markup.js";
+import { installTemplates, bindStaticActions } from "./helpers/markup.js";
 
 class FakeNode {
   constructor(tag = "div", id = "") {
@@ -104,6 +104,7 @@ globalThis.window = {
 };
 
 await installTemplates(["autoreply/rule-row.html"]);
+await bindStaticActions("autoreply/autoreply.html", getNode);
 const { showView, currentView } = await import("../src/nav.js");
 const { publishSavedTemplates, clearSavedTemplates } = await import("../src/templates/template-store.js");
 

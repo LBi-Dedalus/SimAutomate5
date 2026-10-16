@@ -18,6 +18,8 @@ const MESSAGE_BUBBLE = "session/message-bubble.html";
  * @type {Map<string, {container: HTMLElement, nodes: Map<number, HTMLElement>}>}
  */
 const views = new Map();
+// The message a conversation node stands for (read by the click and keydown actions).
+const recordOf = new WeakMap();
 let composerPlaceholder = "";
 
 function init() {
@@ -66,27 +68,39 @@ function composerField() {
 }
 
 function initComposer() {
-  const form = document.getElementById("message-form");
   const field = composerField();
   composerPlaceholder = field.placeholder ?? "";
 
-  // Edits belong to the session displayed when they happen.
-  const capture = () => {
-    const active = store.activeId;
-    if (active) store.setDraft(active, field.value);
+  window.actions ??= {};
+  window.actions.msg = {
+    // Edits belong to the session displayed when they happen.
+    capture() {
+      const active = store.activeId;
+      if (active) store.setDraft(active, composerField().value);
+    },
+    // Reset only clears the draft of the selected session (the field has no default text).
+    reset() {
+      const active = store.activeId;
+      if (active) store.setDraft(active, "");
+    },
+    async submit(ev) {
+      ev.preventDefault();
+      await sendMessage(composerField().value);
+    },
+    clear() {
+      const active = store.activeId;
+      if (active) store.clearMessages(active);
+    },
+    choose(_ev, node) {
+      const target = recordOf.get(node);
+      if (target) store.selectRecord(target.sessionId, target.recordId);
+    },
+    key(ev, node) {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      ev.preventDefault();
+      window.actions.msg.choose(ev, node);
+    },
   };
-  field.addEventListener("input", capture);
-  field.addEventListener("change", capture);
-  // Reset only clears the draft of the selected session (the field has no default text).
-  form.addEventListener("reset", () => {
-    const active = store.activeId;
-    if (active) store.setDraft(active, "");
-  });
-
-  form.addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    await sendMessage(field.value);
-  });
 }
 
 function initSendButton() {
@@ -99,10 +113,6 @@ function initSendButton() {
 }
 
 function initConversation() {
-  document.getElementById("clear-chat").addEventListener("click", () => {
-    const active = store.activeId;
-    if (active) store.clearMessages(active);
-  });
   store.subscribe(onStoreEvent);
   attachActive();
 }
@@ -215,14 +225,7 @@ function addNode(session, view, record) {
     info.kind === "system" ? buildSystemNode(record) : buildBubbleNode(record, info);
 
   node.tabIndex = 0;
-  const choose = () => store.selectRecord(session.id, record.id);
-  node.addEventListener("click", choose);
-  node.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter" || ev.key === " ") {
-      ev.preventDefault();
-      choose();
-    }
-  });
+  recordOf.set(node, { sessionId: session.id, recordId: record.id });
   view.container.appendChild(node);
   view.nodes.set(record.id, node);
 }

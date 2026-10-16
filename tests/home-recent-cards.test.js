@@ -2,7 +2,7 @@
 // quiet "↗" arrow is paired with a verb (shown on hover by the CSS, always read by screen readers).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { installTemplates } from "./helpers/markup.js";
+import { installTemplates, bindStaticActions } from "./helpers/markup.js";
 
 class FakeNode {
   constructor(id = "") {
@@ -85,6 +85,7 @@ globalThis.window = {
 };
 
 await installTemplates(["home/recent-card.html", "home/recent-side-item.html"]);
+await bindStaticActions("home/home.html", getNode);
 await import("../src/home/connection.js");
 
 const goOf = (card) => card.children[0].children.find((n) => n.classes.has("go"));

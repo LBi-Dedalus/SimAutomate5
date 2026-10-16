@@ -1,0 +1,13 @@
+<!-- A session of the sidebar list. Text slots: label, detail, unread. Handles: dot (data-st set by the code),
+     unread (removed when there is nothing to show), open and close (buttons). -->
+<div class="ses-item">
+  <button type="button" class="ses" data-slot="open" data-action="click:sess.open">
+    <i data-slot="dot"></i>
+    <span>
+      <span data-slot="label"></span>
+      <small data-slot="detail"></small>
+    </span>
+    <em data-slot="unread"></em>
+  </button>
+  <button type="button" class="ghost icon" data-slot="close" data-action="click:sess.closeItem">×</button>
+</div>

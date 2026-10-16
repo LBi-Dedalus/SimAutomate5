@@ -2,7 +2,7 @@
 // mocked Tauri IPC. They exercise the real module: events, guards, rendering.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readMarkup, installTemplates } from "./helpers/markup.js";
+import { readMarkup, installTemplates, bindStaticActions } from "./helpers/markup.js";
 
 class FakeNode {
   constructor(tag = "div", id = "") {
@@ -43,7 +43,7 @@ class FakeNode {
     (this.listeners[type] ??= []).push(fn);
   }
   fire(type) {
-    for (const fn of this.listeners[type] ?? []) fn({ preventDefault() {} });
+    for (const fn of this.listeners[type] ?? []) fn({ preventDefault() {}, stopPropagation() {}, target: this });
   }
   appendChild(c) {
     this.children.push(c);
@@ -120,6 +120,7 @@ const SEED = [
 ];
 
 await installTemplates(["templates/template-card.html", "templates/variable-auto-row.html", "templates/variable-value-row.html"]);
+await bindStaticActions("templates/templates.html", getNode);
 const { showView, currentView } = await import("../src/nav.js");
 
 /** templates.js initialises on import, so it is imported once the fake backend is ready. */

@@ -72,28 +72,34 @@ async function init() {
     return false;
   });
 
-  $("tpl-new").addEventListener("click", () => requestAction(newTemplate));
-  $("tpl-search").addEventListener("input", renderList);
-  $("tpl-name").addEventListener("input", onNameInput);
-  $("tpl-payload").addEventListener("input", onPayloadInput);
-  $("tpl-save").addEventListener("click", () => void save());
-  $("tpl-load").addEventListener("click", () => void loadInComposer());
-  $("tpl-send").addEventListener("click", () => void sendNow());
-  $("tpl-autobuild").addEventListener("change", onAutobuildChange);
-  $("tpl-autobuild-noetb").addEventListener("change", onAutobuildChange);
-  $("tpl-insert-var").addEventListener("click", insertVariable);
-  $("tpl-banner-close").addEventListener("click", hideBanner);
-  $("tpl-banner-retry").addEventListener("click", () => void loadAll());
-  $("tpl-guard-save").addEventListener("click", () => void guardSave());
-  $("tpl-guard-discard").addEventListener("click", guardDiscard);
-  $("tpl-guard-cancel").addEventListener("click", guardCancel);
-
-  for (const button of document.querySelectorAll("#tpl-form [data-insert]")) {
-    button.addEventListener("click", () => {
+  window.actions ??= {};
+  window.actions.tpl = {
+    newTemplate: () => requestAction(newTemplate),
+    search: () => renderList(),
+    nameInput: () => onNameInput(),
+    payloadInput: () => onPayloadInput(),
+    save: () => void save(),
+    loadInComposer: () => void loadInComposer(),
+    send: () => void sendNow(),
+    autobuild: () => onAutobuildChange(),
+    insertVariable: () => insertVariable(),
+    insertToken: (_ev, button) => {
       const text = tokenPayload(button.dataset.insert);
       if (text !== null) insertAtCursor(text);
-    });
-  }
+    },
+    bannerClose: () => hideBanner(),
+    bannerRetry: () => void loadAll(),
+    guardSave: () => void guardSave(),
+    guardDiscard: () => guardDiscard(),
+    guardCancel: () => guardCancel(),
+    open: (_ev, button) => {
+      const id = button.closest("[data-id]")?.dataset.id;
+      if (draft && String(draft.id) === id) return;
+      requestAction(() => openTemplate(templates.find((t) => String(t.id) === id)?.id ?? id));
+    },
+    remove: () => void onDelete(),
+    variable: (_ev, input) => onVariableInput(input),
+  };
 
   document.addEventListener(SAVE_AS_TEMPLATE_EVENT, (ev) =>
     requestAction(() => newTemplate(ev.detail.payload), { reveal: true }),
@@ -734,15 +740,10 @@ function renderList() {
     kindTag.className = kind.cls;
     kindTag.textContent = kind.label;
     if (!(active && isDirty())) part("dirty").remove();
-    const card = part("load");
-    card.addEventListener("click", () => {
-      if (active) return;
-      requestAction(() => openTemplate(row.id));
-    });
+    item.dataset.id = row.id;
     const del = part("delete");
     if (active) {
       del.disabled = !editingAllowed() || saving;
-      del.addEventListener("click", () => void onDelete());
       deleteButton = del;
       syncDeleteButton();
     } else {
@@ -837,25 +838,28 @@ function renderVars() {
     input.value = variable ? variable.default : "";
     input.setAttribute("aria-label", `Value of ${name}`);
     input.readOnly = saving;
-    input.addEventListener("input", () => {
-      if (!draft || saving) {
-        const current = draft?.variables.find((v) => v.name === name);
-        input.value = current ? current.default : "";
-        return;
-      }
-      const target = draft.variables.find((v) => v.name === name);
-      if (target) target.default = input.value;
-      if (!draft.isNew) {
-        liveVariables.set(
-          draft.id,
-          mergeVariables(savedVariablesFor(draft.id), [{ name, default: input.value }]),
-        );
-        scheduleVariableSave();
-      }
-      afterEdit(false);
-    });
+    input.dataset.name = name;
     container.appendChild(row);
   }
+}
+
+function onVariableInput(input) {
+  const name = input.dataset.name;
+  if (!draft || saving) {
+    const current = draft?.variables.find((v) => v.name === name);
+    input.value = current ? current.default : "";
+    return;
+  }
+  const target = draft.variables.find((v) => v.name === name);
+  if (target) target.default = input.value;
+  if (!draft.isNew) {
+    liveVariables.set(
+      draft.id,
+      mergeVariables(savedVariablesFor(draft.id), [{ name, default: input.value }]),
+    );
+    scheduleVariableSave();
+  }
+  afterEdit(false);
 }
 
 function renderPreviewText(container, text) {

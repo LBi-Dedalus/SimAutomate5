@@ -62,36 +62,6 @@ async function init() {
     return false;
   });
 
-  $("ar-add").addEventListener("click", addRule);
-  $("ar-save").addEventListener("click", () => void save());
-  $("ar-discard").addEventListener("click", discard);
-  $("ar-enabled").addEventListener("change", () => void toggleMaster());
-  $("ar-banner-close").addEventListener("click", hideBanner);
-  $("ar-banner-retry").addEventListener("click", () => void loadAll());
-  $("ar-guard-save").addEventListener("click", () => void guardSave());
-  $("ar-guard-discard").addEventListener("click", guardDiscard);
-  $("ar-guard-cancel").addEventListener("click", guardCancel);
-  $("ar-form").addEventListener("submit", (ev) => ev.preventDefault());
-
-  const text = (id, field) => $(id).addEventListener("input", () => edit((r) => (r[field] = $(id).value)));
-  const change = (id, field, read = () => $(id).value) =>
-    $(id).addEventListener("change", () => edit((r) => (r[field] = read()), true));
-  text("ar-name", "name");
-  text("ar-type", "messageType");
-  text("ar-cond-seg", "condSegment");
-  text("ar-cond-field", "condField");
-  text("ar-cond-value", "condValue");
-  text("ar-literal", "literal");
-  text("ar-ack-type", "ackType");
-  text("ar-ack-code", "ackCode");
-  text("ar-delay", "delay");
-  change("ar-rule-enabled", "enabled", () => $("ar-rule-enabled").checked);
-  change("ar-trigger", "trigger");
-  change("ar-cond-use", "useCondition", () => $("ar-cond-use").checked);
-  change("ar-cond-op", "condOperator");
-  change("ar-action", "action");
-  change("ar-template", "templateId");
-
   window.addEventListener("beforeunload", (ev) => {
     if (isDirty() || saving) {
       ev.preventDefault();
@@ -561,6 +531,20 @@ window.actions.ar = {
   up: own((rule) => move(rule, -1)),
   down: own((rule) => move(rule, 1)),
   remove: own(deleteRule),
+  add: addRule,
+  save: () => save(),
+  discard,
+  master: () => toggleMaster(),
+  bannerClose: hideBanner,
+  retry: () => loadAll(),
+  guardSave: () => guardSave(),
+  guardDiscard,
+  guardCancel,
+  noSubmit: (ev) => ev.preventDefault(),
+  // Rule form fields: data-field names the rule property.
+  text: (ev, el) => edit((r) => (r[el.dataset.field] = el.value)),
+  choose: (ev, el) => edit((r) => (r[el.dataset.field] = el.value), true),
+  check: (ev, el) => edit((r) => (r[el.dataset.field] = el.checked), true),
 };
 
 function renderForm() {

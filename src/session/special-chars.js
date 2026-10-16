@@ -9,11 +9,9 @@ function init() {
 }
 
 function initSpecialCharButtons() {
-  const specialCharsDiv = document.getElementById("special-chars");
-  const specialCharsButtons = specialCharsDiv.querySelectorAll("button");
-
-  for (const button of specialCharsButtons) {
-    button.addEventListener("click", async () => {
+  window.actions ??= {};
+  window.actions.chars = {
+    async send(_ev, button) {
       // The payload comes from data-token, never from the (decorated) label text.
       const formatted = tokenPayload(button.dataset.token);
       if (formatted === null) {
@@ -26,8 +24,8 @@ function initSpecialCharButtons() {
       }
       // Target captured at click time.
       await sendMessage(formatted, activeSendTarget());
-    });
-  }
+    },
+  };
 }
 
 function unlockButtonsWhenConnected() {

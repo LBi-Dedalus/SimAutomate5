@@ -8,6 +8,10 @@ import {
 } from "./inspector-core.js";
 import { renderTokens, el } from "../render.js";
 import { logError } from "../log.js";
+import { cloneTemplate } from "../include.js";
+
+const INSPECTOR_TAB = "session/inspector-tab.html";
+const SEGMENT_BLOCK = "session/segment-block.html";
 
 export const SAVE_AS_TEMPLATE_EVENT = "simautomate:save-as-template";
 
@@ -129,15 +133,10 @@ function render() {
   }
 
   for (const [id, label] of tabs) {
-    const button = el("button", id === tab ? "on" : "", label);
-    button.type = "button";
-    button.setAttribute("role", "tab");
+    const button = cloneTemplate(INSPECTOR_TAB, { label });
+    button.dataset.tab = id;
+    if (id === tab) button.classList.add("on");
     button.setAttribute("aria-selected", String(id === tab));
-    button.addEventListener("click", () => {
-      view.tab = id;
-      sync();
-      render();
-    });
     tabsEl.appendChild(button);
   }
 
@@ -171,24 +170,18 @@ function renderParsed(body, hl7) {
       body.appendChild(row);
       continue;
     }
-    const block = el("div", "seg-block");
-    if (collapsed.has(segment.name)) block.classList.add("collapsed");
-    const head = el("button", "sgh");
-    head.type = "button";
-    head.setAttribute("aria-expanded", String(!block.classList.contains("collapsed")));
-    const arrow = el("span", "ar", block.classList.contains("collapsed") ? "▸" : "▾");
-    head.appendChild(arrow);
-    head.appendChild(el("span", "nm", segment.name));
     const description = HL7_SEGMENT_NAMES[segment.name];
-    if (description) head.appendChild(el("em", "", description));
-    head.addEventListener("click", () => {
-      const isCollapsed = block.classList.toggle("collapsed");
-      if (isCollapsed) collapsed.add(segment.name);
-      else collapsed.delete(segment.name);
-      arrow.textContent = isCollapsed ? "▸" : "▾";
-      head.setAttribute("aria-expanded", String(!isCollapsed));
+    const isCollapsed = collapsed.has(segment.name);
+    const block = cloneTemplate(SEGMENT_BLOCK, {
+      arrow: isCollapsed ? "▸" : "▾",
+      name: segment.name,
+      ...(description && { description }),
     });
-    block.appendChild(head);
+    const head = block.querySelector('[data-slot="head"]');
+    head.dataset.segment = segment.name;
+    head.setAttribute("aria-expanded", String(!isCollapsed));
+    if (isCollapsed) block.classList.add("collapsed");
+    if (!description) block.querySelector('[data-slot="description"]').remove();
     for (const field of segment.fields) {
       const row = el("div", flagged.has(field.id) ? "fl hl" : "fl");
       row.appendChild(el("span", "", field.id));
@@ -206,25 +199,40 @@ function renderParsed(body, hl7) {
 }
 
 function init() {
-  document.getElementById("insp-copy").addEventListener("click", async () => {
-    if (!record) return;
-    try {
-      await navigator.clipboard.writeText(record.content);
-    } catch (err) {
-      logError(`Copy failed: ${String(err)}`, "inspector.js:copy");
-      const meta = document.getElementById("insp-meta");
-      meta.appendChild(el("span", "badge error", "Copy failed"));
-    }
-  });
-
-  document.getElementById("insp-save-template").addEventListener("click", () => {
-    if (!record) return;
-    document.dispatchEvent(
-      new CustomEvent(SAVE_AS_TEMPLATE_EVENT, {
-        detail: { payload: record.content },
-      }),
-    );
-  });
+  window.actions ??= {};
+  window.actions.insp = {
+    tab(_ev, button) {
+      view.tab = button.dataset.tab;
+      sync();
+      render();
+    },
+    toggleSegment(_ev, head) {
+      const block = head.closest(".seg-block");
+      const isCollapsed = block.classList.toggle("collapsed");
+      if (isCollapsed) collapsed.add(head.dataset.segment);
+      else collapsed.delete(head.dataset.segment);
+      head.querySelector('[data-slot="arrow"]').textContent = isCollapsed ? "▸" : "▾";
+      head.setAttribute("aria-expanded", String(!isCollapsed));
+    },
+    async copy() {
+      if (!record) return;
+      try {
+        await navigator.clipboard.writeText(record.content);
+      } catch (err) {
+        logError(`Copy failed: ${String(err)}`, "inspector.js:copy");
+        const meta = document.getElementById("insp-meta");
+        meta.appendChild(el("span", "badge error", "Copy failed"));
+      }
+    },
+    saveTemplate() {
+      if (!record) return;
+      document.dispatchEvent(
+        new CustomEvent(SAVE_AS_TEMPLATE_EVENT, {
+          detail: { payload: record.content },
+        }),
+      );
+    },
+  };
 }
 
 init();

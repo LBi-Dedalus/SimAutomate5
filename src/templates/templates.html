@@ -4,21 +4,21 @@
 <script type="after-include" src="templates/templates.js"></script>
 <div id="tpl-banner" class="banner hidden" role="status" aria-live="polite">
   <span id="tpl-banner-text"></span>
-  <button type="button" class="small outline hidden" id="tpl-banner-retry">Retry</button>
-  <button type="button" class="small ghost" id="tpl-banner-close">Dismiss</button>
+  <button type="button" class="small outline hidden" id="tpl-banner-retry" data-action="click:tpl.bannerRetry">Retry</button>
+  <button type="button" class="small ghost" id="tpl-banner-close" data-action="click:tpl.bannerClose">Dismiss</button>
 </div>
 
 <div id="tpl-guard" class="banner warn hidden" role="alertdialog" aria-live="assertive">
   <span id="tpl-guard-text">Unsaved changes.</span>
-  <button type="button" class="small" id="tpl-guard-save">Save</button>
-  <button type="button" class="small outline" id="tpl-guard-discard">Discard</button>
-  <button type="button" class="small ghost" id="tpl-guard-cancel">Cancel</button>
+  <button type="button" class="small" id="tpl-guard-save" data-action="click:tpl.guardSave">Save</button>
+  <button type="button" class="small outline" id="tpl-guard-discard" data-action="click:tpl.guardDiscard">Discard</button>
+  <button type="button" class="small ghost" id="tpl-guard-cancel" data-action="click:tpl.guardCancel">Cancel</button>
 </div>
 
 <div class="split">
   <aside class="tlist">
-    <input type="search" id="tpl-search" placeholder="⌕  Search templates" autocomplete="off" />
-    <button type="button" class="card new" id="tpl-new">＋ New template</button>
+    <input type="search" id="tpl-search" data-action="input:tpl.search" placeholder="⌕  Search templates" autocomplete="off" />
+    <button type="button" class="card new" id="tpl-new" data-action="click:tpl.newTemplate">＋ New template</button>
     <div id="tpl-list"></div>
   </aside>
 
@@ -31,7 +31,7 @@
     <div id="tpl-form" class="hidden">
       <header>
         <div class="hstack gap-2">
-          <input id="tpl-name" type="text" placeholder="Template name" aria-label="Template name" autocomplete="off" />
+          <input id="tpl-name" data-action="input:tpl.nameInput" type="text" placeholder="Template name" aria-label="Template name" autocomplete="off" />
           <span id="tpl-kind" class="badge"></span>
         </div>
       </header>
@@ -40,19 +40,19 @@
         <div>
           <div class="tbar hstack gap-1">
             <span>Insert</span>
-            <button type="button" class="chip" data-insert="VT">VT</button>
-            <button type="button" class="chip" data-insert="FS.CR">FS·CR</button>
-            <button type="button" class="chip" data-insert="CR">CR</button>
-            <button type="button" class="chip" data-insert="ENQ">ENQ</button>
-            <button type="button" class="chip" data-insert="EOT">EOT</button>
-            <button type="button" class="chip" data-insert="ACK">ACK</button>
-            <button type="button" class="chip" data-insert="NAK">NAK</button>
-            <button type="button" class="chip warn" id="tpl-insert-var" title="Insert a {{VARIABLE}} placeholder">{{ }} variable</button>
+            <button type="button" class="chip" data-action="click:tpl.insertToken" data-insert="VT">VT</button>
+            <button type="button" class="chip" data-action="click:tpl.insertToken" data-insert="FS.CR">FS·CR</button>
+            <button type="button" class="chip" data-action="click:tpl.insertToken" data-insert="CR">CR</button>
+            <button type="button" class="chip" data-action="click:tpl.insertToken" data-insert="ENQ">ENQ</button>
+            <button type="button" class="chip" data-action="click:tpl.insertToken" data-insert="EOT">EOT</button>
+            <button type="button" class="chip" data-action="click:tpl.insertToken" data-insert="ACK">ACK</button>
+            <button type="button" class="chip" data-action="click:tpl.insertToken" data-insert="NAK">NAK</button>
+            <button type="button" class="chip warn" id="tpl-insert-var" data-action="click:tpl.insertVariable" title="Insert a {{VARIABLE}} placeholder">{{ }} variable</button>
           </div>
           <div class="ed-wrap">
             <div id="tpl-payload-hl" class="ed-hl" aria-hidden="true"></div>
             <textarea
-              id="tpl-payload"
+              id="tpl-payload" data-action="input:tpl.payloadInput"
               class="code-input"
               spellcheck="false"
               placeholder="Payload, e.g. <VT>MSH|^~\&|…|{{NOW}}||QRY^A19|{{CONTROL_ID}}|P|2.4<CR><FS><CR>"
@@ -63,11 +63,11 @@
           <div class="hstack gap-2">
             <label>
               Apply Autobuild
-              <input type="checkbox" role="switch" id="tpl-autobuild" />
+              <input type="checkbox" role="switch" id="tpl-autobuild" data-action="change:tpl.autobuild" />
             </label>
             <label>
               No ETB
-              <input type="checkbox" role="switch" id="tpl-autobuild-noetb" />
+              <input type="checkbox" role="switch" id="tpl-autobuild-noetb" data-action="change:tpl.autobuild" />
             </label>
           </div>
 
@@ -87,13 +87,13 @@
 
       <div id="tpl-dirty" class="k-float hidden" role="region" aria-label="Unsaved changes">
         <small class="warn">● Unsaved changes</small>
-        <button type="button" class="small" id="tpl-save">Save</button>
+        <button type="button" class="small" id="tpl-save" data-action="click:tpl.save">Save</button>
       </div>
 
       <footer>
         <span class="sp"></span>
-        <button type="button" class="small outline" id="tpl-load">Load in composer</button>
-        <button type="button" class="small" id="tpl-send" disabled>Send now ➤</button>
+        <button type="button" class="small outline" id="tpl-load" data-action="click:tpl.loadInComposer">Load in composer</button>
+        <button type="button" class="small" id="tpl-send" data-action="click:tpl.send" disabled>Send now ➤</button>
       </footer>
     </div>
   </section>

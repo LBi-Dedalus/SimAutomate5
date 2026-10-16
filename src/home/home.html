@@ -4,28 +4,28 @@
 <div class="scroll">
   <div class="home">
     <h2>Start a session</h2>
-    <form id="connect-form" class="card" novalidate>
+    <form id="connect-form" class="card" novalidate data-action="submit:home.submit">
       <div>
         <small>Mode</small>
         <div class="seg" role="group" aria-label="Mode">
-          <button type="button" id="client-mode" class="on">Client</button>
-          <button type="button" id="server-mode">Server</button>
+          <button type="button" id="client-mode" class="on" data-action="click:home.setClient">Client</button>
+                    <button type="button" id="server-mode" data-action="click:home.setServer">Server</button>
         </div>
       </div>
 
       <label id="client-host-field">
         Host
-        <input type="text" placeholder="localhost" name="host" data-persist required />
+        <input type="text" placeholder="localhost" name="host" data-persist data-action="change:config.persist" required />
       </label>
 
       <label id="client-port-field">
         Port
-        <input type="number" placeholder="12345" name="port" min="1" max="65535" step="1" data-persist required />
+        <input type="number" placeholder="12345" name="port" min="1" max="65535" step="1" data-persist data-action="change:config.persist" required />
       </label>
 
       <label class="hidden" id="server-port-field">
         Port
-        <input type="number" placeholder="12345" name="server-port" min="1" max="65535" step="1" data-persist />
+        <input type="number" placeholder="12345" name="server-port" min="1" max="65535" step="1" data-persist data-action="change:config.persist" />
       </label>
 
       <button id="connect-btn" type="submit">Connect</button>
@@ -35,7 +35,7 @@
 
     <h5>
       Recent servers
-      <button type="button" class="small ghost hidden" id="recent-clear">Clear list</button>
+      <button type="button" class="small ghost hidden" id="recent-clear" data-action="click:home.clearRecent">Clear list</button>
     </h5>
     <p id="recent-note" class="hidden" role="alert" data-variant="danger"></p>
     <div id="recent-list" class="cards"></div>

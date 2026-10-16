@@ -3,6 +3,7 @@
 // mode must neither block the active mode nor let an invalid active port through.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { bindStaticActions } from "./helpers/markup.js";
 
 class FakeNode {
   constructor(id = "") {
@@ -100,6 +101,7 @@ globalThis.window = {
 };
 
 await import("../src/home/connection.js");
+await bindStaticActions("home/home.html", getNode);
 
 const connects = () => calls.filter((c) => c.cmd === "connect_socket");
 const tick = () => new Promise((r) => setTimeout(r, 0));

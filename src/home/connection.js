@@ -19,13 +19,6 @@ let mode = "client";
 let submitting = false;
 
 function init() {
-  initModeButtons();
-  initConnectForm();
-  document.getElementById("recent-clear").addEventListener("click", () => {
-    const error = clearRecent(localStorage);
-    showRecentNote(error);
-    renderRecent();
-  });
   // A recent endpoint is remembered once its session is really up (connected / listening).
   store.subscribe((event) => {
     if (event.type === "status") recordWhenUp(event.session);
@@ -35,15 +28,6 @@ function init() {
 }
 
 // ── Mode ────────────────────────────────────────────────────
-
-function initModeButtons() {
-  document
-    .getElementById("client-mode")
-    .addEventListener("click", () => setMode("client"));
-  document
-    .getElementById("server-mode")
-    .addEventListener("click", () => setMode("server"));
-}
 
 /** Home only configures the NEXT connection: the mode can always be changed. */
 function setMode(next) {
@@ -79,14 +63,6 @@ function syncModeFields() {
 }
 
 // ── Starting sessions (manual form and recent shortcuts share one path) ──
-
-function initConnectForm() {
-  const form = document.getElementById("connect-form");
-  form.addEventListener("submit", (ev) => {
-    ev.preventDefault();
-    submitForm();
-  });
-}
 
 function setField(name, value) {
   const field = document.getElementById("connect-form")[name];
@@ -212,7 +188,7 @@ function renderRecent() {
       endpoint: endpointText(entry),
     });
     card.querySelector('[data-slot="kind"]').classList.toggle("mute", !client);
-    card.addEventListener("click", () => useRecent(entry));
+    Object.assign(card.dataset, entryData(entry));
     list.appendChild(card);
   }
 
@@ -223,15 +199,34 @@ function renderRecent() {
       detail: [client ? "Client" : "Server", relativeTime(entry.lastUsed)].filter(Boolean).join(" · "),
     });
     item.title = `${client ? "Connect to" : "Listen on"} ${endpointText(entry)} in a new session`;
-    item.addEventListener("click", () => useRecent(entry));
+    Object.assign(item.dataset, entryData(entry));
     side.appendChild(item);
   }
 }
 
+/** The recent endpoint carried by a card / side item (read back by actions.home.useRecent). */
+const entryData = ({ mode: m, host, port }) => ({ mode: m, host, port });
+
 /** A shortcut always opens a NEW session, whatever the other sessions are doing. */
 function useRecent(entry) {
   showConnectError(null);
-  startSession({ mode: entry.mode, host: entry.host, port: entry.port });
+  startSession({ mode: entry.mode, host: entry.host, port: Number(entry.port) });
 }
+
+window.actions ??= {};
+window.actions.home = {
+  setClient: () => setMode("client"),
+  setServer: () => setMode("server"),
+  submit: (ev) => {
+    ev.preventDefault();
+    submitForm();
+  },
+  clearRecent: () => {
+    const error = clearRecent(localStorage);
+    showRecentNote(error);
+    renderRecent();
+  },
+  useRecent: (ev, el) => useRecent(el.dataset),
+};
 
 init();
