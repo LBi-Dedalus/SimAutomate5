@@ -2,8 +2,6 @@ import { logError } from "./log.js";
 
 const CONFIG_KEY = "simautomate:config";
 
-window.addEventListener("DOMContentLoaded", init);
-
 // Only fields explicitly marked with the `data-persist` attribute (and a name) are
 // stored. Template editor, search and variable inputs are intentionally not marked.
 const PERSISTED_FIELDS =
@@ -65,3 +63,5 @@ function persistConfig(name, value) {
     logError(`Failed to persist config: ${String(err)}`, "config.js:persistConfig");
   }
 }
+
+init();

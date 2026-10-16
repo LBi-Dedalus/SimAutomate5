@@ -44,7 +44,5 @@ export function subscribeSendEligibility(callback) {
   refresh();
 }
 
-window.addEventListener("DOMContentLoaded", async () => {
-  await listen(STATUS_EVENT, (event) => sessions.handleStatus(event.payload));
-  await listen(MESSAGE_EVENT, (event) => sessions.handleMessage(event.payload));
-});
+await listen(STATUS_EVENT, (event) => sessions.handleStatus(event.payload));
+await listen(MESSAGE_EVENT, (event) => sessions.handleMessage(event.payload));

@@ -134,8 +134,6 @@ await import("../src/session/messages.js");
 await import("../src/session/special-chars.js");
 await import("../src/templates/templates.js");
 
-for (const fn of [...(winListeners.DOMContentLoaded ?? []), ...(docListeners.DOMContentLoaded ?? [])]) await fn();
-
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const surfaces = () => ({
   composer: composerSend.disabled,

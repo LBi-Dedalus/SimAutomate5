@@ -56,8 +56,6 @@ let previewSeq = 0;
 
 const $ = (id) => document.getElementById(id);
 
-window.addEventListener("DOMContentLoaded", init);
-
 async function init() {
   setLeaveGuard("templates", (proceed) => {
     if (saving) {
@@ -949,3 +947,5 @@ function renderPreviewBox(resolved) {
     },
   );
 }
+
+await init();

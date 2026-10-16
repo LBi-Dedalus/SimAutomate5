@@ -1,0 +1,97 @@
+<script type="after-include" src="templates/templates.js"></script>
+<div id="tpl-banner" class="banner hidden" role="status" aria-live="polite">
+  <span id="tpl-banner-text"></span>
+  <button type="button" class="small outline hidden" id="tpl-banner-retry">Retry</button>
+  <button type="button" class="small ghost" id="tpl-banner-close">Dismiss</button>
+</div>
+
+<div id="tpl-guard" class="banner warn hidden" role="alertdialog" aria-live="assertive">
+  <span id="tpl-guard-text">Unsaved changes.</span>
+  <button type="button" class="small" id="tpl-guard-save">Save</button>
+  <button type="button" class="small outline" id="tpl-guard-discard">Discard</button>
+  <button type="button" class="small ghost" id="tpl-guard-cancel">Cancel</button>
+</div>
+
+<div class="split">
+  <aside class="tlist">
+    <input type="search" id="tpl-search" placeholder="⌕  Search templates" autocomplete="off" />
+    <button type="button" class="card new" id="tpl-new">＋ New template</button>
+    <div id="tpl-list"></div>
+  </aside>
+
+  <section class="dock" id="tpl-editor">
+    <div id="tpl-empty" class="empty">
+      <i aria-hidden="true">▤</i>
+      <b>No template selected</b>
+    </div>
+
+    <div id="tpl-form" class="hidden">
+      <header>
+        <div class="hstack gap-2">
+          <input id="tpl-name" type="text" placeholder="Template name" aria-label="Template name" autocomplete="off" />
+          <span id="tpl-kind" class="badge"></span>
+        </div>
+      </header>
+
+      <div class="bd">
+        <div>
+          <div class="tbar hstack gap-1">
+            <span>Insert</span>
+            <button type="button" class="chip" data-insert="VT">VT</button>
+            <button type="button" class="chip" data-insert="FS.CR">FS·CR</button>
+            <button type="button" class="chip" data-insert="CR">CR</button>
+            <button type="button" class="chip" data-insert="ENQ">ENQ</button>
+            <button type="button" class="chip" data-insert="EOT">EOT</button>
+            <button type="button" class="chip" data-insert="ACK">ACK</button>
+            <button type="button" class="chip" data-insert="NAK">NAK</button>
+            <button type="button" class="chip warn" id="tpl-insert-var" title="Insert a {{VARIABLE}} placeholder">{{ }} variable</button>
+          </div>
+          <div class="ed-wrap">
+            <div id="tpl-payload-hl" class="ed-hl" aria-hidden="true"></div>
+            <textarea
+              id="tpl-payload"
+              class="code-input"
+              spellcheck="false"
+              placeholder="Payload, e.g. <VT>MSH|^~\&|…|{{NOW}}||QRY^A19|{{CONTROL_ID}}|P|2.4<CR><FS><CR>"
+              aria-label="Payload"
+            ></textarea>
+          </div>
+
+          <div class="hstack gap-2">
+            <label>
+              Apply Autobuild
+              <input type="checkbox" role="switch" id="tpl-autobuild" />
+            </label>
+            <label>
+              No ETB
+              <input type="checkbox" role="switch" id="tpl-autobuild-noetb" />
+            </label>
+          </div>
+
+          <div id="tpl-preview" class="raw"></div>
+          <small id="tpl-validity"></small>
+        </div>
+
+        <div class="vars">
+          <small>Variables</small>
+          <div id="tpl-vars"></div>
+          <p>
+            <code>{{NOW}}</code> and <code>{{CONTROL_ID}}</code> are
+            filled in on load or send.
+          </p>
+        </div>
+      </div>
+
+      <div id="tpl-dirty" class="k-float hidden" role="region" aria-label="Unsaved changes">
+        <small class="warn">● Unsaved changes</small>
+        <button type="button" class="small" id="tpl-save">Save</button>
+      </div>
+
+      <footer>
+        <span class="sp"></span>
+        <button type="button" class="small outline" id="tpl-load">Load in composer</button>
+        <button type="button" class="small" id="tpl-send" disabled>Send now ➤</button>
+      </footer>
+    </div>
+  </section>
+</div>

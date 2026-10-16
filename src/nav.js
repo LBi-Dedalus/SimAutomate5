@@ -46,10 +46,12 @@ function activate(name) {
   }
 }
 
-window.addEventListener("DOMContentLoaded", () => {
+function init() {
   for (const item of document.querySelectorAll("[data-view], [data-nav]")) {
     item.addEventListener("click", () =>
       showView(item.dataset.view ?? item.dataset.nav),
     );
   }
-});
+}
+
+init();

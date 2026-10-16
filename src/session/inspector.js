@@ -205,7 +205,7 @@ function renderParsed(body, hl7) {
   body.appendChild(raw);
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+function init() {
   document.getElementById("insp-copy").addEventListener("click", async () => {
     if (!record) return;
     try {
@@ -225,4 +225,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }),
     );
   });
-});
+}
+
+init();

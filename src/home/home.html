@@ -1,0 +1,43 @@
+<link rel="x-template" href="home/recent-card.html" />
+<link rel="x-template" href="home/recent-side-item.html" />
+<script type="after-include" src="home/connection.js"></script>
+<div class="scroll">
+  <div class="home">
+    <h2>Start a session</h2>
+    <form id="connect-form" class="card" novalidate>
+      <div>
+        <small>Mode</small>
+        <div class="seg" role="group" aria-label="Mode">
+          <button type="button" id="client-mode" class="on">Client</button>
+          <button type="button" id="server-mode">Server</button>
+        </div>
+      </div>
+
+      <label id="client-host-field">
+        Host
+        <input type="text" placeholder="localhost" name="host" data-persist required />
+      </label>
+
+      <label id="client-port-field">
+        Port
+        <input type="number" placeholder="12345" name="port" min="1" max="65535" step="1" data-persist required />
+      </label>
+
+      <label class="hidden" id="server-port-field">
+        Port
+        <input type="number" placeholder="12345" name="server-port" min="1" max="65535" step="1" data-persist />
+      </label>
+
+      <button id="connect-btn" type="submit">Connect</button>
+    </form>
+    <p id="connect-hint" class="hidden">Server mode listens on all interfaces (0.0.0.0) and accepts one client.</p>
+    <p id="connect-error" class="hidden" role="alert" data-variant="danger"></p>
+
+    <h5>
+      Recent servers
+      <button type="button" class="small ghost hidden" id="recent-clear">Clear list</button>
+    </h5>
+    <p id="recent-note" class="hidden" role="alert" data-variant="danger"></p>
+    <div id="recent-list" class="cards"></div>
+  </div>
+</div>

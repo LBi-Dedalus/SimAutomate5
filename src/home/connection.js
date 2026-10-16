@@ -5,16 +5,18 @@ import {
   clearRecent,
   describeEndpoint,
 } from "./recent-core.js";
-import { el } from "../render.js";
+import { cloneTemplate } from "../include.js";
 import { logWarn } from "../log.js";
 import { sessions, store } from "../session/sessions.js";
 import { showView } from "../nav.js";
 
+// Preloaded by the <link rel="x-template"> tags of home.html.
+const CARD_TEMPLATE = "home/recent-card.html";
+const SIDE_ITEM_TEMPLATE = "home/recent-side-item.html";
+
 let mode = "client";
 /** Guards against a double submit while the backend answers; it never blocks other sessions. */
 let submitting = false;
-
-window.addEventListener("DOMContentLoaded", init);
 
 function init() {
   initModeButtons();
@@ -204,32 +206,23 @@ function renderRecent() {
 
   for (const entry of entries) {
     const client = entry.mode === "client";
-
-    const card = el("button", "card");
-    card.type = "button";
-    const top = el("div");
-    top.appendChild(el("span", client ? "badge" : "badge mute", client ? "Client" : "Server"));
-    const go = el("small", "go");
-    go.appendChild(el("span", "verb", client ? "Connect " : "Listen "));
-    go.appendChild(el("span", "", "↗"));
-    top.appendChild(go);
-    card.appendChild(top);
-    card.appendChild(el("b", "", endpointText(entry)));
+    const card = cloneTemplate(CARD_TEMPLATE, {
+      kind: client ? "Client" : "Server",
+      verb: client ? "Connect " : "Listen ",
+      endpoint: endpointText(entry),
+    });
+    card.querySelector('[data-slot="kind"]').classList.toggle("mute", !client);
     card.addEventListener("click", () => useRecent(entry));
     list.appendChild(card);
   }
 
   for (const entry of entries.slice(0, 5)) {
     const client = entry.mode === "client";
-    const item = el("button", "ses");
-    item.type = "button";
+    const item = cloneTemplate(SIDE_ITEM_TEMPLATE, {
+      endpoint: endpointText(entry),
+      detail: [client ? "Client" : "Server", relativeTime(entry.lastUsed)].filter(Boolean).join(" · "),
+    });
     item.title = `${client ? "Connect to" : "Listen on"} ${endpointText(entry)} in a new session`;
-    item.appendChild(el("i"));
-    const tx = el("span");
-    tx.appendChild(el("span", "", endpointText(entry)));
-    tx.appendChild(el("small", "", [client ? "Client" : "Server", relativeTime(entry.lastUsed)].filter(Boolean).join(" · ")));
-    item.appendChild(tx);
-    item.appendChild(el("b", "", "↗"));
     item.addEventListener("click", () => useRecent(entry));
     side.appendChild(item);
   }
@@ -240,3 +233,5 @@ function useRecent(entry) {
   showConnectError(null);
   startSession({ mode: entry.mode, host: entry.host, port: entry.port });
 }
+
+init();

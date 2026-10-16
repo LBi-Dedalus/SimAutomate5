@@ -104,7 +104,6 @@ globalThis.window = {
 
 const { showView, currentView } = await import("../src/nav.js");
 const { publishSavedTemplates, clearSavedTemplates } = await import("../src/templates/template-store.js");
-await import("../src/autoreply/autoreply.js");
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const deferred = () => {
@@ -156,7 +155,7 @@ async function fresh(config, present = true, templates = TEMPLATES) {
   if (templates) publishSavedTemplates(templates);
   if (!started) {
     started = true;
-    for (const fn of winListeners.DOMContentLoaded ?? []) await fn();
+    await import("../src/autoreply/autoreply.js"); // initialises on import
   } else {
     getNode("ar-guard-cancel").fire("click");
     getNode("ar-discard").fire("click");

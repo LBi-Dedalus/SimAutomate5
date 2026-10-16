@@ -1,0 +1,176 @@
+<script type="after-include" src="autoreply/autoreply.js"></script>
+<div id="ar-banner" class="banner hidden" role="status" aria-live="polite">
+  <span id="ar-banner-text"></span>
+  <button type="button" class="small outline hidden" id="ar-banner-retry">Retry</button>
+  <button type="button" class="small ghost" id="ar-banner-close">Dismiss</button>
+</div>
+
+<div id="ar-guard" class="banner warn hidden" role="alertdialog" aria-live="assertive">
+  <span>Unsaved auto reply rules.</span>
+  <button type="button" class="small" id="ar-guard-save">Save</button>
+  <button type="button" class="small outline" data-variant="danger" id="ar-guard-discard">Discard</button>
+  <button type="button" class="small outline" id="ar-guard-cancel">Cancel</button>
+</div>
+
+<div class="split stack">
+  <div class="scroll">
+    <div id="ar-strip" class="k-strip is-off">
+      <span id="ar-state-badge" class="badge mute">● —</span>
+      <b id="ar-state-text">Automatic replies</b>
+      <span class="sp"></span>
+      <label>
+        Enabled
+        <input type="checkbox" id="ar-enabled" role="switch" disabled />
+      </label>
+    </div>
+
+    <section class="card" aria-labelledby="ar-title">
+      <header>
+        <h6 id="ar-title">Rules</h6>
+      </header>
+      <details class="k-help">
+        <summary>How rules are applied</summary>
+        <p>
+          The first enabled rule whose trigger and condition match a
+          complete incoming message applies its action: it sends its reply, or
+          suppresses any reply (No auto reply) and stops lower rules.
+          Nothing matching means no reply: there is no default acknowledgement.
+        </p>
+      </details>
+      <div id="ar-table" role="list">
+        <div class="ar-row ar-th" role="presentation">
+          <span>On</span>
+          <span>When receiving</span>
+          <span>Condition</span>
+          <span>Reply with</span>
+          <span>Delay</span>
+          <span></span>
+        </div>
+        <div id="ar-list"></div>
+      </div>
+      <button type="button" class="card new k-add" id="ar-add" disabled>＋ Add rule</button>
+    </section>
+  </div>
+
+  <aside id="ar-dock" aria-label="Rule editor">
+    <form class="hidden" id="ar-form" autocomplete="off" novalidate>
+      <header>
+        <h6>Rule details</h6>
+        <label>
+          <input type="checkbox" id="ar-rule-enabled" />
+          Enabled
+        </label>
+      </header>
+      <ul class="hidden" id="ar-errors" role="alert" data-variant="danger"></ul>
+      <label>
+        Name
+        <input type="text" id="ar-name" maxlength="100" />
+      </label>
+
+      <fieldset>
+        <legend>When receiving</legend>
+        <label>
+          Trigger
+          <select id="ar-trigger">
+            <option value="hl7">HL7 message</option>
+            <option value="astm_frame">ASTM frame</option>
+            <option value="astm_enq">ASTM ENQ</option>
+          </select>
+        </label>
+        <div id="ar-hl7-fields">
+          <label>
+            Message type (MSH-9)
+            <input type="text" id="ar-type" placeholder="QRY^A19 or ORU^* or *" />
+          </label>
+          <label>
+            <input type="checkbox" id="ar-cond-use" />
+            Only when a field matches
+          </label>
+          <div id="ar-cond-fields" class="row">
+            <label class="col-4">
+              Segment
+              <input type="text" id="ar-cond-seg" placeholder="QRD" maxlength="3" />
+            </label>
+            <label class="col-4">
+              Field
+              <input type="number" id="ar-cond-field" min="1" max="999" placeholder="8" />
+            </label>
+            <label class="col-4">
+              Operator
+              <select id="ar-cond-op">
+                <option value="exact">equals</option>
+                <option value="glob">matches *</option>
+              </select>
+            </label>
+            <label class="col-12">
+              Value
+              <input type="text" id="ar-cond-value" placeholder="AAZ*" />
+            </label>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Reply with</legend>
+        <label>
+          Action
+          <select id="ar-action">
+            <option value="template">Saved template</option>
+            <option value="literal">Literal text</option>
+            <option value="hl7_ack">Generated HL7 acknowledgement</option>
+            <option value="none">No auto reply</option>
+          </select>
+        </label>
+        <div id="ar-act-template">
+          <label>
+            Template (from the Templates library)
+            <select id="ar-template"></select>
+          </label>
+          <div id="ar-preview-box">
+            <small>Preview</small>
+            <pre id="ar-preview" class="raw"></pre>
+            <ul id="ar-vars"></ul>
+          </div>
+        </div>
+        <div id="ar-act-literal" class="hidden">
+          <label>
+            Response
+            <textarea id="ar-literal" rows="3" placeholder="&lt;ACK&gt;"></textarea>
+          </label>
+        </div>
+        <div id="ar-act-ack" class="row hidden">
+          <label class="col-8">
+            Type (MSH-9)
+            <input type="text" id="ar-ack-type" placeholder="ACK^O21" />
+          </label>
+          <label class="col-4">
+            Code (MSA-1)
+            <input type="text" id="ar-ack-code" maxlength="2" placeholder="AA" />
+          </label>
+        </div>
+        <label id="ar-delay-field">
+          Delay before replying (ms, 0 to 60000)
+          <input type="number" id="ar-delay" min="0" max="60000" step="1" />
+        </label>
+      </fieldset>
+
+      <p>
+        Templates can use <code>{{REQ_CONTROL_ID}}</code>: it is replaced
+        by the MSH-10 of the message that triggered the rule (HL7
+        rules only; it overrides any default). <code>{{NOW}}</code> and
+        <code>{{CONTROL_ID}}</code> are generated for each reply. Other
+        variables use the template's saved defaults. Conditions compare
+        the raw field, components included; <code>*</code> is the only
+        wildcard. Generic <code>*</code> types never answer an
+        acknowledgement (ACK) message; an exact type such as
+        <code>ACK^A01</code> does.
+      </p>
+    </form>
+  </aside>
+</div>
+
+<div id="ar-dirty" class="k-float hidden" role="region" aria-label="Unsaved changes">
+  <small class="warn">● Unsaved changes</small>
+  <button type="button" class="small outline" id="ar-discard" disabled>Discard</button>
+  <button type="button" class="small" id="ar-save" disabled>Save rules</button>
+</div>

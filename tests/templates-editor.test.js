@@ -2,6 +2,7 @@
 // mocked Tauri IPC. They exercise the real module: events, guards, rendering.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readMarkup } from "./helpers/markup.js";
 
 class FakeNode {
   constructor(tag = "div", id = "") {
@@ -108,13 +109,21 @@ globalThis.window = {
   connection_status: { get: () => "disconnected", set() {}, subscribe() {} },
 };
 
+// messages.js (imported by templates.js) initialises on import and needs the composer form.
+getNode("message-form").message = getNode("message");
+getNode("message-form").querySelector = () => getNode("message-submit");
+for (const id of ["messages", "no-connection"]) getNode(id).toggleAttribute = () => {};
+
 const SEED = [
   { id: "a", name: "Alpha", description: "", payload: "ALPHA {{X}}", variables: [{ name: "X", default: "1" }] },
   { id: "b", name: "Beta", description: "", payload: "BETA", variables: [] },
 ];
 
 const { showView, currentView } = await import("../src/nav.js");
-await import("../src/templates/templates.js");
+
+/** templates.js initialises on import, so it is imported once the fake backend is ready. */
+let templatesModule;
+const loadTemplatesModule = () => (templatesModule ??= import("../src/templates/templates.js"));
 
 /** Deferred promise helper. */
 const deferred = () => {
@@ -130,20 +139,7 @@ async function boot(stored = SEED) {
   ipc.handler = async (cmd) => (cmd === "load_templates" ? { templates: structuredClone(stored), seeded: false } : undefined);
   if (!booted) {
     booted = true;
-    for (const fn of winListeners.DOMContentLoaded ?? []) {
-      try {
-        await fn();
-      } catch {
-        /* other modules' init needs real DOM; irrelevant here */
-      }
-    }
-    for (const fn of docListeners.DOMContentLoaded ?? []) {
-      try {
-        await fn();
-      } catch {
-        /* same */
-      }
-    }
+    await loadTemplatesModule();
   } else {
     getNode("tpl-banner-retry").fire("click"); // reload from the mocked IPC
     await tick();
@@ -167,9 +163,9 @@ test("deferred initial load: New/Save/shortcuts are refused and the persisted co
   ipc.calls = [];
   ipc.handler = (cmd) => (cmd === "load_templates" ? gate.promise : Promise.resolve());
   booted = true;
-  const inits = [...(winListeners.DOMContentLoaded ?? []), ...(docListeners.DOMContentLoaded ?? [])];
-  const pending = inits.map((fn) => Promise.resolve().then(fn).catch(() => {}));
-  await tick();
+  const pending = loadTemplatesModule().catch(() => {});
+  // The module initialises on import, which needs real (async) file loading first.
+  for (let i = 0; i < 200 && !/Loading/.test(getNode("tpl-list").text); i++) await tick();
 
   // Loading: no collection yet, editing disabled, empty != unknown.
   assert.equal(getNode("tpl-new").disabled, true);
@@ -187,7 +183,7 @@ test("deferred initial load: New/Save/shortcuts are refused and the persisted co
   }
 
   gate.resolve({ templates: structuredClone(SEED), seeded: false });
-  await Promise.all(pending);
+  await pending;
   await tick();
   assert.equal(cards().length, 2, "no refused request executed automatically");
   assert.equal(form().hidden, true, "no draft created");
@@ -673,7 +669,7 @@ test("single preview box: plain when off, built when on, no late overwrite", asy
     gates.push({ gate, input: args.req.input });
     return gate.promise;
   });
-  const html = (await import("node:fs")).readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
+  const html = readMarkup();
   assert.equal((html.match(/id="tpl-preview"/g) ?? []).length, 1, "exactly one preview element");
   assert.doesNotMatch(html, /tpl-built/, "no second preview box");
   assert.doesNotMatch(html, /Preview Ã¢â‚¬â€ after Autobuild/);

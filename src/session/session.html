@@ -1,0 +1,66 @@
+<script type="after-include" src="session/sessions.js"></script>
+<script type="after-include" src="session/messages.js"></script>
+<script type="after-include" src="session/session-ui.js"></script>
+<script type="after-include" src="session/special-chars.js"></script>
+<header>
+  <h4>
+    <span id="session-title">No connection</span>
+    <span id="session-mode" class="badge hidden"></span>
+  </h4>
+  <span class="badge mute" data-status-pill><i></i>Disconnected</span>
+  <div class="sp"></div>
+  <button class="small ghost" type="button" id="clear-chat">Clear</button>
+  <button class="small outline" type="button" id="session-reconnect">Reconnect</button>
+  <button class="small outline hidden" data-variant="danger" type="button" id="session-disconnect">Disconnect</button>
+  <button class="small ghost" type="button" id="session-close" title="Close this session">Close</button>
+</header>
+
+<div class="split">
+  <div class="convo">
+    <div id="messages">
+      <div id="no-connection" class="empty">
+        <i aria-hidden="true">◉</i>
+        <b class="es-off">No connection</b>
+        <button type="button" class="small outline es-off" data-nav="home">Go to Home</button>
+        <b class="es-on">No message yet</b>
+      </div>
+    </div>
+
+    <form id="message-form" class="card">
+      <div id="special-chars" aria-label="Send a control character">
+        <span>Send</span>
+        <button type="button" class="chip" data-token="ENQ" title="Send &lt;ENQ&gt; now" disabled>ENQ</button>
+        <button type="button" class="chip" data-token="EOT" title="Send &lt;EOT&gt; now" disabled>EOT</button>
+        <button type="button" class="chip" data-token="ACK" title="Send &lt;ACK&gt; now" disabled>ACK</button>
+        <button type="button" class="chip" data-token="NAK" title="Send &lt;NAK&gt; now" disabled>NAK</button>
+        <button type="button" class="chip" data-token="VT" title="Send &lt;VT&gt; now" disabled>VT</button>
+        <button type="button" class="chip" data-token="FS.CR" title="Send &lt;FS&gt;&lt;CR&gt; now" disabled>FS·CR</button>
+        <button type="button" class="chip" data-token="CR" title="Send &lt;CR&gt; now" disabled>CR</button>
+      </div>
+      <textarea type="text" placeholder="Type a message…" required name="message" spellcheck="false"></textarea>
+      <div>
+        <button class="small ghost" type="reset">Clear</button>
+        <button class="small outline" data-nav="autobuild" type="button">⚒ Autobuild</button>
+        <button disabled type="submit">Send ➤</button>
+      </div>
+    </form>
+  </div>
+
+  <aside id="inspector" aria-label="Message inspector">
+    <header>
+      <div class="hstack gap-2">
+        <span id="insp-dir" class="badge hidden"></span>
+        <b id="insp-title">Message inspector</b>
+      </div>
+      <small id="insp-meta" class="hstack gap-2"></small>
+      <div id="insp-tabs" role="tablist"></div>
+    </header>
+    <div id="insp-body">
+      <p>Select a message in the conversation to inspect it.</p>
+    </div>
+    <footer>
+      <button type="button" class="small outline" id="insp-copy" disabled>Copy</button>
+      <button type="button" class="small outline" id="insp-save-template" disabled>Save as template</button>
+    </footer>
+  </aside>
+</div>

@@ -48,8 +48,6 @@ let templates = getSavedTemplates();
 
 const $ = (id) => document.getElementById(id);
 
-window.addEventListener("DOMContentLoaded", init);
-
 async function init() {
   setLeaveGuard("autoreply", (proceed) => {
     if (saving) {
@@ -653,3 +651,5 @@ function renderPreview() {
     vars.appendChild(el("li", "", `{{${v.name}}} — ${v.source}`));
   }
 }
+
+await init();

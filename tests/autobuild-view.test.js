@@ -1,7 +1,7 @@
 // Integration tests for src/autobuild/autobuild-view.js with a minimal fake DOM and injected backend/storage.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readMarkup } from "./helpers/markup.js";
 import { initAutobuildView } from "../src/autobuild/autobuild-view.js";
 import { RECENT_BUILDS_KEY } from "../src/autobuild/autobuild-recent-core.js";
 
@@ -343,7 +343,7 @@ test("delete moves focus to the next card, else previous, else the input; clear 
 });
 
 test("markup: dedicated nav view, no dialog, composer navigates to the view", () => {
-  const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
+  const html = readMarkup();
   assert.ok(html.includes('data-view="autobuild"'));
   assert.ok(html.includes('id="view-autobuild"'));
   assert.ok(html.includes('data-view-panel="autobuild"'));

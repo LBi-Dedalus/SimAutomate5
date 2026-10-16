@@ -100,7 +100,6 @@ globalThis.window = {
 };
 
 await import("../src/home/connection.js");
-for (const fn of winListeners.DOMContentLoaded) await fn();
 
 const connects = () => calls.filter((c) => c.cmd === "connect_socket");
 const tick = () => new Promise((r) => setTimeout(r, 0));

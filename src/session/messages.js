@@ -16,11 +16,11 @@ import { sessions, store, subscribeSendEligibility } from "./sessions.js";
 const views = new Map();
 let composerPlaceholder = "";
 
-document.addEventListener("DOMContentLoaded", () => {
+function init() {
   initComposer();
   initConversation();
   initSendButton();
-});
+}
 
 /** What a send would target right now (captured synchronously by the caller), or null. */
 export function activeSendTarget() {
@@ -263,3 +263,5 @@ function formatTime(value) {
     return value;
   }
 }
+
+init();

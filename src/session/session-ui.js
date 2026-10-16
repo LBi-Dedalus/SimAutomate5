@@ -15,8 +15,6 @@ const STATUS_TEXT = {
 
 const $ = (id) => document.getElementById(id);
 
-window.addEventListener("DOMContentLoaded", init);
-
 function init() {
   $("session-new").addEventListener("click", () => {
     // Home is where new connections are configured; the navigation guard still applies.
@@ -186,3 +184,5 @@ function renderHeader() {
 
   $("clear-chat").disabled = !session;
 }
+
+init();

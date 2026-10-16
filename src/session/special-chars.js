@@ -3,8 +3,6 @@ import { sendMessage, activeSendTarget } from "./messages.js";
 import { logError } from "../log.js";
 import { subscribeSendEligibility } from "./sessions.js";
 
-window.addEventListener("DOMContentLoaded", init);
-
 function init() {
   initSpecialCharButtons();
   unlockButtonsWhenConnected();
@@ -43,3 +41,5 @@ function unlockButtonsWhenConnected() {
     }
   });
 }
+
+init();

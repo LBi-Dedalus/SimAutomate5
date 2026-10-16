@@ -1,0 +1,50 @@
+<script type="after-include" src="autobuild/autobuild.js"></script>
+<div class="split stack">
+  <form id="ab-form" class="dock" novalidate>
+    <div class="ab-body">
+      <label>
+        Input
+        <textarea
+          id="ab-input"
+          class="code-input"
+          placeholder="Type a message..."
+          required
+          name="input"
+          spellcheck="false"
+          data-persist
+        ></textarea>
+      </label>
+      <label>
+        Output
+        <textarea
+          id="ab-output"
+          class="code-input"
+          placeholder="Autobuilt message will appear here"
+          readonly
+          name="output"
+          spellcheck="false"
+          data-persist
+        ></textarea>
+      </label>
+      <label class="sw-pill">
+        No ETB
+        <input type="checkbox" role="switch" id="ab-no-etb" name="no-etb" data-persist />
+      </label>
+      <p id="autobuild-error" class="hidden" role="alert" data-variant="danger"></p>
+    </div>
+    <footer>
+      <span class="sp"></span>
+      <button type="button" class="small outline" id="build-message">Build</button>
+      <button type="submit" class="small" id="build-copy">Build and copy to input</button>
+    </footer>
+  </form>
+
+  <aside class="tlist">
+    <div class="tl-head">
+      <h5 id="ab-list-label">Recent autobuilds</h5>
+      <button type="button" class="small ghost" id="ab-clear" title="Clear recent autobuilds" aria-label="Clear recent autobuilds" disabled>Clear</button>
+    </div>
+    <p id="ab-note" class="hidden" role="alert" data-variant="danger"></p>
+    <ul id="ab-list" aria-labelledby="ab-list-label"></ul>
+  </aside>
+</div>
