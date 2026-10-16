@@ -11,11 +11,18 @@ class El {
     this.attrs = { ...attrs };
     this.children = children;
     this.dataset = {};
+    this.listeners = {};
     this.textContent = "";
     this.removed = false;
   }
   getAttribute(name) {
     return this.attrs[name] ?? null;
+  }
+  addEventListener(type, fn) {
+    (this.listeners[type] ??= []).push(fn);
+  }
+  fire(type, event = {}) {
+    for (const fn of this.listeners[type] ?? []) fn({ type, stopPropagation() {}, ...event });
   }
   setAttribute(name, value) {
     this.attrs[name] = value;
@@ -53,6 +60,7 @@ class El {
           "[data-include]": (n) => "data-include" in n.attrs,
           'link[rel="x-template"]': (n) => n.tag === "link" && n.attrs.rel === "x-template",
           script: (n) => n.tag === "script",
+          "[data-action]": (n) => n.dataset.action !== undefined,
         }[selector];
     return [...this.descendants()].filter(match);
   }
@@ -86,6 +94,7 @@ const createElement = (tag) =>
       }
     : create(tag);
 
+const logged = [];
 let boots = 0;
 /**
  * Runs the automatic startup of a fresh copy of include.js against a fake page and resolves with
@@ -95,6 +104,7 @@ async function boot({ hosts = [], scripts = [] } = {}) {
   const body = new El("body", {}, hosts);
   let finished;
   const done = new Promise((resolve) => (finished = resolve));
+  globalThis.window = { __TAURI__: { core: { invoke: async (_, { entry }) => logged.push(entry) } } };
   globalThis.document = {
     baseURI: "file:///app/index.html",
     createElement,
@@ -258,6 +268,67 @@ test("cloneTemplate sets slot text without touching other nodes", async () => {
 
   const button = cloneTemplate("slotted-root.html", { label: "Go" });
   assert.equal(button.textContent, "Go", "the root itself can be a slot");
+});
+
+// ── data-action ──
+
+const withAction = (tag, action, children = []) => {
+  const node = new El(tag, {}, children);
+  node.dataset.action = action;
+  return node;
+};
+
+test("data-action in the static markup is bound at startup, before the scripts run", async () => {
+  const button = withAction("button", "click:t.go keydown:t.key");
+  const calls = [];
+  await boot({ hosts: [new El("section", {}, [button])], scripts: [] });
+  window.actions.t = { go: (ev, node) => calls.push(["go", ev.type, node]), key: () => calls.push(["key"]) };
+  button.fire("click");
+  button.fire("keydown");
+  assert.deepEqual(calls, [["go", "click", button], ["key"]], "handlers are looked up when the event fires");
+});
+
+test("cloneTemplate binds the listeners of every clone, and an empty handler only stops the event", async () => {
+  PAGES["actions.html"] = () => {
+    const box = withAction("input", "click: change:t.toggle");
+    return [new El("div", {}, [box, withAction("button", "click:t.go")])];
+  };
+  const { cloneTemplate } = await withTemplates("actions.html");
+  const calls = [];
+  window.actions.t = { toggle: () => calls.push("toggle"), go: (ev) => calls.push(`go ${ev.n}`) };
+  const [box, button] = cloneTemplate("actions.html").children;
+  let stopped = 0;
+  box.fire("click", { stopPropagation: () => stopped++ });
+  box.fire("change");
+  button.fire("click", { n: 1 });
+  cloneTemplate("actions.html").children[1].fire("click", { n: 2 });
+  assert.equal(stopped, 1);
+  assert.deepEqual(calls, ["toggle", "go 1", "go 2"]);
+});
+
+test("an unknown, throwing or rejecting handler is logged and does not break the page", async () => {
+  PAGES["bad-actions.html"] = () => [new El("div", {}, [withAction("a", "click:t.missing"), withAction("b", "click:t.throws"), withAction("i", "click:t.rejects")])];
+  const { cloneTemplate } = await withTemplates("bad-actions.html");
+  window.actions.t = { throws: () => { throw new Error("boom"); }, rejects: async () => { throw new Error("later"); } };
+  logged.length = 0;
+  for (const node of cloneTemplate("bad-actions.html").children) node.fire("click");
+  await until(() => logged.length === 3);
+  assert.match(logged.map((e) => e.message).join("|"), /t\.missing: no such handler.*t\.throws: boom.*t\.rejects: later/);
+});
+
+test("a malformed data-action makes the template fail at preload", async () => {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    PAGES["malformed.html"] = () => [new El("div", {}, [withAction("a", "click")])];
+    PAGES["preload.html"] = () => [new El("link", { rel: "x-template", href: "malformed.html" })];
+    const section = host("preload.html");
+    const { cloneTemplate } = await boot({ hosts: [section] });
+    assert.equal("data-include-error" in section.attrs, true);
+    assert.throws(() => cloneTemplate("malformed.html"), /not preloaded/);
+  } finally {
+    console.error = original;
+  }
 });
 
 test("real template files: whitespace between tags is dropped and slots resolve", async () => {

@@ -15,6 +15,16 @@
 // in slots). The parsed root is cached and cloned on every call. Values always go through textContent, never through innerHTML,
 // so protocol text cannot inject markup.
 //
+// Event listeners are declared in the markup too:
+//   <button data-action="click:ar.remove keydown:ar.key">
+//       a space-separated list of event:handler pairs. The handler is looked up in window.actions
+//       when the event fires (window.actions.ar.remove, called as handler(event, element)), so views
+//       register it with `window.actions.ar = { remove, key }` in any order. An empty handler
+//       ("click:") only stops the event from reaching the ancestors, e.g. a checkbox in a clickable row.
+// The static markup is bound once the includes are loaded (before the scripts run), and every
+// cloneTemplate() result is bound before it is returned. Malformed attributes in a template file
+// fail at preload.
+//
 // Startup (index.html loads this file, which runs once the page is parsed): the includes are
 // fetched first, then every
 //   <script type="after-include" src="view/file.js"></script>
@@ -25,6 +35,43 @@ import { logError } from "./log.js";
 
 const sources = new Map(); // url -> Promise<string>
 const templates = new Map(); // url -> validated root element, once preloaded
+
+if (typeof window !== "undefined") window.actions ??= {};
+
+/** Splits a data-action value ("click:ar.select keydown:ar.key") into {type, name} pairs. */
+function parseActions(value) {
+  return value
+    .trim()
+    .split(/\s+/)
+    .map((token) => {
+      const match = /^([a-z]+):([\w.]*)$/i.exec(token);
+      if (!match) throw new Error(`Invalid data-action "${token}" (expected event:handler)`);
+      return { type: match[1], name: match[2] };
+    });
+}
+
+/** Calls window.actions.<name>(event, element); a missing handler or a failure is logged. */
+function runAction(name, event, element) {
+  const report = (error) => logError(`Action ${name}: ${error?.message ?? error}`, "include.js:runAction");
+  const handler = name.split(".").reduce((scope, key) => scope?.[key], window.actions);
+  if (typeof handler !== "function") return report("no such handler");
+  try {
+    Promise.resolve(handler(event, element)).catch(report);
+  } catch (error) {
+    report(error);
+  }
+}
+
+/** Adds the listeners declared by the [data-action] elements of root (root included). */
+function bindActions(root) {
+  const nodes = [...root.querySelectorAll("[data-action]")];
+  if (root.dataset?.action !== undefined) nodes.unshift(root);
+  for (const node of nodes) {
+    for (const { type, name } of parseActions(node.dataset.action)) {
+      node.addEventListener(type, (event) => (name ? runAction(name, event, node) : event.stopPropagation()));
+    }
+  }
+}
 
 function fetchText(url) {
   if (!sources.has(url)) {
@@ -75,7 +122,15 @@ function parseTemplate(url, html) {
     const found = [...content.children].map((node) => node.localName ?? node.tag).join(", ") || "none";
     throw new Error(`Template ${url} must contain exactly one root element (found: ${found})`);
   }
-  return content.children[0];
+  const root = content.children[0];
+  try {
+    for (const node of [root, ...root.querySelectorAll("[data-action]")]) {
+      if (node.dataset?.action !== undefined) parseActions(node.dataset.action);
+    }
+  } catch (error) {
+    throw new Error(`Template ${url}: ${error.message}`);
+  }
+  return root;
 }
 
 /** Fetches, parses and validates template files ahead of time so cloneTemplate() can be called synchronously. */
@@ -106,18 +161,25 @@ function fill(root, values) {
 
 /**
  * Returns a new element built from the template file (it must have been preloaded), with the
- * text of each [data-slot] named in values set.
+ * text of each [data-slot] named in values set and its [data-action] listeners attached.
  */
 export function cloneTemplate(url, values = {}) {
   const template = templates.get(url);
   if (template === undefined) throw new Error(`Template not preloaded: ${url}`);
   const root = template.cloneNode(true);
   fill(root, values);
+  bindActions(root);
   return root;
 }
 
 async function start() {
   await loadIncludes();
+  try {
+    bindActions(document);
+  } catch (error) {
+    logError(`Could not bind actions: ${error?.message ?? error}`, "include.js:start");
+    console.error(error);
+  }
   // Collected once the views are in the DOM, so the scripts named by their markup are included.
   const scripts = [...document.querySelectorAll('script[type="after-include"]')];
   for (const script of scripts) {

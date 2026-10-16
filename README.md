@@ -97,6 +97,7 @@ The repository also includes `test-socket-client.js` and `test-socket-server.js`
 - `src/` - Frontend HTML, CSS, and Vanilla JS. Shared files (`index.html`, `styles.css`, `config.js`, `nav.js`, `render.js`, ...) live at the root; each view has its own folder with its markup, JS and CSS: `home/`, `session/`, `templates/`, `autoreply/`, `autobuild/`.
   - `index.html` is only the shell: each view is an empty `<section data-include="<view>/<view>.html">`, filled at startup by `include.js`, which then imports the `<script type="after-include" src="...">` tags in order.
   - Repeated items (cards, rows) are one-root HTML files cloned with `cloneTemplate("<view>/<item>.html", { slotName: "text" })`, which sets the text of the matching `data-slot` elements. A file must be preloaded with `<link rel="x-template" href="...">` in the view's HTML (see `home/home.html`).
+  - Listeners are declared in the markup: `data-action="click:ar.remove keydown:ar.key"` calls `window.actions.ar.remove(event, element)` (a view registers `window.actions.ar = { ... }`). The static markup is bound before the view scripts run and every `cloneTemplate` result is bound when created. An empty handler (`click:`) only stops the event from bubbling. See `autoreply/rule-row.html`.
 - `src-tauri/` - Rust backend and Tauri configuration.
 - `SPECIFICATION.md` - Functional requirements and behavior notes.
 - `test-socket-client.js` / `test-socket-server.js` - Manual socket test helpers.

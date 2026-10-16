@@ -59,6 +59,17 @@ export async function installTemplates(urls) {
   // The fake nodes only need to understand the [data-slot="x"],[data-slot="y"] selectors cloneTemplate uses.
   const proto = Object.getPrototypeOf(create("div"));
   proto.querySelectorAll ??= function (selector) {
+    if (selector === "[data-action]") {
+      const found = [];
+      const visit = (node) => {
+        for (const child of node.children) {
+          if (child.dataset?.action !== undefined) found.push(child);
+          visit(child);
+        }
+      };
+      visit(this);
+      return found;
+    }
     const names = selector.split(",").map((s) => s.slice('[data-slot="'.length, -2));
     const found = [];
     const visit = (node) => {
@@ -72,6 +83,11 @@ export async function installTemplates(urls) {
   };
   proto.querySelector ??= function (selector) {
     return this.querySelectorAll(selector)[0] ?? null;
+  };
+  proto.closest ??= function (selector) {
+    const name = camel(selector.slice("[data-".length, -1));
+    for (let node = this; node; node = node.parent) if (node.dataset?.[name] !== undefined) return node;
+    return null;
   };
   proto.remove ??= function () {
     if (this.parent) this.parent.children = this.parent.children.filter((child) => child !== this);

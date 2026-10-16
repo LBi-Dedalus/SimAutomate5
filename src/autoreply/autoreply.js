@@ -512,40 +512,56 @@ function renderList() {
       remove: armed ? "Sure?" : "✕",
     });
     const part = (name) => row.querySelector(`[data-slot="${name}"]`);
+    row.dataset.id = rule.id;
     row.classList.toggle("on", rule.id === selectedId);
     row.classList.toggle("off", !rule.enabled);
-    row.addEventListener("click", () => select(rule.id));
-    row.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" && ev.target === row) select(rule.id);
-    });
 
     const box = part("enabled");
     box.checked = rule.enabled;
     box.disabled = !editable();
     box.setAttribute("aria-label", `Enable rule ${rule.name}`);
-    box.addEventListener("click", (ev) => ev.stopPropagation?.());
-    box.addEventListener("change", () => toggleRule(rule));
 
     const bad = part("problem");
     if (problems.has(rule.id)) bad.title = problems.get(rule.id)[0].message;
     else bad.remove();
 
-    const tool = (name, title, onClick, disabled) => {
+    const tool = (name, title, disabled) => {
       const b = part(name);
       b.title = title;
       b.disabled = disabled || !editable();
       b.setAttribute("aria-label", `${title}: ${rule.name}`);
-      b.addEventListener("click", (ev) => {
-        ev.stopPropagation?.();
-        onClick();
-      });
     };
-    tool("up", "Move up (higher priority)", () => move(rule, -1), index === 0);
-    tool("down", "Move down", () => move(rule, 1), index === rules.length - 1);
-    tool("remove", armed ? "Click again to delete" : "Delete rule", () => deleteRule(rule), false);
+    tool("up", "Move up (higher priority)", index === 0);
+    tool("down", "Move down", index === rules.length - 1);
+    tool("remove", armed ? "Click again to delete" : "Delete rule", false);
     list.appendChild(row);
   });
 }
+
+/** Handlers of the data-action attributes of rule-row.html; the rule is found from the row's data-id. */
+const ruleOf = (node) => rules.find((r) => r.id === node.closest("[data-id]")?.dataset.id);
+/** A button inside the row: the click must not also select the row. */
+const own = (act) => (ev, node) => {
+  ev.stopPropagation();
+  const rule = ruleOf(node);
+  if (rule) act(rule);
+};
+window.actions.ar = {
+  select: (ev, node) => {
+    const rule = ruleOf(node);
+    if (rule) select(rule.id);
+  },
+  rowKey: (ev, node) => {
+    if (ev.key === "Enter" && ev.target === node) window.actions.ar.select(ev, node);
+  },
+  toggle: (ev, node) => {
+    const rule = ruleOf(node);
+    if (rule) toggleRule(rule);
+  },
+  up: own((rule) => move(rule, -1)),
+  down: own((rule) => move(rule, 1)),
+  remove: own(deleteRule),
+};
 
 function renderForm() {
   const rule = selectedRule();
