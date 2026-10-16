@@ -128,16 +128,16 @@ function renderSidebar() {
       detail: `${session.mode === "client" ? "Client" : "Server"} · ${STATUS_TEXT[session.status] ?? session.status}`,
       ...(session.unread > 0 && !active && { unread: String(Math.min(session.unread, 99)) }),
     });
-    const part = (slot) => item.querySelector(`[data-slot="${slot}"]`);
+    const part = (cls) => item.querySelector(`.${cls}`);
     item.dataset.sessionId = session.id;
     item.classList.toggle("on", active);
 
-    const open = part("open");
+    const open = part("ses");
     if (active) open.setAttribute("aria-current", "true");
-    part("dot").dataset.st = session.status;
-    if (!(session.unread > 0 && !active)) part("unread").remove();
+    part("ses-dot").dataset.st = session.status;
+    if (!(session.unread > 0 && !active)) part("ses-unread").remove();
 
-    const close = part("close");
+    const close = part("ses-close");
     close.title = `Close ${session.label}`;
     close.setAttribute("aria-label", `Close session ${session.label}`);
     close.disabled = session.op === "closing";

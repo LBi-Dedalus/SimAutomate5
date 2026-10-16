@@ -80,7 +80,8 @@ export async function bindStaticActions(path, getNode) {
  */
 export async function installTemplates(urls) {
   const create = document.createElement.bind(document);
-  // The fake nodes only need to understand the [data-slot="x"],[data-slot="y"] selectors cloneTemplate uses.
+  // The fake nodes only need to understand the [data-slot="x"],[data-slot="y"] selectors cloneTemplate uses,
+  // the [data-action] selector, and the single-class selectors (".x") the renderers use to find their handles.
   const proto = Object.getPrototypeOf(create("div"));
   proto.querySelectorAll ??= function (selector) {
     if (selector === "[data-action]") {
@@ -94,11 +95,15 @@ export async function installTemplates(urls) {
       visit(this);
       return found;
     }
-    const names = selector.split(",").map((s) => s.slice('[data-slot="'.length, -2));
+    const isClass = selector.startsWith(".");
+    const names = isClass ? [selector.slice(1)] : selector.split(",").map((s) => s.slice('[data-slot="'.length, -2));
     const found = [];
     const visit = (node) => {
       for (const child of node.children) {
-        if (child.dataset?.slot !== undefined && names.includes(child.dataset.slot)) found.push(child);
+        const hit = isClass
+          ? child.classes?.has(names[0])
+          : child.dataset?.slot !== undefined && names.includes(child.dataset.slot);
+        if (hit) found.push(child);
         visit(child);
       }
     };

@@ -177,11 +177,11 @@ function renderParsed(body, hl7) {
       name: segment.name,
       ...(description && { description }),
     });
-    const head = block.querySelector('[data-slot="head"]');
+    const head = block.querySelector(".sgh");
     head.dataset.segment = segment.name;
     head.setAttribute("aria-expanded", String(!isCollapsed));
     if (isCollapsed) block.classList.add("collapsed");
-    if (!description) block.querySelector('[data-slot="description"]').remove();
+    if (!description) block.querySelector(".sg-desc").remove();
     for (const field of segment.fields) {
       const row = el("div", flagged.has(field.id) ? "fl hl" : "fl");
       row.appendChild(el("span", "", field.id));
@@ -211,7 +211,7 @@ function init() {
       const isCollapsed = block.classList.toggle("collapsed");
       if (isCollapsed) collapsed.add(head.dataset.segment);
       else collapsed.delete(head.dataset.segment);
-      head.querySelector('[data-slot="arrow"]').textContent = isCollapsed ? "▸" : "▾";
+      head.querySelector(".sg-arrow").textContent = isCollapsed ? "▸" : "▾";
       head.setAttribute("aria-expanded", String(!isCollapsed));
     },
     async copy() {

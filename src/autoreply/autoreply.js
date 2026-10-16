@@ -481,17 +481,17 @@ function renderList() {
       delay: describeDelay(rule),
       remove: armed ? "Sure?" : "✕",
     });
-    const part = (name) => row.querySelector(`[data-slot="${name}"]`);
+    const part = (cls) => row.querySelector(`.${cls}`);
     row.dataset.id = rule.id;
     row.classList.toggle("on", rule.id === selectedId);
     row.classList.toggle("off", !rule.enabled);
 
-    const box = part("enabled");
+    const box = part("ar-check");
     box.checked = rule.enabled;
     box.disabled = !editable();
     box.setAttribute("aria-label", `Enable rule ${rule.name}`);
 
-    const bad = part("problem");
+    const bad = part("ar-bad");
     if (problems.has(rule.id)) bad.title = problems.get(rule.id)[0].message;
     else bad.remove();
 
@@ -501,9 +501,9 @@ function renderList() {
       b.disabled = disabled || !editable();
       b.setAttribute("aria-label", `${title}: ${rule.name}`);
     };
-    tool("up", "Move up (higher priority)", index === 0);
-    tool("down", "Move down", index === rules.length - 1);
-    tool("remove", armed ? "Click again to delete" : "Delete rule", false);
+    tool("ar-up", "Move up (higher priority)", index === 0);
+    tool("ar-down", "Move down", index === rules.length - 1);
+    tool("ar-remove", armed ? "Click again to delete" : "Delete rule", false);
     list.appendChild(row);
   });
 }

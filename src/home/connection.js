@@ -187,7 +187,7 @@ function renderRecent() {
       verb: client ? "Connect " : "Listen ",
       endpoint: endpointText(entry),
     });
-    card.querySelector('[data-slot="kind"]').classList.toggle("mute", !client);
+    card.querySelector(".badge").classList.toggle("mute", !client);
     Object.assign(card.dataset, entryData(entry));
     list.appendChild(card);
   }

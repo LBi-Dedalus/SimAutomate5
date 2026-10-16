@@ -244,14 +244,17 @@ function buildBubbleNode(record, info) {
     time: formatTime(record.timestamp),
     ...(ack && { ack: `${ack.ok ? "✓" : "✕"} ${ack.code}` }),
   });
-  const part = (name) => node.querySelector(`[data-slot="${name}"]`);
+  const part = (cls) => node.querySelector(`.${cls}`);
   node.classList.add(outgoing ? "out" : "in", record.msg_type);
-  part("title").classList.toggle("in", record.msg_type === "received");
-  const ackNode = part("ack");
-  if (ack) ackNode.className = ack.ok ? "ack ok" : "ack error";
-  else ackNode.remove();
+  part("msg-title").classList.toggle("in", record.msg_type === "received");
+  const ackNode = part("msg-ack");
+  if (ack) {
+    ackNode.classList.add("ack");
+    ackNode.classList.toggle("ok", ack.ok);
+    ackNode.classList.toggle("error", !ack.ok);
+  } else ackNode.remove();
 
-  const bubble = part("content");
+  const bubble = part("bub");
   // ASTM frames stay on one line (as before); other content breaks after <CR>.
   renderTokens(bubble, record.content, {
     breakAfterCr: !record.content.startsWith("<STX>"),

@@ -731,17 +731,19 @@ function renderList() {
     const shown = active ? draft : row;
     const name = shown.name.trim() || "Untitled";
     const item = cloneTemplate(TEMPLATE_CARD, { name });
-    const part = (slot) => item.querySelector(`[data-slot="${slot}"]`);
+    const part = (cls) => item.querySelector(`.${cls}`);
     item.classList.toggle("on", Boolean(active));
-    const nameText = part("name");
+    const nameText = part("nm-t");
     nameText.title = name;
     const kind = templateKind(shown.payload);
-    const kindTag = part("kind");
-    kindTag.className = kind.cls;
+    const kindTag = part("t-kind");
+    const kindClasses = kind.cls.split(" ");
+    kindTag.classList.add("badge");
+    for (const variant of ["in", "mute"]) kindTag.classList.toggle(variant, kindClasses.includes(variant));
     kindTag.textContent = kind.label;
-    if (!(active && isDirty())) part("dirty").remove();
+    if (!(active && isDirty())) part("t-dirty").remove();
     item.dataset.id = row.id;
-    const del = part("delete");
+    const del = part("k-x");
     if (active) {
       del.disabled = !editingAllowed() || saving;
       deleteButton = del;
@@ -834,7 +836,7 @@ function renderVars() {
     }
     const row = cloneTemplate(VARIABLE_VALUE_ROW, { name });
     const variable = draft.variables.find((v) => v.name === name);
-    const input = row.querySelector('[data-slot="input"]');
+    const input = row.querySelector(".var-input");
     input.value = variable ? variable.default : "";
     input.setAttribute("aria-label", `Value of ${name}`);
     input.readOnly = saving;

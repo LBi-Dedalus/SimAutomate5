@@ -1,19 +1,19 @@
 <!-- One rule of the Auto reply list. Text slots: name, trigger, condition, action, delay, remove.
-     Handles: enabled, problem (removed when the rule is valid), up, down, remove.
+     Handles (classes): ar-check, ar-bad (removed when the rule is valid), ar-up, ar-down, ar-remove.
      The row carries data-id (set by the code); its handlers are window.actions.ar.*. -->
 <div class="ar-row ar-item k-hover" role="listitem" tabindex="0" data-action="click:ar.select keydown:ar.rowKey">
-  <span><input type="checkbox" data-slot="enabled" data-action="click: change:ar.toggle" /></span>
+  <span><input type="checkbox" class="ar-check" data-action="click: change:ar.toggle" /></span>
   <span>
     <b data-slot="name"></b>
     <span class="ar-sub" data-slot="trigger"></span>
-    <span class="ar-bad" data-slot="problem">!</span>
+    <span class="ar-bad">!</span>
   </span>
   <span data-slot="condition"></span>
   <span data-slot="action"></span>
   <span data-slot="delay"></span>
   <span class="k-tool">
-    <button type="button" class="small ghost" data-slot="up" data-action="click:ar.up">↑</button>
-    <button type="button" class="small ghost" data-slot="down" data-action="click:ar.down">↓</button>
-    <button type="button" class="small ghost" data-variant="danger" data-slot="remove" data-action="click:ar.remove">✕</button>
+    <button type="button" class="small ghost ar-up" data-action="click:ar.up">↑</button>
+    <button type="button" class="small ghost ar-down" data-action="click:ar.down">↓</button>
+    <button type="button" class="small ghost ar-remove" data-variant="danger" data-slot="remove" data-action="click:ar.remove">✕</button>
   </span>
 </div>

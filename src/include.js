@@ -9,6 +9,8 @@
 //
 //   cloneTemplate("home/recent-card.html", { endpoint: "10.0.0.1:6000" });
 //       a fresh root element each call, with the text of [data-slot="endpoint"] set.
+//       data-slot only marks the nodes whose text a value replaces; nodes the code needs to reach
+//       otherwise (to toggle a class, remove them, ...) are found with a class.
 //
 // A template file contains exactly one root element (checked once, when it is preloaded; scripts
 // injected by dev servers are ignored), and the whitespace between its tags is dropped (put text

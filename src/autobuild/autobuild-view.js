@@ -78,20 +78,20 @@ export function initAutobuildView(deps) {
 
   function cardFor(entry) {
     const li = cloneTemplate(CARD, { kind: entry.kind, time: formatShortTime(entry.lastUsed, now()) });
-    const part = (name) => li.querySelector(`[data-slot="${name}"]`);
+    const part = (cls) => li.querySelector(`.${cls}`);
     const loaded = isLoaded(entry);
     li.classList.toggle("on", loaded);
     li.dataset.id = entry.id;
 
-    const load = part("load");
+    const load = part("ab-load");
     load.setAttribute("aria-pressed", loaded ? "true" : "false");
-    if (!entry.noEtb) part("noetb").remove();
+    if (!entry.noEtb) part("ab-noetb").remove();
     for (const line of previewInput(entry.input)) load.appendChild(cloneTemplate(PREVIEW_LINE, { line }));
 
-    const use = part("use");
+    const use = part("ab-use");
     use.setAttribute("aria-label", `Use this ${entry.kind} message in the active session`);
 
-    const del = part("delete");
+    const del = part("ab-del");
     del.setAttribute("aria-label", `Delete this ${entry.kind} autobuild from the recent list`);
     loadButtons.push(load);
     return li;
