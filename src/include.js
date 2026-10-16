@@ -10,8 +10,9 @@
 //   cloneTemplate("home/recent-card.html", { endpoint: "10.0.0.1:6000" });
 //       a fresh root element each call, with the text of [data-slot="endpoint"] set.
 //
-// A template file contains exactly one root element, and the whitespace between its tags is
-// dropped (put text in slots). Values always go through textContent, never through innerHTML,
+// A template file contains exactly one root element (checked once, when it is preloaded; scripts
+// injected by dev servers are ignored), and the whitespace between its tags is dropped (put text
+// in slots). The parsed root is cached and cloned on every call. Values always go through textContent, never through innerHTML,
 // so protocol text cannot inject markup.
 //
 // Startup (index.html loads this file, which runs once the page is parsed): the includes are
@@ -23,7 +24,7 @@
 import { logError } from "./log.js";
 
 const sources = new Map(); // url -> Promise<string>
-const templates = new Map(); // url -> html, once preloaded
+const templates = new Map(); // url -> validated root element, once preloaded
 
 function fetchText(url) {
   if (!sources.has(url)) {
@@ -65,11 +66,23 @@ async function loadIncludes(root = document) {
   );
 }
 
-/** Fetches template files ahead of time so cloneTemplate() can be called synchronously. */
+/** Parses a template file once and returns its single root element, or throws if it has none or several. */
+function parseTemplate(url, html) {
+  const content = parse(html.replace(/>\s+</g, "><").trim());
+  // Dev servers may inject scripts (e.g. hot reload) into served HTML; they are not part of the template.
+  content.querySelectorAll("script").forEach((script) => script.remove());
+  if (content.children.length !== 1) {
+    const found = [...content.children].map((node) => node.localName ?? node.tag).join(", ") || "none";
+    throw new Error(`Template ${url} must contain exactly one root element (found: ${found})`);
+  }
+  return content.children[0];
+}
+
+/** Fetches, parses and validates template files ahead of time so cloneTemplate() can be called synchronously. */
 async function preloadTemplates(urls) {
   await Promise.all(
     urls.map(async (url) => {
-      if (!templates.has(url)) templates.set(url, (await fetchText(url)).replace(/>\s+</g, "><").trim());
+      if (!templates.has(url)) templates.set(url, parseTemplate(url, await fetchText(url)));
     }),
   );
 }
@@ -96,16 +109,9 @@ function fill(root, values) {
  * text of each [data-slot] named in values set.
  */
 export function cloneTemplate(url, values = {}) {
-  const html = templates.get(url);
-  if (html === undefined) throw new Error(`Template not preloaded: ${url}`);
-  const content = parse(html);
-  // Dev servers may inject scripts (e.g. hot reload) into served HTML; they are not part of the template.
-  content.querySelectorAll("script").forEach((script) => script.remove());
-  if (content.children.length !== 1) {
-    const found = [...content.children].map((node) => node.localName ?? node.tag).join(", ") || "none";
-    throw new Error(`Template ${url} must contain exactly one root element (found: ${found})`);
-  }
-  const root = content.children[0];
+  const template = templates.get(url);
+  if (template === undefined) throw new Error(`Template not preloaded: ${url}`);
+  const root = template.cloneNode(true);
   fill(root, values);
   return root;
 }

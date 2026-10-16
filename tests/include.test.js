@@ -30,6 +30,12 @@ class El {
     this.removed = true;
     if (this.parent) this.parent.children = this.parent.children.filter((child) => child !== this);
   }
+  cloneNode(deep) {
+    const copy = new El(this.tag, this.attrs, deep ? this.children.map((child) => child.cloneNode(true)) : []);
+    copy.dataset = { ...this.dataset };
+    copy.textContent = this.textContent;
+    return copy;
+  }
   *descendants() {
     for (const child of this.children) {
       child.parent = this;
@@ -184,11 +190,35 @@ test("cloneTemplate refuses a template that was not preloaded", async () => {
   assert.throws(() => cloneTemplate("nope.html"), /not preloaded/);
 });
 
-test("cloneTemplate gives a fresh element each time and rejects several roots", async () => {
-  PAGES["two.html"] = () => [new El("i"), new El("b")];
-  const { cloneTemplate } = await withTemplates("row.html", "two.html");
-  assert.notEqual(cloneTemplate("row.html"), cloneTemplate("row.html"));
-  assert.throws(() => cloneTemplate("two.html"), /exactly one root/);
+test("cloneTemplate gives an independent copy each time", async () => {
+  PAGES["pair.html"] = () => {
+    const root = new El("div");
+    const label = new El("b");
+    label.dataset.slot = "label";
+    root.children = [label];
+    return [root];
+  };
+  const { cloneTemplate } = await withTemplates("pair.html");
+  const first = cloneTemplate("pair.html", { label: "one" });
+  const second = cloneTemplate("pair.html");
+  assert.notEqual(first, second);
+  assert.equal(first.children[0].textContent, "one");
+  assert.equal(second.children[0].textContent, "", "filling a clone does not touch the cached template");
+});
+
+test("a template with several roots fails when it is preloaded, not when it is cloned", async () => {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    PAGES["two.html"] = () => [new El("i"), new El("b")];
+    PAGES["preload.html"] = () => [new El("link", { rel: "x-template", href: "two.html" })];
+    const section = host("preload.html");
+    const { cloneTemplate } = await boot({ hosts: [section] });
+    assert.equal("data-include-error" in section.attrs, true);
+    assert.throws(() => cloneTemplate("two.html"), /not preloaded/);
+  } finally {
+    console.error = original;
+  }
 });
 
 test("cloneTemplate ignores scripts injected next to or inside the root", async () => {

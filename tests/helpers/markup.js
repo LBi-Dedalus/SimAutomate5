@@ -68,6 +68,12 @@ export async function installTemplates(urls) {
   proto.querySelector ??= function (selector) {
     return this.querySelectorAll(selector)[0] ?? null;
   };
+  proto.cloneNode ??= function (deep) {
+    const copy = create(this.tag);
+    Object.assign(copy, this, { children: deep ? this.children.map((child) => child.cloneNode(true)) : [] });
+    copy.dataset = { ...this.dataset };
+    return copy;
+  };
   document.createElement = (tag) =>
     tag === "template"
       ? {
