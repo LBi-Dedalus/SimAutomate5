@@ -7,8 +7,6 @@ import {
   moveRule,
   newRule,
   previewTemplate,
-  readLegacySettings,
-  removeLegacySettings,
   ruleFromPersisted,
   ruleToPersisted,
   templateProblems,
@@ -125,30 +123,3 @@ test("describe helpers", () => {
   assert.equal(describeAction(rule({ action: "hl7_ack", ackType: "ACK", ackCode: "AE" }), TPL), "HL7 ACK AE");
 });
 
-// ── legacy ──
-
-const storage = (initial) => {
-  const data = new Map(initial === undefined ? [] : [["simautomate:config", initial]]);
-  return { getItem: (k) => data.get(k) ?? null, setItem: (k, v) => data.set(k, v), raw: () => data.get("simautomate:config") };
-};
-
-test("legacy settings become explicit rules and never enable replies", () => {
-  const s = storage(JSON.stringify({ "autoresponse-enabled": true, astm_ack: "<ACK>", hl7_type: "ACK^O21", hl7_code: "AE", other: "keep" }));
-  const legacy = readLegacySettings(s);
-  assert.equal(legacy.wasEnabled, true);
-  assert.deepEqual(legacy.rules.map((r) => [r.trigger, r.action]), [["astm_enq", "literal"], ["astm_frame", "literal"], ["hl7", "hl7_ack"]]);
-  assert.equal(legacy.rules[0].literal, "<ACK>");
-  assert.equal(legacy.rules[2].ackType, "ACK^O21");
-  assert.equal(legacy.rules[2].ackCode, "AE");
-  for (const r of legacy.rules) assert.deepEqual(validateRule(r, TPL), []);
-  assert.equal(s.raw().includes("astm_ack"), true, "reading removes nothing");
-  removeLegacySettings(s);
-  assert.deepEqual(JSON.parse(s.raw()), { other: "keep" });
-});
-
-test("no legacy keys, no storage entry, and corrupt data are distinguished", () => {
-  assert.equal(readLegacySettings(storage()), null);
-  assert.equal(readLegacySettings(storage(JSON.stringify({ other: 1 }))), null);
-  assert.match(readLegacySettings(storage("{broken")).error, /corrupted/);
-  assert.match(readLegacySettings(storage("[1]")).error, /corrupted/);
-});

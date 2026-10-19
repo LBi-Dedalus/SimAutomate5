@@ -1,8 +1,10 @@
 // Auto reply view: ordered, global rules (first enabled match wins) with a docked rule editor.
 // Everything is configured in the rules; there is no default acknowledgement.
 //
-// Persistence goes through the backend config file (load_auto_reply / save_auto_reply /
-// set_auto_reply_enabled). The master switch persists ONLY the enabled flag, never the draft.
+// Persistence goes through the backend config file (load_config / save_auto_reply /
+// set_auto_reply_enabled); the backend is the single source of truth and every command returns
+// the effective config. The master switch persists ONLY the enabled flag, never the draft.
+// A template save also returns the effective auto reply: it arrives through autoreply-store.js.
 // Template choices come from the saved template library (template-store.js), never from drafts.
 import {
   describeAction,
@@ -12,8 +14,6 @@ import {
   moveRule,
   newRule,
   previewTemplate,
-  readLegacySettings,
-  removeLegacySettings,
   ruleFromPersisted,
   ruleToPersisted,
   snapshotRules,
@@ -22,10 +22,11 @@ import {
   variableSources,
 } from "./autoreply-core.js";
 import { getSavedTemplates, subscribeSavedTemplates } from "../templates/template-store.js";
+import { subscribeAutoReply } from "./autoreply-store.js";
 import { setLeaveGuard } from "../nav.js";
 import { el, renderTokens } from "../render.js";
 import { cloneTemplate } from "../include.js";
-import { logError, logInfo } from "../log.js";
+import { logError } from "../log.js";
 
 const RULE_ROW = "autoreply/rule-row.html";
 
@@ -33,9 +34,8 @@ const { invoke } = window.__TAURI__.core;
 
 /** Draft rules (editing model, in priority order). */
 let rules = [];
-/** Snapshot of the persisted rules; the draft is dirty when it differs (or when imported). */
+/** Snapshot of the persisted rules; the draft is dirty when it differs. */
 let baseline = snapshotRules([]);
-let imported = false;
 /** Persisted master switch (what the backend actually applies). */
 let enabled = false;
 let loaded = false;
@@ -48,6 +48,25 @@ let selectedId = null;
 let deleteArmedId = null;
 let deleteTimer = null;
 let templates = getSavedTemplates();
+/**
+ * Revision of the configuration last applied here. Backend revisions grow with every save, in
+ * lock order, but IPC responses may be delivered in any order: anything not newer is ignored.
+ */
+let confirmedRevision = -1;
+/** Highest-revision confirmation published while an operation was running. */
+let pendingConfirmed = null;
+
+/**
+ * Ends an operation: the operation's own result and the publications buffered meanwhile are all
+ * reconciled; the revision guard keeps only what is newest, whatever their arrival order.
+ */
+function settleConfirmed(result) {
+  const buffered = pendingConfirmed;
+  pendingConfirmed = null;
+  for (const config of [result, buffered]) {
+    if (config) reconcileConfirmed(config);
+  }
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -75,13 +94,46 @@ async function init() {
     renderAll();
   });
 
+  subscribeAutoReply(applyConfirmed);
+
   await loadAll();
+}
+
+/**
+ * The backend confirmed a new effective auto reply (e.g. returned by a template save): the
+ * switch and the saved-rules baseline follow it. An unsaved draft is never replaced.
+ */
+function applyConfirmed(config) {
+  if (loading || saving || togglingMaster) {
+    // Not dropped: the newest one is reconciled when the running operation finishes.
+    if (!pendingConfirmed || config.revision > pendingConfirmed.revision) pendingConfirmed = config;
+    return;
+  }
+  reconcileConfirmed(config);
+}
+
+/**
+ * Reconciles a backend-confirmed { revision, enabled, rules }: replaces visible rules only if the
+ * draft is clean. A config that is not newer than the last applied one is ignored.
+ */
+function reconcileConfirmed(config) {
+  if (!loaded || config.revision <= confirmedRevision) return;
+  confirmedRevision = config.revision;
+  const wasDirty = isDirty();
+  enabled = Boolean(config.enabled);
+  const persisted = config.rules.map(ruleFromPersisted);
+  baseline = snapshotRules(persisted);
+  if (!wasDirty) {
+    rules = persisted;
+    if (selectedId && !selectedRule()) selectedId = null;
+  }
+  renderAll();
 }
 
 // ── State helpers ───────────────────────────────────────────
 
 function isDirty() {
-  return loaded && (imported || snapshotRules(rules) !== baseline);
+  return loaded && snapshotRules(rules) !== baseline;
 }
 
 function selectedRule() {
@@ -115,18 +167,20 @@ async function doLoad() {
   loading = true;
   renderAll();
   let ok = false;
-  let banner = null;
   try {
-    const result = await invoke("load_auto_reply");
-    enabled = Boolean(result.config.enabled);
+    const { revision, auto_reply: persistedConfig } = await invoke("load_config");
     ok = true;
-    if (isDirty() && loaded) {
-      // A reload never replaces edits in progress.
+    if (loaded && revision < confirmedRevision) {
+      // Stale response (a newer configuration was confirmed meanwhile): nothing to apply.
     } else {
-      rules = result.config.rules.map(ruleFromPersisted);
-      baseline = snapshotRules(rules);
-      imported = false;
-      if (!result.present) banner = importLegacy();
+      confirmedRevision = Math.max(confirmedRevision, revision);
+      enabled = Boolean(persistedConfig.enabled);
+      if (isDirty() && loaded) {
+        // A reload never replaces edits in progress.
+      } else {
+        rules = persistedConfig.rules.map(ruleFromPersisted);
+        baseline = snapshotRules(rules);
+      }
     }
     loadError = null;
     loaded = true;
@@ -136,48 +190,25 @@ async function doLoad() {
     enabled = false;
     rules = [];
     baseline = snapshotRules([]);
-    imported = false;
     selectedId = null;
     logError(`Failed to load auto reply rules: ${loadError}`, "autoreply.js:load");
   } finally {
     loading = false;
   }
+  if (ok) settleConfirmed(null);
+  else pendingConfirmed = null;
   if (!ok) {
     showBanner(
       `Could not load the auto reply rules: ${loadError}. Automatic replies are off and saving is disabled so the file is not overwritten.`,
       "error",
       { retry: true },
     );
-  } else if (banner) {
-    showBanner(banner.text, banner.kind);
   } else {
     hideBanner();
   }
   if (selectedId && !selectedRule()) selectedId = null;
   renderAll();
   return ok;
-}
-
-/** Previous (localStorage) settings become an explicit, unsaved draft. Returns a banner or null. */
-function importLegacy() {
-  const legacy = readLegacySettings(window.localStorage ?? globalThis.localStorage);
-  if (legacy === null) return null;
-  if (legacy.error) {
-    logError(legacy.error, "autoreply.js:legacy");
-    return {
-      kind: "error",
-      text: `${legacy.error} They were left untouched and nothing was imported.`,
-    };
-  }
-  if (legacy.rules.length === 0) return null;
-  rules = legacy.rules;
-  imported = true;
-  selectedId = rules[0].id;
-  logInfo(`Imported previous auto reply settings as ${rules.length} draft rule(s)`, "autoreply.js:legacy");
-  return {
-    kind: "warn",
-    text: `Imported previous settings — review and Save. Automatic replies stay off until you save the rules and turn Enabled on.`,
-  };
 }
 
 // ── Editing ─────────────────────────────────────────────────
@@ -263,7 +294,6 @@ function discard() {
 }
 
 async function reloadDiscarding() {
-  imported = false;
   baseline = "";
   loaded = false; // forces doLoad to replace the draft with the persisted rules
   await loadAll();
@@ -303,32 +333,23 @@ async function save() {
   // The draft is locked while saving, so what is marked saved is exactly what was written.
   const snapshot = snapshotRules(rules);
   const config = { enabled, rules: rules.map(ruleToPersisted) };
-  const wasImported = imported;
   saving = true;
   renderAll();
+  let result;
   try {
-    await invoke("save_auto_reply", { config });
+    result = await invoke("save_auto_reply", { config });
   } catch (err) {
     saving = false;
+    settleConfirmed(null);
     logError(`Failed to save auto reply rules: ${String(err)}`, "autoreply.js:save");
     showBanner(`Could not save: ${String(err)}. Your edits are kept and the previous rules stay active.`, "error");
     renderAll();
     return false;
   }
   saving = false;
-  baseline = snapshot;
-  imported = false;
-  let note = "";
-  if (wasImported) {
-    try {
-      removeLegacySettings(window.localStorage ?? globalThis.localStorage);
-    } catch (err) {
-      logError(`Could not remove the previous settings: ${String(err)}`, "autoreply.js:legacy");
-      note = ` The previous settings could not be removed (${String(err)}).`;
-    }
-  }
-  if (note) showBanner(note.trim(), "warn");
-  else hideBanner();
+  baseline = snapshot; // the draft was locked: it is exactly what was written, so it is clean
+  settleConfirmed({ revision: result.revision, ...result.auto_reply });
+  hideBanner();
   renderAll();
   return true;
 }
@@ -345,16 +366,17 @@ async function toggleMaster() {
   togglingMaster = true;
   renderToolbar();
   try {
-    await invoke("set_auto_reply_enabled", { enabled: want });
-    enabled = want;
-    hideBannerIfOk();
+    const result = await invoke("set_auto_reply_enabled", { enabled: want });
+    togglingMaster = false;
+    settleConfirmed({ revision: result.revision, ...result.auto_reply });
+    hideBanner();
   } catch (err) {
+    togglingMaster = false;
     logError(`Failed to change the auto reply switch: ${String(err)}`, "autoreply.js:toggle");
     showBanner(`Could not ${want ? "enable" : "disable"} automatic replies: ${String(err)}`, "error");
-  } finally {
-    togglingMaster = false;
+    settleConfirmed(null);
   }
-  renderToolbar();
+  renderAll();
 }
 
 // ── Dirty guard ─────────────────────────────────────────────
@@ -394,7 +416,6 @@ function guardDiscard() {
   if (saving || togglingMaster || !pendingAction) return;
   const action = pendingAction;
   closeGuard();
-  imported = false;
   rules = [];
   baseline = snapshotRules([]);
   selectedId = null;
@@ -416,11 +437,6 @@ function showBanner(text, kind = "ok", { retry = false } = {}) {
 
 function hideBanner() {
   $("ar-banner").classList.add("hidden");
-}
-
-/** A successful switch change clears an older error but keeps the import notice. */
-function hideBannerIfOk() {
-  if (!imported) hideBanner();
 }
 
 // ── Rendering ───────────────────────────────────────────────

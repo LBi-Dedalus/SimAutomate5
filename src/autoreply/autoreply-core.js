@@ -25,8 +25,6 @@ export const ACTIONS = [
   { value: "none", label: "No auto reply" },
 ];
 
-export const LEGACY_PREFS_KEY = "simautomate:config";
-const LEGACY_FIELDS = ["autoresponse-enabled", "astm_ack", "hl7_type", "hl7_code"];
 const REQUEST_PLACEHOLDER = "‹request MSH-10›";
 
 export function newRuleId(date = new Date(), random = Math.random()) {
@@ -294,67 +292,4 @@ export function describeAction(rule, templates) {
 export function describeDelay(rule) {
   if (rule.action === "none") return "—";
   return `${rule.delay.trim() || "0"} ms`;
-}
-
-// ── Legacy preferences (old Auto reply form kept in localStorage) ─────────
-
-/**
- * Reads the previous settings. Returns null when none exist, { error } when they cannot be
- * read (never silently ignored), otherwise { rules } reproducing the old behaviour explicitly:
- * the ASTM text answered ENQ and frames, the HL7 type/code answered every HL7 message.
- * The master switch is deliberately NOT imported: automatic replies stay off until saved.
- */
-export function readLegacySettings(storage) {
-  let raw;
-  try {
-    raw = storage.getItem(LEGACY_PREFS_KEY);
-  } catch (err) {
-    return { error: `The previous settings cannot be read: ${String(err)}` };
-  }
-  if (!raw) return null;
-  let data;
-  try {
-    data = JSON.parse(raw);
-  } catch (err) {
-    return { error: `The previous settings are corrupted: ${String(err)}` };
-  }
-  if (data === null || typeof data !== "object" || Array.isArray(data)) {
-    return { error: "The previous settings are corrupted: unexpected content." };
-  }
-  if (!LEGACY_FIELDS.some((key) => key in data)) return null;
-
-  const text = (key) => (typeof data[key] === "string" ? data[key].trim() : "");
-  const rules = [];
-  const astm = text("astm_ack");
-  if (astm) {
-    for (const [trigger, name] of [
-      ["astm_enq", "Imported: reply to ASTM ENQ"],
-      ["astm_frame", "Imported: reply to ASTM frames"],
-    ]) {
-      rules.push({ ...newRule(), name, trigger, action: "literal", literal: astm });
-    }
-  }
-  const type = text("hl7_type");
-  const code = text("hl7_code");
-  if (type && code) {
-    rules.push({
-      ...newRule(),
-      name: "Imported: acknowledge HL7 messages",
-      trigger: "hl7",
-      messageType: "*",
-      action: "hl7_ack",
-      ackType: type,
-      ackCode: code,
-    });
-  }
-  return { rules, wasEnabled: data["autoresponse-enabled"] === true };
-}
-
-/** Removes ONLY the four old keys, leaving every other stored preference untouched. */
-export function removeLegacySettings(storage) {
-  const raw = storage.getItem(LEGACY_PREFS_KEY);
-  if (!raw) return;
-  const data = JSON.parse(raw);
-  for (const key of LEGACY_FIELDS) delete data[key];
-  storage.setItem(LEGACY_PREFS_KEY, JSON.stringify(data));
 }

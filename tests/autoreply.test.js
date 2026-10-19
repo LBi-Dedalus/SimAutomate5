@@ -107,6 +107,7 @@ await installTemplates(["autoreply/rule-row.html"]);
 await bindStaticActions("autoreply/autoreply.html", getNode);
 const { showView, currentView } = await import("../src/nav.js");
 const { publishSavedTemplates, clearSavedTemplates } = await import("../src/templates/template-store.js");
+const { publishAutoReply } = await import("../src/autoreply/autoreply-store.js");
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const deferred = () => {
@@ -121,24 +122,30 @@ const TEMPLATES = [
 ];
 
 /** Fake backend: the persisted auto reply configuration. */
-let backend;
-function resetBackend(config = { enabled: false, rules: [] }, present = true) {
-  backend = { config: structuredClone(config), present, failSave: null, saveGate: null };
+let backend = null;
+function resetBackend(config = { enabled: false, rules: [] }) {
+  // The revision keeps growing across resets, like the backend counter does while the app runs.
+  backend = { config: structuredClone(config), failSave: null, saveGate: null, revision: backend?.revision ?? 0 };
 }
+/** Publishes what a templates save would return: a newer revision of the effective config. */
+const publish = (config) => publishAutoReply({ revision: ++backend.revision, ...config });
+/** What every command returns: the effective configuration. */
+const effective = () => ({ revision: backend.revision, templates: [], auto_reply: structuredClone(backend.config) });
 ipc.handler = async (cmd, args) => {
-  if (cmd === "load_auto_reply") return { config: structuredClone(backend.config), present: backend.present };
+  if (cmd === "load_config") return effective();
   if (cmd === "save_auto_reply") {
     if (backend.saveGate) await backend.saveGate.promise;
     if (backend.failSave) throw backend.failSave;
     backend.config = structuredClone(args.config);
-    backend.present = true;
-    return undefined;
+    backend.revision += 1;
+    return effective();
   }
   if (cmd === "set_auto_reply_enabled") {
     if (backend.toggleGate) await backend.toggleGate.promise;
     if (backend.failToggle) throw backend.failToggle;
     backend.config.enabled = args.enabled;
-    return undefined;
+    backend.revision += 1;
+    return effective();
   }
   return undefined;
 };
@@ -151,8 +158,8 @@ const errorsText = () => getNode("ar-errors").text;
 
 let started = false;
 /** Loads from the current fake backend with a clean UI state. */
-async function fresh(config, present = true, templates = TEMPLATES) {
-  resetBackend(config, present);
+async function fresh(config, templates = TEMPLATES) {
+  resetBackend(config);
   ipc.calls = [];
   clearSavedTemplates();
   if (templates) publishSavedTemplates(templates);
@@ -387,7 +394,7 @@ test("template dropdown shows only SAVED templates and follows library events", 
 
 test("a template that cannot be used as an automatic response is rejected before save", async () => {
   const broken = { id: "bad", name: "Bad", description: "", payload: "A {{X}}", variables: [{ name: "X", default: "" }] };
-  await fresh({ enabled: false, rules: [] }, true, [...TEMPLATES, broken]);
+  await fresh({ enabled: false, rules: [] }, [...TEMPLATES, broken]);
   addRule({ name: "Uses bad", type: "*", template: "bad" });
   assert.match(errorsText(), /Unresolved variable\(s\): X/);
   getNode("ar-save").fire("click");
@@ -503,49 +510,6 @@ test("a failed pending switch change restores the confirmed state and allows a s
   await tick();
   assert.equal(calls("save_auto_reply").length, 1);
   assert.equal(calls("save_auto_reply")[0].args.config.enabled, false);
-});
-
-test("legacy settings are imported as an unsaved, disabled draft and removed only after a successful save", async () => {
-  store.set("simautomate:config", JSON.stringify({ "autoresponse-enabled": true, astm_ack: "<ACK>", hl7_type: "ACK^O21", hl7_code: "AA", theme: "x" }));
-  await fresh({ enabled: false, rules: [] }, false);
-  assert.equal(rows().length, 3);
-  assert.match(bannerText(), /Imported previous settings — review and Save/);
-  assert.equal(getNode("ar-banner").classes.has("warn"), true);
-  assert.equal(getNode("ar-enabled").checked, false);
-  assert.equal(getNode("autoreply-badge").hidden, true);
-  assert.equal(getNode("ar-dirty").hidden, false);
-  assert.equal(calls("save_auto_reply").length, 0, "importing writes nothing");
-  assert.ok(store.get("simautomate:config").includes("astm_ack"), "legacy keys kept until saved");
-
-  backend.failSave = "denied";
-  getNode("ar-save").fire("click");
-  await tick();
-  assert.ok(store.get("simautomate:config").includes("astm_ack"), "failed save keeps legacy keys");
-  assert.equal(getNode("ar-dirty").hidden, false);
-
-  backend.failSave = null;
-  getNode("ar-save").fire("click");
-  await tick();
-  assert.deepEqual(JSON.parse(store.get("simautomate:config")), { theme: "x" });
-  const saved = calls("save_auto_reply").at(-1).args.config;
-  assert.equal(saved.enabled, false);
-  assert.equal(saved.rules.length, 3);
-  assert.deepEqual(saved.rules[0].action, { type: "literal", text: "<ACK>" });
-  assert.deepEqual(saved.rules[2].action, { type: "hl7_ack", message_type: "ACK^O21", code: "AA" });
-  store.clear();
-});
-
-test("corrupt legacy settings are reported, left untouched and import nothing", async () => {
-  store.set("simautomate:config", "{not json");
-  await fresh({ enabled: false, rules: [] }, false);
-  assert.equal(rows().length, 0);
-  assert.match(bannerText(), /previous settings are corrupted.*left untouched/);
-  assert.equal(store.get("simautomate:config"), "{not json");
-  addRule({ name: "New", type: "*", template: "nf" });
-  getNode("ar-save").fire("click");
-  await tick();
-  assert.equal(store.get("simautomate:config"), "{not json", "never rewritten by a rules save");
-  store.clear();
 });
 
 test("leaving with unsaved rules asks Save / Discard / Cancel", async () => {
@@ -681,4 +645,130 @@ test("the status strip shows paused, unavailable and loading states", async () =
   await tick();
   assert.match(getNode("ar-state-text").textContent, /unavailable/);
   ipc.handler = backendHandler;
+});
+
+test("a templates save refreshes the confirmed switch and badge without clobbering the draft", async () => {
+  await fresh({ enabled: false, rules: [PERSISTED_RULE] });
+  assert.equal(getNode("autoreply-badge").hidden, true);
+  assert.equal(getNode("ar-enabled").checked, false);
+
+  // Clean draft: the effective config returned by the templates save is simply shown.
+  publish({ enabled: true, rules: [PERSISTED_RULE] });
+  assert.equal(getNode("autoreply-badge").hidden, false);
+  assert.equal(getNode("ar-enabled").checked, true);
+  assert.equal(getNode("ar-dirty").hidden, true);
+  assert.equal(calls("save_auto_reply").length, 0);
+  assert.equal(calls("set_auto_reply_enabled").length, 0);
+
+  // Unsaved draft: kept, and it stays the only difference from the confirmed rules.
+  addRule({ name: "Pending", type: "*", template: "nf" });
+  publish({ enabled: false, rules: [PERSISTED_RULE] });
+  assert.equal(rows().length, 2, "draft kept");
+  assert.equal(getNode("ar-dirty").hidden, false);
+  assert.equal(getNode("autoreply-badge").hidden, true);
+  assert.equal(getNode("ar-enabled").checked, false);
+  getNode("ar-save").fire("click");
+  await tick();
+  assert.equal(calls("save_auto_reply")[0].args.config.enabled, false, "a save carries the confirmed switch");
+  assert.equal(getNode("ar-dirty").hidden, true);
+});
+
+test("a publication received while the switch is pending is reconciled with the toggle result (clean view)", async () => {
+  await fresh({ enabled: false, rules: [] });
+  assert.equal(rows().length, 0);
+  backend.toggleGate = deferred();
+  getNode("ar-enabled").choose(true);
+  await tick();
+  // A templates save makes the default rules compile while the toggle is pending.
+  backend.config.rules = [structuredClone(PERSISTED_RULE)];
+  publish({ enabled: false, rules: [PERSISTED_RULE] });
+  assert.equal(rows().length, 0, "not applied mid-operation");
+  backend.toggleGate.resolve();
+  await tick();
+  await tick();
+  backend.toggleGate = null;
+  assert.equal(rows().length, 1);
+  assert.match(rowText(0), /Query/);
+  assert.equal(getNode("ar-dirty").hidden, true);
+  assert.equal(getNode("ar-enabled").checked, true);
+  assert.equal(getNode("autoreply-badge").hidden, false);
+});
+
+test("a failed switch change still applies the publication received meanwhile", async () => {
+  await fresh({ enabled: false, rules: [] });
+  backend.toggleGate = deferred();
+  backend.failToggle = "disk full";
+  getNode("ar-enabled").choose(true);
+  await tick();
+  publish({ enabled: false, rules: [PERSISTED_RULE] });
+  backend.toggleGate.resolve();
+  await tick();
+  await tick();
+  backend.toggleGate = null;
+  backend.failToggle = null;
+  assert.match(bannerText(), /Could not enable automatic replies: disk full/);
+  assert.equal(rows().length, 1);
+  assert.equal(getNode("ar-dirty").hidden, true);
+  assert.equal(getNode("ar-enabled").checked, false);
+});
+
+test("unsaved drafts are preserved when the switch result or a pending publication reconciles", async () => {
+  for (const fail of [false, true]) {
+    await fresh({ enabled: false, rules: [] });
+    addRule({ name: "Mine", type: "*", template: "nf" });
+    backend.toggleGate = deferred();
+    if (fail) backend.failToggle = "disk full";
+    getNode("ar-enabled").choose(true);
+    await tick();
+    backend.config.rules = [structuredClone(PERSISTED_RULE)];
+    publish({ enabled: false, rules: [PERSISTED_RULE] });
+    backend.toggleGate.resolve();
+    await tick();
+    await tick();
+    backend.toggleGate = null;
+    backend.failToggle = null;
+    assert.equal(rows().length, 1, `draft kept (fail=${fail})`);
+    assert.match(rowText(0), /Mine/);
+    assert.equal(getNode("ar-dirty").hidden, false);
+    // The baseline is the confirmed rules: saving writes the draft only.
+    getNode("ar-save").fire("click");
+    await tick();
+    assert.equal(calls("save_auto_reply")[0].args.config.rules.length, 1);
+    assert.equal(getNode("ar-dirty").hidden, true);
+  }
+});
+
+test("a stale templates-save response delivered after a newer switch result never reverts the switch", async () => {
+  await fresh({ enabled: false, rules: [PERSISTED_RULE] });
+  // The templates save ran first in the backend (older revision) but its response arrives last.
+  const older = ++backend.revision;
+  getNode("ar-enabled").choose(true);
+  await tick();
+  await tick();
+  assert.equal(getNode("ar-enabled").checked, true);
+  publishAutoReply({ revision: older, enabled: false, rules: [PERSISTED_RULE] });
+  assert.equal(getNode("ar-enabled").checked, true, "stale response ignored");
+  assert.equal(getNode("autoreply-badge").hidden, false);
+
+  addRule({ name: "Later", type: "*", template: "nf" });
+  getNode("ar-save").fire("click");
+  await tick();
+  assert.equal(calls("save_auto_reply")[0].args.config.enabled, true, "the rules save keeps the switch on");
+});
+
+test("a switch result older than a publication buffered meanwhile does not override it", async () => {
+  await fresh({ enabled: false, rules: [] });
+  backend.toggleGate = deferred();
+  getNode("ar-enabled").choose(true);
+  await tick();
+  // The backend ordered the toggle first, but a later templates save was delivered before it.
+  const toggleRevision = backend.revision + 1;
+  publishAutoReply({ revision: toggleRevision + 1, enabled: true, rules: [PERSISTED_RULE] });
+  backend.toggleGate.resolve();
+  await tick();
+  await tick();
+  backend.toggleGate = null;
+  assert.equal(getNode("ar-enabled").checked, true);
+  assert.equal(rows().length, 1, "the newer publication supplies the rules");
+  backend.revision = toggleRevision + 1;
 });

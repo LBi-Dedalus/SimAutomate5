@@ -5,19 +5,19 @@
 //! for a transport task to finish happens with the lock released.
 
 //!
-//! Configuration operations (templates, auto reply rules) always take the `ConfigLock` first,
-//! then (briefly) the application state, then the queues: read -> validate/compile -> atomic
+//! Configuration operations (templates, auto reply rules) always go through the `ConfigStore`
+//! (which takes its lock first), then (briefly) the application state, then the queues: read ->
+//! validate/compile -> atomic
 //! write -> apply the validated rule set to the running connections. Nothing is applied when a
 //! step fails, so a failed save keeps the previous behaviour.
 
-use std::path::Path;
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
 use crate::app_state::AppState;
 use crate::auto_reply::{AutoReplyConfig, RuleSet};
-use crate::config_store::{self, ConfigLock, LoadedAutoReply, LoadedTemplates, Template};
+use crate::config_store::{ConfigStore, RevisionedConfig, Template};
 use crate::models::{ConnectRequest, SendRequest};
 
 pub async fn connect(
@@ -75,67 +75,61 @@ async fn apply_rules(state: &Mutex<AppState>, rules: Arc<RuleSet>) {
 /// Startup: loads the persisted rules and templates before any connection exists. Invalid
 /// data leaves automatic replies disabled (the file is never touched) and is logged with
 /// metadata only; the Rules view reports the same failure when it loads.
-pub async fn init_auto_reply(lock: &ConfigLock, path: &Path, state: &Mutex<AppState>) {
-    let _guard = lock.0.lock().await;
-    match config_store::load_rule_set_from(path) {
-        Ok(rules) => apply_rules(state, rules).await,
-        Err(err) => {
-            state.lock().await.emitter.only_log(
-                crate::models::LogLevel::Err,
-                file!(),
-                line!(),
-                format!("auto reply disabled, the saved configuration is invalid: {err}"),
-            );
-        }
+pub async fn init_auto_reply(store: &ConfigStore, state: &Mutex<AppState>) {
+    if let Err(err) = store
+        .load_and_apply(|rules| apply_rules(state, rules))
+        .await
+    {
+        state.lock().await.emitter.only_log(
+            crate::models::LogLevel::Err,
+            file!(),
+            line!(),
+            format!("auto reply disabled, the saved configuration is invalid: {err}"),
+        );
     }
 }
 
-pub async fn load_templates(lock: &ConfigLock, path: &Path) -> Result<LoadedTemplates, String> {
-    let _guard = lock.0.lock().await;
-    config_store::load_templates_from(path)
-}
-
-pub async fn load_auto_reply(lock: &ConfigLock, path: &Path) -> Result<LoadedAutoReply, String> {
-    let _guard = lock.0.lock().await;
-    config_store::load_auto_reply_from(path)
+/// The effective templates and auto reply rules (defaults for missing keys), stamped with the
+/// current configuration revision (loads do not change it).
+pub async fn load_config(store: &ConfigStore) -> Result<RevisionedConfig, String> {
+    store.load().await.map(|(revision, applied)| RevisionedConfig {
+        revision,
+        config: applied.config,
+    })
 }
 
 /// Saves the templates (refused when a rule would break) and refreshes the running rules.
+/// Every successful save bumps the revision (under the lock) and returns the new one, so
+/// consumers can discard a response that is delivered after a newer one.
 pub async fn save_templates(
-    lock: &ConfigLock,
-    path: &Path,
+    store: &ConfigStore,
     state: &Mutex<AppState>,
     templates: &[Template],
-) -> Result<(), String> {
-    let _guard = lock.0.lock().await;
-    let rules = config_store::save_templates_to(path, templates)?;
-    apply_rules(state, rules).await;
-    Ok(())
+) -> Result<RevisionedConfig, String> {
+    store
+        .save_templates(templates, |rules| apply_rules(state, rules))
+        .await
 }
 
 pub async fn save_auto_reply(
-    lock: &ConfigLock,
-    path: &Path,
+    store: &ConfigStore,
     state: &Mutex<AppState>,
     config: &AutoReplyConfig,
-) -> Result<(), String> {
-    let _guard = lock.0.lock().await;
-    let rules = config_store::save_auto_reply_to(path, config)?;
-    apply_rules(state, rules).await;
-    Ok(())
+) -> Result<RevisionedConfig, String> {
+    store
+        .save_auto_reply(config, |rules| apply_rules(state, rules))
+        .await
 }
 
 /// Persists and applies the master switch only; the saved rules are not touched.
 pub async fn set_auto_reply_enabled(
-    lock: &ConfigLock,
-    path: &Path,
+    store: &ConfigStore,
     state: &Mutex<AppState>,
     enabled: bool,
-) -> Result<(), String> {
-    let _guard = lock.0.lock().await;
-    let rules = config_store::set_auto_reply_enabled_in(path, enabled)?;
-    apply_rules(state, rules).await;
-    Ok(())
+) -> Result<RevisionedConfig, String> {
+    store
+        .set_auto_reply_enabled(enabled, |rules| apply_rules(state, rules))
+        .await
 }
 
 #[cfg(test)]
@@ -618,13 +612,13 @@ mod tests {
         assert_eq!(closed.unwrap_or(0), 0);
     }
 
-    // ── Auto reply (real loopback sockets, real config files in isolated directories) ──
+    // â”€â”€ Auto reply (real loopback sockets, real config files in isolated directories) â”€â”€
 
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use crate::auto_reply::{Action, Condition, Operator, Rule, Trigger};
-    use crate::config_store::TemplateVariable;
+    use crate::config_store::{self, TemplateVariable};
 
     static DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -632,7 +626,7 @@ mod tests {
     struct TestConfig {
         dir: PathBuf,
         path: PathBuf,
-        lock: ConfigLock,
+        store: ConfigStore,
     }
 
     impl TestConfig {
@@ -643,10 +637,11 @@ mod tests {
                 DIR_COUNTER.fetch_add(1, Ordering::Relaxed)
             ));
             let _ = std::fs::remove_dir_all(&dir);
+            let path = config_store::config_path(&dir);
             Self {
-                path: config_store::config_path(&dir),
+                store: ConfigStore::new(path.clone()),
+                path,
                 dir,
-                lock: ConfigLock(Mutex::new(())),
             }
         }
     }
@@ -689,8 +684,7 @@ mod tests {
 
     async fn apply(cfg: &TestConfig, state: &Mutex<AppState>, enabled: bool, rules: Vec<Rule>) {
         save_auto_reply(
-            &cfg.lock,
-            &cfg.path,
+            &cfg.store,
             state,
             &AutoReplyConfig { enabled, rules },
         )
@@ -775,15 +769,15 @@ mod tests {
         read_until(&mut srv_peer, &[0x06]).await;
 
         // The master switch alone turns every session off, without touching the rules.
-        set_auto_reply_enabled(&cfg.lock, &cfg.path, &state, false)
+        set_auto_reply_enabled(&cfg.store, &state, false)
             .await
             .unwrap();
         old.write_all(&[0x05]).await.unwrap();
         fresh.write_all(&[0x05]).await.unwrap();
         expect_silence(&mut old).await;
         expect_silence(&mut fresh).await;
-        let loaded = load_auto_reply(&cfg.lock, &cfg.path).await.unwrap();
-        assert!(!loaded.config.enabled && loaded.config.rules.len() == 1);
+        let loaded = load_config(&cfg.store).await.unwrap().auto_reply.clone();
+        assert!(!loaded.enabled && loaded.rules.len() == 1);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -810,7 +804,9 @@ mod tests {
                 autobuild_no_etb: false,
             },
         ];
-        save_templates(&cfg.lock, &cfg.path, &state, &templates)
+        // Start without the default rules: they reference built-in templates the test replaces.
+        apply(&cfg, &state, false, vec![]).await;
+        save_templates(&cfg.store, &state, &templates)
             .await
             .unwrap();
         let mut specific = rule("a", hl7_trigger("QRY^A19"), template_action("adr"), 0);
@@ -1091,7 +1087,7 @@ mod tests {
         // A configuration change drops what was scheduled by the previous rules.
         new_peer.write_all(&[0x05]).await.unwrap();
         sleep(Duration::from_millis(100)).await;
-        set_auto_reply_enabled(&cfg.lock, &cfg.path, &state, false)
+        set_auto_reply_enabled(&cfg.store, &state, false)
             .await
             .unwrap();
         assert!(collect(&mut new_peer, 1200).await.is_empty());
@@ -1221,7 +1217,9 @@ mod tests {
             autobuild: false,
             autobuild_no_etb: false,
         }];
-        save_templates(&cfg.lock, &cfg.path, &state, &templates)
+        // Start without the default rules: they reference built-in templates the test replaces.
+        apply(&cfg, &state, false, vec![]).await;
+        save_templates(&cfg.store, &state, &templates)
             .await
             .unwrap();
         apply(
@@ -1271,7 +1269,9 @@ mod tests {
             autobuild: false,
             autobuild_no_etb: false,
         };
-        save_templates(&cfg.lock, &cfg.path, &state, &[make("<ACK>")])
+        // Start without the default rules: they reference built-in templates the test replaces.
+        apply(&cfg, &state, false, vec![]).await;
+        save_templates(&cfg.store, &state, &[make("<ACK>")])
             .await
             .unwrap();
         apply(
@@ -1286,7 +1286,7 @@ mod tests {
         assert_eq!(collect(&mut peer, 500).await, vec![0x06]);
 
         // A valid edit is live for the running session.
-        save_templates(&cfg.lock, &cfg.path, &state, &[make("<NAK>")])
+        save_templates(&cfg.store, &state, &[make("<NAK>")])
             .await
             .unwrap();
         peer.write_all(&[0x05]).await.unwrap();
@@ -1294,11 +1294,11 @@ mod tests {
 
         // Breaking or deleting the referenced template is refused; the file and the engine stay.
         let before = std::fs::read_to_string(&cfg.path).unwrap();
-        let err = save_templates(&cfg.lock, &cfg.path, &state, &[make("{{OOPS}}")])
+        let err = save_templates(&cfg.store, &state, &[make("{{OOPS}}")])
             .await
             .unwrap_err();
         assert!(err.contains("Rule r"), "{err}");
-        let err = save_templates(&cfg.lock, &cfg.path, &state, &[])
+        let err = save_templates(&cfg.store, &state, &[])
             .await
             .unwrap_err();
         assert!(err.contains("Rule r"), "{err}");
@@ -1310,8 +1310,7 @@ mod tests {
         let mut broken = rule("r", Trigger::AstmEnq, template_action("missing"), 0);
         broken.name = "Broken".into();
         assert!(save_auto_reply(
-            &cfg.lock,
-            &cfg.path,
+            &cfg.store,
             &state,
             &AutoReplyConfig {
                 enabled: true,
@@ -1328,16 +1327,18 @@ mod tests {
     async fn persisted_rules_are_loaded_at_startup_and_invalid_ones_disable_the_feature() {
         let cfg = TestConfig::new();
         // Valid file: applied before any connection exists.
-        config_store::save_auto_reply_to(
-            &cfg.path,
-            &AutoReplyConfig {
-                enabled: true,
-                rules: vec![rule("r", Trigger::AstmEnq, literal("<ACK>"), 0)],
-            },
-        )
-        .unwrap();
+        cfg.store
+            .save_auto_reply(
+                &AutoReplyConfig {
+                    enabled: true,
+                    rules: vec![rule("r", Trigger::AstmEnq, literal("<ACK>"), 0)],
+                },
+                |_| async {},
+            )
+            .await
+            .unwrap();
         let (sink, state) = setup();
-        init_auto_reply(&cfg.lock, &cfg.path, &state).await;
+        init_auto_reply(&cfg.store, &state).await;
         let mut peer = connected_client(&sink, &state, "s").await;
         peer.write_all(&[0x05]).await.unwrap();
         assert_eq!(collect(&mut peer, 500).await, vec![0x06]);
@@ -1350,14 +1351,100 @@ mod tests {
         .unwrap();
         let before = std::fs::read_to_string(&cfg.path).unwrap();
         let (sink2, state2) = setup();
-        init_auto_reply(&cfg.lock, &cfg.path, &state2).await;
+        init_auto_reply(&cfg.store, &state2).await;
         let mut peer2 = connected_client(&sink2, &state2, "s").await;
         peer2.write_all(&[0x05]).await.unwrap();
         expect_silence(&mut peer2).await;
-        assert!(load_auto_reply(&cfg.lock, &cfg.path).await.is_err());
-        assert!(set_auto_reply_enabled(&cfg.lock, &cfg.path, &state2, true)
+        assert!(load_config(&cfg.store).await.is_err());
+        assert!(set_auto_reply_enabled(&cfg.store, &state2, true)
             .await
             .is_err());
         assert_eq!(std::fs::read_to_string(&cfg.path).unwrap(), before);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn saving_unchanged_templates_keeps_default_auto_reply_running() {
+        let cfg = TestConfig::new();
+        let (sink, state) = setup();
+        init_auto_reply(&cfg.store, &state).await;
+        let mut peer = connected_client(&sink, &state, "s").await;
+        peer.write_all(&[0x05]).await.unwrap();
+        let before = collect(&mut peer, 500).await;
+        assert_eq!(before, vec![0x06], "default rules reply ACK to ENQ");
+
+        let saved = save_templates(
+            &cfg.store,
+            &state,
+            &config_store::builtin_templates(),
+        )
+        .await
+        .unwrap();
+        assert!(saved.auto_reply.enabled);
+        let loaded = load_config(&cfg.store).await.unwrap();
+        assert_eq!(saved.config, loaded.config);
+        assert_eq!(
+            saved.config,
+            cfg.store.load().await.unwrap().1.config
+        );
+        assert_eq!(saved.revision, loaded.revision);
+        peer.write_all(&[0x05]).await.unwrap();
+        assert_eq!(collect(&mut peer, 500).await, before);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn revisions_increase_with_every_save_and_loads_report_the_latest() {
+        let cfg = TestConfig::new();
+        let (_sink, state) = setup();
+        let templates = config_store::builtin_templates();
+        let first = load_config(&cfg.store).await.unwrap();
+        let again = load_config(&cfg.store).await.unwrap();
+        assert_eq!(again.revision, first.revision);
+
+        let a = save_templates(&cfg.store, &state, &templates)
+            .await
+            .unwrap();
+        let b = set_auto_reply_enabled(&cfg.store, &state, false)
+            .await
+            .unwrap();
+        let c = save_auto_reply(&cfg.store, &state, &b.auto_reply)
+            .await
+            .unwrap();
+        assert!(first.revision < a.revision && a.revision < b.revision && b.revision < c.revision);
+        let loaded = load_config(&cfg.store).await.unwrap();
+        assert_eq!(loaded.revision, c.revision);
+        assert_eq!(loaded.config, c.config);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_saves_get_increasing_revisions_and_the_last_one_is_applied() {
+        let cfg = TestConfig::new();
+        let (_sink, state) = setup();
+        // Each save toggles the switch; the applied rule set is recorded in apply order.
+        let applied: StdMutex<Vec<bool>> = StdMutex::new(Vec::new());
+        let save = |enabled: bool| {
+            let (store, state, applied) = (&cfg.store, &state, &applied);
+            async move {
+                store
+                    .set_auto_reply_enabled(enabled, |rules| async move {
+                        applied.lock().unwrap().push(rules.is_enabled());
+                        apply_rules(state, rules).await;
+                    })
+                    .await
+                    .unwrap()
+            }
+        };
+        let (r0, r1, r2, r3) = tokio::join!(save(true), save(false), save(true), save(false));
+        let results = [r0, r1, r2, r3];
+
+        let mut revisions: Vec<u64> = results.iter().map(|r| r.revision).collect();
+        revisions.sort_unstable();
+        assert_eq!(revisions, vec![1, 2, 3, 4]);
+        // Applications ran in revision order, so the last applied matches the last revision.
+        let last = results.iter().max_by_key(|r| r.revision).unwrap();
+        assert_eq!(
+            applied.lock().unwrap().last().copied(),
+            Some(last.auto_reply.enabled)
+        );
+        assert_eq!(load_config(&cfg.store).await.unwrap().config, last.config);
     }
 }

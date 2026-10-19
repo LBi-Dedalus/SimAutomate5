@@ -1,6 +1,6 @@
 // Templates view: compact list + always-docked editor with CRUD, variables, preview,
 // load-in-composer and send. Persistence goes through the backend config file
-// (load_templates / save_templates); nothing is stored in localStorage.
+// (load_config / save_templates); nothing is stored in localStorage.
 import {
   extractVariables,
   syncVariables,
@@ -19,8 +19,9 @@ import { SAVE_AS_TEMPLATE_EVENT } from "../session/inspector.js";
 import { subscribeSendEligibility } from "../session/sessions.js";
 import { el } from "../render.js";
 import { cloneTemplate } from "../include.js";
-import { logError, logInfo } from "../log.js";
+import { logError } from "../log.js";
 import { publishSavedTemplates, clearSavedTemplates } from "./template-store.js";
+import { publishAutoReply } from "../autoreply/autoreply-store.js";
 import { applyTemplateAutobuild } from "../autobuild/autobuild-core.js";
 
 const TEMPLATE_CARD = "templates/template-card.html";
@@ -140,14 +141,13 @@ async function doLoad() {
   renderAll();
   let ok = false;
   try {
-    const result = await invoke("load_templates");
+    const result = await invoke("load_config");
     templates = result.templates;
     liveVariables.clear();
     loadError = null;
     loaded = true;
     ok = true;
     publishSavedTemplates(templates);
-    if (result.seeded) logInfo("Built-in templates provided (no saved templates yet)", "templates.js:load");
   } catch (err) {
     templates = [];
     liveVariables.clear();
@@ -241,8 +241,9 @@ async function persistVariables() {
     const same = JSON.stringify(next.map((t) => t.variables)) ===
       JSON.stringify(templates.map((t) => (t.variables ?? []).map((v) => ({ name: v.name, default: v.default }))));
     if (same) continue;
+    let result;
     try {
-      await invoke("save_templates", { templates: next });
+      result = await invoke("save_templates", { templates: next });
     } catch (err) {
       logError(`Failed to save variable values: ${String(err)}`, "templates.js:variables");
       if (!saving) showBanner(`Could not save: ${String(err)}.`, "error");
@@ -252,6 +253,7 @@ async function persistVariables() {
     if (loaded && !loading) {
       templates = next;
       publishSavedTemplates(templates);
+      publishAutoReply({ revision: result.revision, ...result.auto_reply });
       hideBanner();
     }
     if (saving || !loaded) return;
@@ -428,8 +430,9 @@ async function save() {
   const next = draft.isNew
     ? [...base, saved]
     : base.map((t) => (t.id === saved.id ? saved : t));
+  let result;
   try {
-    await invoke("save_templates", { templates: next });
+    result = await invoke("save_templates", { templates: next });
   } catch (err) {
     logError(`Failed to save templates: ${String(err)}`, "templates.js:save");
     showBanner(`Could not save: ${String(err)}. Your edits are kept.`, "error");
@@ -445,6 +448,7 @@ async function save() {
   templates = next;
   liveVariables.set(saved.id, saved.variables.map((v) => ({ ...v })));
   publishSavedTemplates(templates);
+  publishAutoReply({ revision: result.revision, ...result.auto_reply });
   draft.isNew = false;
   draft.name = saved.name;
   baseline = snapshot(draft);
@@ -497,8 +501,9 @@ async function onDelete() {
   updateButtons();
   if (varSavePromise !== null) await varSavePromise.catch(() => {});
   const next = withLiveVariables(templates).filter((t) => t.id !== draft.id);
+  let result;
   try {
-    await invoke("save_templates", { templates: next });
+    result = await invoke("save_templates", { templates: next });
   } catch (err) {
     logError(`Failed to delete template: ${String(err)}`, "templates.js:delete");
     showBanner(`Could not delete: ${String(err)}. Nothing was changed.`, "error");
@@ -513,6 +518,7 @@ async function onDelete() {
   templates = next;
   liveVariables.delete(deletedId);
   publishSavedTemplates(templates);
+  publishAutoReply({ revision: result.revision, ...result.auto_reply });
   draft = null;
   baseline = null;
   hideBanner();

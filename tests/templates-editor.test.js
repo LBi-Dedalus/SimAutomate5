@@ -101,7 +101,11 @@ globalThis.window = {
     core: {
       invoke: (cmd, args) => {
         ipc.calls.push({ cmd, args });
-        return ipc.handler(cmd, args);
+        const result = ipc.handler(cmd, args);
+        // A successful save_templates always returns the effective config (default: rules off).
+        return cmd === "save_templates"
+          ? Promise.resolve(result).then((r) => r ?? { revision: 1, templates: args.templates, auto_reply: { enabled: false, rules: [] } })
+          : result;
       },
     },
     event: { listen: async () => {} },
@@ -138,7 +142,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 let booted = false;
 async function boot(stored = SEED) {
   ipc.calls = [];
-  ipc.handler = async (cmd) => (cmd === "load_templates" ? { templates: structuredClone(stored), seeded: false } : undefined);
+  ipc.handler = async (cmd) => (cmd === "load_config" ? { revision: 0, templates: structuredClone(stored), auto_reply: { enabled: true, rules: [] } } : undefined);
   if (!booted) {
     booted = true;
     await loadTemplatesModule();
@@ -163,7 +167,7 @@ const savedOk = () => ipc.calls.filter((c) => c.cmd === "save_templates");
 test("deferred initial load: New/Save/shortcuts are refused and the persisted collection is untouched", async () => {
   const gate = deferred();
   ipc.calls = [];
-  ipc.handler = (cmd) => (cmd === "load_templates" ? gate.promise : Promise.resolve());
+  ipc.handler = (cmd) => (cmd === "load_config" ? gate.promise : Promise.resolve());
   booted = true;
   const pending = loadTemplatesModule().catch(() => {});
   // The module initialises on import, which needs real (async) file loading first.
@@ -184,7 +188,7 @@ test("deferred initial load: New/Save/shortcuts are refused and the persisted co
     assert.match(getNode("tpl-banner-text").textContent, /still loading.*repeat the action.*not kept/);
   }
 
-  gate.resolve({ templates: structuredClone(SEED), seeded: false });
+  gate.resolve({ revision: 0, templates: structuredClone(SEED), auto_reply: { enabled: true, rules: [] } });
   await pending;
   await tick();
   assert.equal(cards().length, 2, "no refused request executed automatically");
@@ -225,12 +229,12 @@ test("failed load refuses writes and requests; retry then user repeat succeeds; 
   assert.equal(form().hidden, true);
 
   const gate = deferred();
-  ipc.handler = (cmd) => (cmd === "load_templates" ? gate.promise : Promise.resolve());
+  ipc.handler = (cmd) => (cmd === "load_config" ? gate.promise : Promise.resolve());
   ipc.calls = [];
   getNode("tpl-banner-retry").fire("click");
   getNode("tpl-banner-retry").fire("click");
-  assert.equal(ipc.calls.filter((c) => c.cmd === "load_templates").length, 1, "no overlapping loads");
-  gate.resolve({ templates: structuredClone(SEED), seeded: false });
+  assert.equal(ipc.calls.filter((c) => c.cmd === "load_config").length, 1, "no overlapping loads");
+  gate.resolve({ revision: 0, templates: structuredClone(SEED), auto_reply: { enabled: true, rules: [] } });
   await tick();
   assert.equal(form().hidden, true, "refused request not replayed after retry");
   assert.equal(getNode("tpl-new").disabled, false);
@@ -246,13 +250,13 @@ test("a pending reload cannot clobber a draft and writes wait for it", async () 
   getNode("tpl-new").fire("click");
   getNode("tpl-name").type("Draft X");
   const gate = deferred();
-  ipc.handler = (cmd) => (cmd === "load_templates" ? gate.promise : Promise.resolve());
+  ipc.handler = (cmd) => (cmd === "load_config" ? gate.promise : Promise.resolve());
   ipc.calls = [];
   getNode("tpl-banner-retry").fire("click"); // reload starts
   getNode("tpl-save").fire("click");
   assert.equal(savedOk().length, 0, "write refused during reload");
   assert.equal(getNode("tpl-save").disabled, true);
-  gate.resolve({ templates: structuredClone(SEED), seeded: false });
+  gate.resolve({ revision: 0, templates: structuredClone(SEED), auto_reply: { enabled: true, rules: [] } });
   await tick();
   assert.equal(getNode("tpl-name").value, "Draft X", "dirty draft kept");
   getNode("tpl-save").fire("click");
@@ -266,7 +270,7 @@ test("a pending reload cannot clobber a draft and writes wait for it", async () 
   ipc.calls = [];
   getNode("tpl-save").fire("click");
   getNode("tpl-banner-retry").fire("click");
-  assert.equal(ipc.calls.filter((c) => c.cmd === "load_templates").length, 0);
+  assert.equal(ipc.calls.filter((c) => c.cmd === "load_config").length, 0);
   wgate.resolve();
   await tick();
   assert.equal(getNode("tpl-dirty").hidden, true);
@@ -502,7 +506,7 @@ const check = (id, on) => {
 /** Handler: templates load as usual, Autobuild answers through `ab(args)`. */
 function useBackend(stored, ab) {
   ipc.handler = async (cmd, args) => {
-    if (cmd === "load_templates") return { templates: structuredClone(stored), seeded: false };
+    if (cmd === "load_config") return { revision: 0, templates: structuredClone(stored), auto_reply: { enabled: true, rules: [] } };
     if (cmd === "auto_build_message_cmd") return ab(args);
     return undefined;
   };

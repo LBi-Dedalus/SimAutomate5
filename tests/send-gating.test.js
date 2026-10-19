@@ -119,7 +119,7 @@ globalThis.window = {
     core: {
       invoke: async (cmd, args) => {
         ipc.calls.push({ cmd, args });
-        if (cmd === "load_templates") return { templates: [{ id: "a", name: "Alpha", description: "", payload: "ALPHA", variables: [] }], seeded: false };
+        if (cmd === "load_config") return { revision: 0, templates: [{ id: "a", name: "Alpha", description: "", payload: "ALPHA", variables: [] }], auto_reply: { enabled: true, rules: [] } };
         const held = ipc.pending.get(cmd);
         if (held) return held.promise;
         return undefined;

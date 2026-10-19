@@ -15,7 +15,7 @@ mod transport;
 
 use app_state::AppState;
 use auto_reply::AutoReplyConfig;
-use config_store::{ConfigLock, LoadedAutoReply, LoadedTemplates, Template};
+use config_store::{ConfigStore, RevisionedConfig, Template};
 use logger::AppLogger;
 use message_builder::auto_build;
 use models::{
@@ -117,59 +117,41 @@ async fn log_frontend(
     Ok(())
 }
 
+/// The effective templates and auto reply rules; auto reply rules are global (every current
+/// and future session) and persisted in config.json.
 #[tauri::command]
-async fn load_templates(
-    app: AppHandle,
-    lock: State<'_, ConfigLock>,
-) -> Result<LoadedTemplates, String> {
-    let path = resolve_config_path(&app)?;
-    session_commands::load_templates(&lock, &path).await
+async fn load_config(store: State<'_, ConfigStore>) -> Result<RevisionedConfig, String> {
+    session_commands::load_config(&store).await
 }
 
 /// Saves the template library; refused when it would break an auto reply rule. The running
 /// rules of every session are refreshed with the new templates.
 #[tauri::command]
 async fn save_templates(
-    app: AppHandle,
-    lock: State<'_, ConfigLock>,
+    store: State<'_, ConfigStore>,
     state: State<'_, Mutex<AppState>>,
     templates: Vec<Template>,
-) -> Result<(), String> {
-    let path = resolve_config_path(&app)?;
-    session_commands::save_templates(&lock, &path, &state, &templates).await
-}
-
-/// Auto reply rules are global (every current and future session) and persisted in config.json.
-#[tauri::command]
-async fn load_auto_reply(
-    app: AppHandle,
-    lock: State<'_, ConfigLock>,
-) -> Result<LoadedAutoReply, String> {
-    let path = resolve_config_path(&app)?;
-    session_commands::load_auto_reply(&lock, &path).await
+) -> Result<RevisionedConfig, String> {
+    session_commands::save_templates(&store, &state, &templates).await
 }
 
 #[tauri::command]
 async fn save_auto_reply(
-    app: AppHandle,
-    lock: State<'_, ConfigLock>,
+    store: State<'_, ConfigStore>,
     state: State<'_, Mutex<AppState>>,
     config: AutoReplyConfig,
-) -> Result<(), String> {
-    let path = resolve_config_path(&app)?;
-    session_commands::save_auto_reply(&lock, &path, &state, &config).await
+) -> Result<RevisionedConfig, String> {
+    session_commands::save_auto_reply(&store, &state, &config).await
 }
 
 /// Persists only the master switch (never the rules being edited).
 #[tauri::command]
 async fn set_auto_reply_enabled(
-    app: AppHandle,
-    lock: State<'_, ConfigLock>,
+    store: State<'_, ConfigStore>,
     state: State<'_, Mutex<AppState>>,
     enabled: bool,
-) -> Result<(), String> {
-    let path = resolve_config_path(&app)?;
-    session_commands::set_auto_reply_enabled(&lock, &path, &state, enabled).await
+) -> Result<RevisionedConfig, String> {
+    session_commands::set_auto_reply_enabled(&store, &state, enabled).await
 }
 
 fn resolve_config_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -196,12 +178,13 @@ pub fn run() {
             );
             let emitter = Emitter::new(handle, logger);
             app.manage(Mutex::new(AppState::new(emitter)));
-            app.manage(ConfigLock(Mutex::new(())));
-            // The persisted rules and templates are loaded before any command can connect.
+            // Resolved once. As before, a failure aborts startup (setup returns the error).
             let path = resolve_config_path(app.handle())?;
+            app.manage(ConfigStore::new(path));
+            // The persisted rules and templates are loaded before any command can connect.
             let state = app.state::<Mutex<AppState>>();
-            let lock = app.state::<ConfigLock>();
-            tauri::async_runtime::block_on(session_commands::init_auto_reply(&lock, &path, &state));
+            let store = app.state::<ConfigStore>();
+            tauri::async_runtime::block_on(session_commands::init_auto_reply(&store, &state));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -211,9 +194,8 @@ pub fn run() {
             send_message,
             auto_build_message_cmd,
             log_frontend,
-            load_templates,
+            load_config,
             save_templates,
-            load_auto_reply,
             save_auto_reply,
             set_auto_reply_enabled,
         ])

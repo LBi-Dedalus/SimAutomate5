@@ -5,15 +5,24 @@
 //! when it exists but cannot be understood (invalid JSON, root that is not an object, or a
 //! malformed `templates` / `auto_reply` value): the error is reported instead.
 //!
-//! Rules reference templates by id, so both keys are cross-validated on every write: a template
-//! save is refused when it would break a rule, and a rule save is refused when it references a
-//! missing or unusable template. The effective templates are the saved list, or the built-in
-//! ones while the `templates` key does not exist. Every successful write returns the validated,
-//! compiled rule set the caller must apply to the running connections.
+//! The parsed file is the single source of truth (`EffectiveConfig`), read by one path
+//! (`read_config`). Missing keys get defaults: a missing `templates` is the built-in library and
+//! a missing `auto_reply` is the default rules (enabled). Nothing is written for a missing key
+//! until the user saves that part: each save writes only the key it owns.
 //!
-//! Callers must hold the `ConfigLock` for the whole read -> validate -> write sequence.
+//! Rules reference templates by id, so both keys are cross-validated on every write: a template
+//! save is refused when it would break a rule (default rules included), and a rule save is
+//! refused when it references a missing or unusable template. Every successful write returns
+//! the effective configuration and the compiled rule set the caller must apply to the running
+//! connections.
+//!
+//! `ConfigStore` owns the file path and the lock that serializes the whole read -> validate ->
+//! write sequence (plus applying the result to the running connections, see `ConfigStore`).
+//! The plain file functions below it take a path and do no locking: they are private building
+//! blocks, so every access goes through the store.
 
 use std::fs;
+use std::future::Future;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -28,8 +37,106 @@ pub const CONFIG_FILE_NAME: &str = "config.json";
 const TEMPLATES_KEY: &str = "templates";
 const AUTO_REPLY_KEY: &str = "auto_reply";
 
-/// Serializes load/save access to the config file (managed separately from `AppState`).
-pub struct ConfigLock(pub tokio::sync::Mutex<()>);
+/// The config file and the lock serializing access to it (managed separately from `AppState`).
+/// The lock guards the revision counter: it grows on every successful save.
+pub struct ConfigStore {
+    path: PathBuf,
+    revision: tokio::sync::Mutex<u64>,
+}
+
+impl ConfigStore {
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            revision: tokio::sync::Mutex::new(0),
+        }
+    }
+
+    /// Reads and validates the configuration with its current revision (loads never bump it).
+    /// The compiled rules are returned too, for the caller to apply (startup).
+    pub async fn load(&self) -> Result<(u64, Applied), String> {
+        let guard = self.revision.lock().await;
+        load_from(&self.path).map(|applied| (*guard, applied))
+    }
+
+    /// Like `load`, with `apply` run on the compiled rules while the lock is still held.
+    pub async fn load_and_apply<F, Fut>(&self, apply: F) -> Result<RevisionedConfig, String>
+    where
+        F: FnOnce(Arc<RuleSet>) -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        let guard = self.revision.lock().await;
+        let applied = load_from(&self.path)?;
+        apply(applied.rules).await;
+        Ok(RevisionedConfig {
+            revision: *guard,
+            config: applied.config,
+        })
+    }
+
+    /// Saves the templates (refused when a rule would break).
+    pub async fn save_templates<F, Fut>(
+        &self,
+        templates: &[Template],
+        apply: F,
+    ) -> Result<RevisionedConfig, String>
+    where
+        F: FnOnce(Arc<RuleSet>) -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        self.save_with(|path| save_templates_to(path, templates), apply)
+            .await
+    }
+
+    pub async fn save_auto_reply<F, Fut>(
+        &self,
+        config: &AutoReplyConfig,
+        apply: F,
+    ) -> Result<RevisionedConfig, String>
+    where
+        F: FnOnce(Arc<RuleSet>) -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        self.save_with(|path| save_auto_reply_to(path, config), apply)
+            .await
+    }
+
+    /// Persists the master switch only; the saved rules are not touched.
+    pub async fn set_auto_reply_enabled<F, Fut>(
+        &self,
+        enabled: bool,
+        apply: F,
+    ) -> Result<RevisionedConfig, String>
+    where
+        F: FnOnce(Arc<RuleSet>) -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        self.save_with(|path| set_auto_reply_enabled_in(path, enabled), apply)
+            .await
+    }
+
+    /// Runs `op` under the lock. Only on success: bumps the revision, then runs `apply` with the
+    /// validated rules before the lock is released, so applications happen in revision order.
+    async fn save_with<F, Fut>(
+        &self,
+        op: impl FnOnce(&Path) -> Result<Applied, String>,
+        apply: F,
+    ) -> Result<RevisionedConfig, String>
+    where
+        F: FnOnce(Arc<RuleSet>) -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        let mut guard = self.revision.lock().await;
+        let applied = op(&self.path)?;
+        *guard += 1;
+        let revision = *guard;
+        apply(applied.rules).await;
+        Ok(RevisionedConfig {
+            revision,
+            config: applied.config,
+        })
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -58,21 +165,13 @@ pub struct Template {
     pub autobuild_no_etb: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct LoadedTemplates {
-    pub templates: Vec<Template>,
-    /// True when the built-in templates were provided because the file or the
-    /// `templates` key does not exist yet (nothing was written).
-    pub seeded: bool,
-}
-
-pub fn config_path(dir: &Path) -> PathBuf {
+pub(crate) fn config_path(dir: &Path) -> PathBuf {
     dir.join(CONFIG_FILE_NAME)
 }
 
 /// Built-in templates. Each HL7 frame is ONE line: the backend sends every real
 /// line break as a separate frame, so segments are separated with `<CR>` tokens.
-pub fn builtin_templates() -> Vec<Template> {
+pub(crate) fn builtin_templates() -> Vec<Template> {
     vec![
         Template {
             id: "builtin-hl7-qry-a19".to_string(),
@@ -120,7 +219,7 @@ pub fn builtin_templates() -> Vec<Template> {
 }
 
 /// Default auto reply configuration, used until the `auto_reply` key is first saved.
-pub fn default_auto_reply() -> AutoReplyConfig {
+fn default_auto_reply() -> AutoReplyConfig {
     let rule = |id: &str, name: &str, trigger, condition, action| Rule {
         id: id.to_string(),
         name: name.to_string(),
@@ -200,7 +299,7 @@ fn is_valid_variable_name(name: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-pub fn validate_templates(templates: &[Template]) -> Result<(), String> {
+fn validate_templates(templates: &[Template]) -> Result<(), String> {
     let mut ids = std::collections::HashSet::new();
     for (index, template) in templates.iter().enumerate() {
         let label = format!("template #{}", index + 1);
@@ -247,168 +346,202 @@ fn read_root(path: &Path) -> Result<Option<Map<String, Value>>, String> {
     }
 }
 
-fn parse_templates(value: &Value, path: &Path) -> Result<Vec<Template>, String> {
-    let templates: Vec<Template> = serde_json::from_value(value.clone())
-        .map_err(|err| format!("Invalid \"templates\" in {}: {err}", path.display()))?;
-    validate_templates(&templates)
-        .map_err(|err| format!("Invalid \"templates\" in {}: {err}", path.display()))?;
+/// Context-free errors: `read_config` adds the file name.
+fn parse_templates(value: &Value) -> Result<Vec<Template>, String> {
+    let templates: Vec<Template> =
+        serde_json::from_value(value.clone()).map_err(|err| err.to_string())?;
+    validate_templates(&templates)?;
     Ok(templates)
-}
-
-pub fn load_templates_from(path: &Path) -> Result<LoadedTemplates, String> {
-    let root = read_root(path)?;
-    match root.as_ref().and_then(|root| root.get(TEMPLATES_KEY)) {
-        None => Ok(LoadedTemplates {
-            templates: builtin_templates(),
-            seeded: true,
-        }),
-        Some(value) => Ok(LoadedTemplates {
-            templates: parse_templates(value, path)?,
-            seeded: false,
-        }),
-    }
 }
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct LoadedAutoReply {
-    pub config: AutoReplyConfig,
-    /// False when the file or the `auto_reply` key does not exist yet: the configuration is
-    /// then the empty, disabled one (and the frontend may offer to import legacy settings).
-    pub present: bool,
-}
-
-fn parse_auto_reply(value: &Value, path: &Path) -> Result<AutoReplyConfig, String> {
-    let config: AutoReplyConfig = serde_json::from_value(value.clone())
-        .map_err(|err| format!("Invalid \"auto_reply\" in {}: {err}", path.display()))?;
-    config
-        .validate()
-        .map_err(|err| format!("Invalid \"auto_reply\" in {}: {err}", path.display()))?;
+/// Context-free errors: `read_config` adds the file name.
+fn parse_auto_reply(value: &Value) -> Result<AutoReplyConfig, String> {
+    let config: AutoReplyConfig =
+        serde_json::from_value(value.clone()).map_err(|err| err.to_string())?;
+    config.validate().map_err(|err| err.to_string())?;
     Ok(config)
 }
 
-/// Saved templates, or the built-in ones while the key does not exist.
-fn effective_templates(root: &Map<String, Value>, path: &Path) -> Result<Vec<Template>, String> {
-    match root.get(TEMPLATES_KEY) {
-        None => Ok(builtin_templates()),
-        Some(value) => parse_templates(value, path),
+/// The default rules, or the empty configuration when a template they use is missing (only
+/// reachable with a hand-edited file).
+fn default_auto_reply_for(templates: &[Template]) -> AutoReplyConfig {
+    let defaults = default_auto_reply();
+    if RuleSet::compile(&defaults, templates).is_ok() {
+        defaults
+    } else {
+        AutoReplyConfig::default()
     }
 }
 
-/// Existing rules, or the empty configuration when the key is absent.
-fn existing_auto_reply(
-    root: &Map<String, Value>,
-    path: &Path,
-) -> Result<Option<AutoReplyConfig>, String> {
-    root.get(AUTO_REPLY_KEY)
-        .map(|value| parse_auto_reply(value, path))
-        .transpose()
+/// The configuration the app runs with: the parsed file, with defaults for missing keys.
+/// This is the single source of truth, for the backend and the frontend.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct EffectiveConfig {
+    pub templates: Vec<Template>,
+    pub auto_reply: AutoReplyConfig,
 }
 
-/// Existing rules, or the default rules (the empty configuration when a template they use was
-/// removed) when the key is absent.
-fn auto_reply_or_default(
-    root: &Map<String, Value>,
-    templates: &[Template],
-    path: &Path,
-) -> Result<AutoReplyConfig, String> {
-    Ok(match existing_auto_reply(root, path)? {
-        Some(config) => config,
-        None => {
-            let defaults = default_auto_reply();
-            if RuleSet::compile(&defaults, templates).is_ok() {
-                defaults
-            } else {
-                AutoReplyConfig::default()
-            }
-        }
+/// An `EffectiveConfig` stamped with the configuration revision it was observed at. The revision
+/// is a counter owned by the `ConfigStore`: it grows on every successful save, so a consumer can
+/// discard a response that arrives after a newer one (IPC responses may be reordered).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RevisionedConfig {
+    pub revision: u64,
+    #[serde(flatten)]
+    pub config: EffectiveConfig,
+}
+
+impl std::ops::Deref for RevisionedConfig {
+    type Target = EffectiveConfig;
+    fn deref(&self) -> &EffectiveConfig {
+        &self.config
+    }
+}
+
+/// A parsed config file: the raw root (to preserve unknown keys) and its effective values.
+struct ConfigDocument {
+    root: Map<String, Value>,
+    effective: EffectiveConfig,
+}
+
+/// The one parse path. Missing file or keys give defaults; corrupt values are errors.
+/// Template references are not checked here (see `compile_with`).
+fn read_config(path: &Path) -> Result<ConfigDocument, String> {
+    let root = read_root(path)?.unwrap_or_default();
+    let templates = match root.get(TEMPLATES_KEY) {
+        None => builtin_templates(),
+        Some(value) => parse_templates(value).map_err(|err| {
+            format!("Invalid \"{TEMPLATES_KEY}\" in {}: {err}", path.display())
+        })?,
+    };
+    let auto_reply = match root.get(AUTO_REPLY_KEY) {
+        None => default_auto_reply_for(&templates),
+        Some(value) => parse_auto_reply(value).map_err(|err| {
+            format!("Invalid \"{AUTO_REPLY_KEY}\" in {}: {err}", path.display())
+        })?,
+    };
+    Ok(ConfigDocument {
+        root,
+        effective: EffectiveConfig {
+            templates,
+            auto_reply,
+        },
     })
 }
 
+/// A validated configuration and the compiled rule set to apply to the running connections.
+#[derive(Debug)]
+pub struct Applied {
+    pub config: EffectiveConfig,
+    pub rules: Arc<RuleSet>,
+}
+
+/// Context-free errors.
 fn compile_with(
     config: &AutoReplyConfig,
     templates: &[Template],
-    path: &Path,
 ) -> Result<Arc<RuleSet>, String> {
     RuleSet::compile(config, templates)
         .map(Arc::new)
-        .map_err(|err| {
-            format!(
-                "Invalid auto reply configuration in {}: {err}",
-                path.display()
-            )
-        })
+        .map_err(|err| err.to_string())
 }
 
-/// Reads and fully validates the rules (shape and template references).
-pub fn load_auto_reply_from(path: &Path) -> Result<LoadedAutoReply, String> {
-    let root = read_root(path)?.unwrap_or_default();
-    let templates = effective_templates(&root, path)?;
-    let present = root.contains_key(AUTO_REPLY_KEY);
-    let config = auto_reply_or_default(&root, &templates, path)?;
-    compile_with(&config, &templates, path)?;
-    Ok(LoadedAutoReply { config, present })
+/// `compile_with` for the config at `path`: the error names the file.
+fn compile_at(
+    path: &Path,
+    config: &AutoReplyConfig,
+    templates: &[Template],
+) -> Result<Arc<RuleSet>, String> {
+    compile_with(config, templates).map_err(|err| {
+        format!(
+            "Invalid auto reply configuration in {}: {err}",
+            path.display()
+        )
+    })
 }
 
-/// The rule set to run with (startup): validated persisted rules, or an error.
-pub fn load_rule_set_from(path: &Path) -> Result<Arc<RuleSet>, String> {
-    let root = read_root(path)?.unwrap_or_default();
-    let templates = effective_templates(&root, path)?;
-    let config = auto_reply_or_default(&root, &templates, path)?;
-    compile_with(&config, &templates, path)
+/// Reads and fully validates the configuration (shape and template references).
+fn load_from(path: &Path) -> Result<Applied, String> {
+    let config = read_config(path)?.effective;
+    let rules = compile_at(path, &config.auto_reply, &config.templates)?;
+    Ok(Applied { config, rules })
 }
 
-pub fn save_auto_reply_to(path: &Path, config: &AutoReplyConfig) -> Result<Arc<RuleSet>, String> {
-    let mut root = read_root(path)?.unwrap_or_default();
-    let templates = effective_templates(&root, path)?;
-    // Refuse to replace an auto_reply value we do not understand.
-    existing_auto_reply(&root, path)?;
-    let rules = compile_with(config, &templates, path)?;
-    root.insert(
+/// Replaces the saved rules (the `auto_reply` key is the only one written).
+fn save_auto_reply_to(path: &Path, config: &AutoReplyConfig) -> Result<Applied, String> {
+    let mut doc = read_config(path)?;
+    doc.effective.auto_reply = config.clone();
+    write_auto_reply(path, doc)
+}
+
+/// Changes only the persisted master switch; the rules are written back untouched.
+fn set_auto_reply_enabled_in(path: &Path, enabled: bool) -> Result<Applied, String> {
+    let mut doc = read_config(path)?;
+    doc.effective.auto_reply.enabled = enabled;
+    write_auto_reply(path, doc)
+}
+
+fn write_auto_reply(path: &Path, mut doc: ConfigDocument) -> Result<Applied, String> {
+    let effective = doc.effective;
+    let rules = compile_at(path, &effective.auto_reply, &effective.templates)?;
+    doc.root.insert(
         AUTO_REPLY_KEY.to_string(),
-        serde_json::to_value(config).map_err(|err| err.to_string())?,
+        serde_json::to_value(&effective.auto_reply).map_err(|err| err.to_string())?,
     );
-    write_root(path, root)?;
-    Ok(rules)
+    write_root(path, doc.root)?;
+    Ok(Applied {
+        config: effective,
+        rules,
+    })
 }
 
-/// Changes only the persisted master switch; the saved rules are rewritten untouched.
-pub fn set_auto_reply_enabled_in(path: &Path, enabled: bool) -> Result<Arc<RuleSet>, String> {
-    let mut root = read_root(path)?.unwrap_or_default();
-    let templates = effective_templates(&root, path)?;
-    let mut config = auto_reply_or_default(&root, &templates, path)?;
-    config.enabled = enabled;
-    let rules = compile_with(&config, &templates, path)?;
-    root.insert(
-        AUTO_REPLY_KEY.to_string(),
-        serde_json::to_value(&config).map_err(|err| err.to_string())?,
-    );
-    write_root(path, root)?;
-    Ok(rules)
+/// First rule (enabled or not) whose template is absent from `templates`, as (template id, rule name).
+fn first_rule_missing_template(
+    config: &AutoReplyConfig,
+    templates: &[Template],
+) -> Option<(String, String)> {
+    config.rules.iter().find_map(|rule| match &rule.action {
+        Action::Template { template_id } if !templates.iter().any(|t| &t.id == template_id) => {
+            Some((template_id.clone(), rule.name.clone()))
+        }
+        _ => None,
+    })
 }
 
-pub fn save_templates_to(path: &Path, templates: &[Template]) -> Result<Arc<RuleSet>, String> {
+/// Replaces the template library (the `templates` key is the only one written). The `auto_reply`
+/// key is never written: while it is missing the default rules stay in effect.
+fn save_templates_to(path: &Path, templates: &[Template]) -> Result<Applied, String> {
     validate_templates(templates)?;
 
-    let mut root = read_root(path)?.unwrap_or_default();
-    if let Some(existing) = root.get(TEMPLATES_KEY) {
-        // Refuse to replace a templates value we do not understand.
-        parse_templates(existing, path)?;
+    let mut doc = read_config(path)?;
+    let key_missing = !doc.root.contains_key(AUTO_REPLY_KEY);
+    // Rules (saved or default) that reference a template must keep working with the new library.
+    if let Some((template_id, rule_name)) =
+        first_rule_missing_template(&doc.effective.auto_reply, templates)
+    {
+        return Err(format!(
+            "Refused: the template \"{template_id}\" is used by the auto reply rule \"{rule_name}\""
+        ));
     }
-    // Rules that reference a template must keep working with the new library.
-    let config = existing_auto_reply(&root, path)
-        .map_err(|err| format!("Cannot check the auto reply rules before saving: {err}"))?
-        .unwrap_or_default();
-    let rules = RuleSet::compile(&config, templates)
-        .map(Arc::new)
-        .map_err(|err| format!("Refused: the change would break the auto reply {err}"))?;
-    root.insert(
+    RuleSet::compile(&doc.effective.auto_reply, templates)
+        .map_err(|err| format!("Refused: the auto reply rules would no longer work: {err}"))?;
+    doc.effective.templates = templates.to_vec();
+    if key_missing {
+        // Same as a reload would give for the new library.
+        doc.effective.auto_reply = default_auto_reply_for(templates);
+    }
+    let rules = compile_at(path, &doc.effective.auto_reply, templates)?;
+    doc.root.insert(
         TEMPLATES_KEY.to_string(),
         serde_json::to_value(templates).map_err(|err| err.to_string())?,
     );
-    write_root(path, root)?;
-    Ok(rules)
+    write_root(path, doc.root)?;
+    Ok(Applied {
+        config: doc.effective,
+        rules,
+    })
 }
 
 fn write_root(path: &Path, root: Map<String, Value>) -> Result<(), String> {
@@ -480,8 +613,7 @@ mod tests {
     fn missing_file_seeds_builtins_without_writing() {
         let dir = temp_dir("missing");
         let path = config_path(&dir);
-        let loaded = load_templates_from(&path).unwrap();
-        assert!(loaded.seeded);
+        let loaded = load_from(&path).unwrap().config;
         assert_eq!(loaded.templates, builtin_templates());
         assert!(!dir.exists());
     }
@@ -503,9 +635,9 @@ mod tests {
     fn save_creates_directory_and_round_trips() {
         let dir = temp_dir("roundtrip").join("nested");
         let path = config_path(&dir);
+        save_auto_reply_to(&path, &AutoReplyConfig::default()).unwrap();
         save_templates_to(&path, &[sample("a"), sample("b")]).unwrap();
-        let loaded = load_templates_from(&path).unwrap();
-        assert!(!loaded.seeded);
+        let loaded = load_from(&path).unwrap().config;
         assert_eq!(loaded.templates, vec![sample("a"), sample("b")]);
         // No temp file is left behind.
         let leftovers: Vec<_> = fs::read_dir(&dir)
@@ -532,11 +664,12 @@ mod tests {
         let mut t = sample("a");
         t.autobuild = true;
         t.autobuild_no_etb = true;
+        save_auto_reply_to(&path, &AutoReplyConfig::default()).unwrap();
         save_templates_to(&path, &[t.clone(), sample("b")]).unwrap();
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains("\"autobuild\": true"));
         assert!(raw.contains("\"autobuild_no_etb\": true"));
-        let loaded = load_templates_from(&path).unwrap();
+        let loaded = load_from(&path).unwrap().config;
         assert_eq!(loaded.templates, vec![t, sample("b")]);
         let _ = fs::remove_dir_all(dir.parent().unwrap());
     }
@@ -569,9 +702,9 @@ mod tests {
     fn empty_templates_array_is_respected_not_reseeded() {
         let dir = temp_dir("empty");
         let path = config_path(&dir);
+        save_auto_reply_to(&path, &AutoReplyConfig::default()).unwrap();
         save_templates_to(&path, &[]).unwrap();
-        let loaded = load_templates_from(&path).unwrap();
-        assert!(!loaded.seeded);
+        let loaded = load_from(&path).unwrap().config;
         assert!(loaded.templates.is_empty());
         let _ = fs::remove_dir_all(dir);
     }
@@ -583,7 +716,7 @@ mod tests {
         let mut kept = builtin_templates();
         kept.remove(0);
         save_templates_to(&path, &kept).unwrap();
-        let loaded = load_templates_from(&path).unwrap();
+        let loaded = load_from(&path).unwrap().config;
         assert_eq!(loaded.templates, kept);
         let _ = fs::remove_dir_all(dir);
     }
@@ -594,8 +727,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let path = config_path(&dir);
         fs::write(&path, r#"{"other":1}"#).unwrap();
-        let loaded = load_templates_from(&path).unwrap();
-        assert!(loaded.seeded);
+        let loaded = load_from(&path).unwrap().config;
         assert_eq!(loaded.templates, builtin_templates());
         let _ = fs::remove_dir_all(dir);
     }
@@ -616,7 +748,7 @@ mod tests {
             let path = config_path(&dir);
             fs::write(&path, content).unwrap();
 
-            assert!(load_templates_from(&path).is_err(), "load case {index}");
+            assert!(load_from(&path).is_err(), "load case {index}");
             assert!(
                 save_templates_to(&path, &[sample("z")]).is_err(),
                 "save case {index}"
@@ -693,20 +825,18 @@ mod tests {
     fn missing_auto_reply_loads_default_rules_without_writing() {
         let dir = temp_dir("ar-missing");
         let path = config_path(&dir);
-        let loaded = load_auto_reply_from(&path).unwrap();
-        assert!(!loaded.present);
-        assert_eq!(loaded.config, default_auto_reply());
-        assert!(loaded.config.enabled && loaded.config.rules.len() == 5);
-        assert!(load_rule_set_from(&path).unwrap().is_enabled());
+        let loaded = load_from(&path).unwrap();
+        assert_eq!(loaded.config.auto_reply, default_auto_reply());
+        assert!(loaded.config.auto_reply.enabled && loaded.config.auto_reply.rules.len() == 5);
+        assert!(loaded.rules.is_enabled());
         assert!(!dir.exists());
     }
 
     #[test]
     fn default_rules_fall_back_to_empty_when_their_template_is_missing() {
         let (dir, path) = setup_file("ar-default-fallback", r#"{"templates":[]}"#);
-        let loaded = load_auto_reply_from(&path).unwrap();
-        assert!(!loaded.present);
-        assert!(!loaded.config.enabled && loaded.config.rules.is_empty());
+        let loaded = load_from(&path).unwrap().config.auto_reply;
+        assert!(!loaded.enabled && loaded.rules.is_empty());
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -716,9 +846,8 @@ mod tests {
         let config = config_with(vec![rule_with_template("r1", "builtin-hl7-ack-o21")], true);
         // Builtins are effective while the templates key is absent.
         save_auto_reply_to(&path, &config).unwrap();
-        let loaded = load_auto_reply_from(&path).unwrap();
-        assert!(loaded.present);
-        assert_eq!(loaded.config, config);
+        let loaded = load_from(&path).unwrap().config;
+        assert_eq!(loaded.auto_reply, config);
 
         save_templates_to(&path, &builtin_templates()).unwrap();
         let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -726,7 +855,7 @@ mod tests {
         assert_eq!(root["future"], serde_json::json!([1]));
         assert_eq!(root["auto_reply"]["rules"][0]["id"], "r1");
         assert_eq!(root["templates"].as_array().unwrap().len(), 4);
-        assert_eq!(load_auto_reply_from(&path).unwrap().config, config);
+        assert_eq!(load_from(&path).unwrap().config.auto_reply, config);
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -743,8 +872,9 @@ mod tests {
             root["auto_reply"]["rules"][0]["action"],
             serde_json::json!({ "type": "none" })
         );
-        assert_eq!(load_auto_reply_from(&path).unwrap().config, config);
-        assert!(load_rule_set_from(&path).unwrap().is_enabled());
+        let loaded = load_from(&path).unwrap();
+        assert_eq!(loaded.config.auto_reply, config);
+        assert!(loaded.rules.is_enabled());
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -779,7 +909,10 @@ mod tests {
 
     #[test]
     fn template_edit_or_delete_that_breaks_a_rule_is_refused_and_file_untouched() {
-        let (dir, path) = setup_file("ar-refused", r#"{"other":1}"#);
+        let (dir, path) = setup_file(
+            "ar-refused",
+            r#"{"other":1,"auto_reply":{"enabled":false,"rules":[]}}"#,
+        );
         save_templates_to(&path, &[sample("a"), sample("b")]).unwrap();
         save_auto_reply_to(
             &path,
@@ -790,13 +923,18 @@ mod tests {
 
         // Deleting the referenced template.
         let err = save_templates_to(&path, &[sample("b")]).unwrap_err();
-        assert!(err.contains("Rule r1"), "{err}");
+        assert_eq!(
+            err,
+            "Refused: the template \"a\" is used by the auto reply rule \"Rule r1\""
+        );
         // Breaking it: a variable without a default value.
         let mut broken = sample("a");
         broken.variables[0].default = String::new();
         let err = save_templates_to(&path, &[broken, sample("b")]).unwrap_err();
         assert!(
-            err.contains("Rule r1") && err.contains("unresolved"),
+            err.starts_with("Refused: the auto reply rules would no longer work: ")
+                && err.contains("Rule r1")
+                && err.contains("unresolved"),
             "{err}"
         );
         assert_eq!(fs::read_to_string(&path).unwrap(), before);
@@ -806,8 +944,25 @@ mod tests {
         let mut edited = sample("a");
         edited.payload = "<ACK>".to_string();
         edited.variables.clear();
-        let rules = save_templates_to(&path, &[edited]).unwrap();
-        assert!(rules.is_enabled());
+        let applied = save_templates_to(&path, &[edited]).unwrap();
+        assert!(applied.rules.is_enabled());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn deleting_a_template_used_by_a_default_rule_names_template_and_rule() {
+        let (dir, path) = setup_file("ar-default-delete", r#"{"other":1}"#);
+        let before = fs::read_to_string(&path).unwrap();
+        let remaining: Vec<Template> = builtin_templates()
+            .into_iter()
+            .filter(|t| t.id != "builtin-hl7-ack-o21")
+            .collect();
+        let err = save_templates_to(&path, &remaining).unwrap_err();
+        assert_eq!(
+            err,
+            "Refused: the template \"builtin-hl7-ack-o21\" is used by the auto reply rule \"Reply to HL7 messages\""
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), before);
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -818,20 +973,24 @@ mod tests {
         let config = config_with(vec![rule_with_template("r1", "a")], false);
         save_auto_reply_to(&path, &config).unwrap();
 
-        assert!(set_auto_reply_enabled_in(&path, true).unwrap().is_enabled());
-        let loaded = load_auto_reply_from(&path).unwrap().config;
+        assert!(set_auto_reply_enabled_in(&path, true)
+            .unwrap()
+            .rules
+            .is_enabled());
+        let loaded = load_from(&path).unwrap().config.auto_reply;
         assert!(loaded.enabled);
         assert_eq!(loaded.rules, config.rules);
         assert!(!set_auto_reply_enabled_in(&path, false)
             .unwrap()
+            .rules
             .is_enabled());
 
         // Without an existing key the default rules are persisted with that flag.
         let (dir2, path2) = setup_file("ar-enable2", r#"{"x":1}"#);
         set_auto_reply_enabled_in(&path2, false).unwrap();
-        let loaded = load_auto_reply_from(&path2).unwrap();
-        assert!(loaded.present && !loaded.config.enabled);
-        assert_eq!(loaded.config.rules, default_auto_reply().rules);
+        let loaded = load_from(&path2).unwrap().config.auto_reply;
+        assert!(!loaded.enabled);
+        assert_eq!(loaded.rules, default_auto_reply().rules);
         let _ = fs::remove_dir_all(dir);
         let _ = fs::remove_dir_all(dir2);
     }
@@ -849,8 +1008,7 @@ mod tests {
         ];
         for (index, content) in cases.iter().enumerate() {
             let (dir, path) = setup_file(&format!("ar-bad{index}"), content);
-            assert!(load_auto_reply_from(&path).is_err(), "load {index}");
-            assert!(load_rule_set_from(&path).is_err(), "startup {index}");
+            assert!(load_from(&path).is_err(), "load {index}");
             // The last case is well-formed but references a missing template: replacing it by a
             // valid configuration is the way to repair it, so only the other cases refuse.
             if index != cases.len() - 1 {
