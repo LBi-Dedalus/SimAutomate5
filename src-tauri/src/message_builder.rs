@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::{
     models::{AutoBuildRequest, BuildResponse},
-    translate::{to_human_readable, ControlToken},
+    translate::{escape_controls, ControlToken},
 };
 
 pub fn auto_build(req: AutoBuildRequest) -> Result<BuildResponse> {
@@ -35,7 +35,7 @@ fn build_mllp(input: &str) -> String {
         output.push_str(line);
         output.push(ControlToken::CR.into());
 
-        built_lines.push(to_human_readable(output.as_bytes()));
+        built_lines.push(escape_controls(&output));
     }
 
     built_lines.push("<FS><CR>".to_string());
@@ -52,7 +52,7 @@ fn build_astm(input: &str, no_etb: bool) -> String {
 
     for (idx, line) in lines.iter().enumerate() {
         let segment = build_astm_segment(line, no_etb, idx, line_count);
-        output.push(to_human_readable(segment.as_bytes()));
+        output.push(escape_controls(&segment));
     }
 
     output.push("<EOT>".to_string());
@@ -71,6 +71,7 @@ fn build_astm_segment(line: &str, no_etb: bool, idx: usize, line_count: usize) -
         ControlToken::ETB.into()
     });
 
+    // `body.as_bytes()` are the UTF-8 wire bytes, so the checksum matches what is sent.
     let checksum = astm_checksum(body.as_bytes());
 
     let mut output = String::new();
@@ -89,4 +90,46 @@ fn astm_checksum(body: &[u8]) -> String {
         sum = sum.wrapping_add(*byte);
     }
     format!("{:02X}", sum)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::AutoBuildRequest;
+    use crate::translate::to_bytes;
+
+    fn build(input: &str) -> String {
+        auto_build(AutoBuildRequest {
+            input: input.to_string(),
+            no_etb: false,
+        })
+        .unwrap()
+        .output
+    }
+
+    #[test]
+    fn mllp_autobuild_is_utf8_and_matches_manual_tokens() {
+        let output = build("MSH|^~\\&|S|F|R|F|2026||ADT^A01|1|P|2.4\rPID|1||Café");
+        let bytes = to_bytes(&output);
+        assert!(bytes.windows(2).any(|w| w == [0xC3, 0xA9]));
+        assert!(!output.contains('Ã'));
+        let manual = "<VT>\nMSH|^~\\&|S|F|R|F|2026||ADT^A01|1|P|2.4<CR>\nPID|1||Café<CR>\n<FS><CR>";
+        // `\r` inside the input is not a line break for `lines()`, so build from LF.
+        let built = build(&"MSH|^~\\&|S|F|R|F|2026||ADT^A01|1|P|2.4\nPID|1||Café".to_string());
+        assert_eq!(to_bytes(&built), to_bytes(manual));
+    }
+
+    #[test]
+    fn astm_autobuild_checksum_covers_utf8_bytes() {
+        let output = build("H|\\^&|é");
+        let bytes = to_bytes(&output);
+        assert!(bytes.windows(2).any(|w| w == [0xC3, 0xA9]));
+        let stx = bytes.iter().position(|b| *b == 0x02).unwrap();
+        let end = bytes.iter().position(|b| *b == 0x03 || *b == 0x17).unwrap();
+        let sum = bytes[stx + 1..=end]
+            .iter()
+            .fold(0u8, |a, b| a.wrapping_add(*b));
+        let expected = format!("{:02X}", sum);
+        assert_eq!(&bytes[end + 1..end + 3], expected.as_bytes());
+    }
 }

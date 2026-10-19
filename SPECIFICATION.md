@@ -168,3 +168,4 @@ The application includes an Autobuild helper for constructing ASTM and MLLP mess
 - The app must support special characters such as `<ENQ>`, `<EOT>`, `<VT>`, `<FS>`, `<STX>`, `<ETX>`, `<ETB>`, `<CR>`, `<LF>`, `<ACK>`, and `<NAK>`.
 - The backend translates between human-readable token strings and their corresponding control characters for sending and display.
 - Message display uses human-readable token strings rather than raw binary control bytes.
+- Message text is UTF-8 on the wire (composer and Autobuild alike); control tokens remain single bytes. A multibyte character split across network reads is reassembled for display. Invalid UTF-8 in received data is displayed as U+FFFD; the Hex inspector shows the exact bytes.

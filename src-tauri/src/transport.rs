@@ -12,6 +12,7 @@ use crate::emitter::Emitter;
 use crate::frames::FrameBuffer;
 use crate::message_queue::{MessageQueue, SharedMessageQueue};
 use crate::models::{ConnectRequest, ConnectionStatus, LogLevel};
+use crate::translate;
 
 /// Longest a stop request waits for a connection task to release its socket.
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -596,14 +597,23 @@ async fn read_loop(
     // Complete messages are extracted here (per connection attempt) while the UI keeps
     // receiving the raw chunks.
     let mut frames = FrameBuffer::new();
+    // Reassembles multibyte characters split across reads (per connection attempt).
+    let mut decoder = translate::Utf8StreamDecoder::new();
 
     loop {
         let len = reader
             .read(&mut buffer)
             .await
             .map_err(|err| err.to_string())?;
+        if len == 0 {
+            let pending = decoder.pending_len();
+            // The dangling partial character is dropped, not emitted as a new message.
+            let _ = decoder.finish();
+            message_queue.log_incomplete_on_close(pending);
+        }
         let res = Vec::from_iter(buffer[..len].iter().copied());
-        message_queue.handle_received_message(res).await?;
+        let visible = decoder.decode(&res);
+        message_queue.handle_received_message(visible, res).await?;
         for event in frames.feed(&buffer[..len]) {
             message_queue.handle_frame(event).await;
         }

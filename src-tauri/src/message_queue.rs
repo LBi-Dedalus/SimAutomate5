@@ -184,7 +184,13 @@ impl MessageQueue {
     }
 
     /// Raw chunk as read from the socket: shown as is, and an ACK releases the user queue.
-    pub(crate) async fn handle_received_message(&self, message: Vec<u8>) -> Result<(), String> {
+    /// `visible` is the text decoded by the connection's stream decoder (so characters split
+    /// across reads are reassembled); `message` is exactly the bytes of this read.
+    pub(crate) async fn handle_received_message(
+        &self,
+        visible: String,
+        message: Vec<u8>,
+    ) -> Result<(), String> {
         if message.is_empty() {
             return Err("Connection closed by peer".to_string());
         }
@@ -196,12 +202,23 @@ impl MessageQueue {
             format!("received message bytes={}", message.len()),
         );
 
-        let visible = translate::to_human_readable(&message);
         self.emitter
             .emit_message_with_raw(MessageType::Received, visible, message.clone());
         // Standalone ACKs are detected by the frame parser (`handle_frame`), which also copes
         // with ACKs coalesced with other data.
         Ok(())
+    }
+
+    /// Logs (metadata only) bytes of an incomplete UTF-8 sequence dropped when the peer closed.
+    pub(crate) fn log_incomplete_on_close(&self, pending_bytes: usize) {
+        if pending_bytes > 0 {
+            self.emitter.only_log(
+                LogLevel::Inf,
+                file!(),
+                line!(),
+                format!("connection closed with incomplete UTF-8 sequence bytes={pending_bytes}"),
+            );
+        }
     }
 
     async fn handle_ack(&self) -> Result<(), String> {
@@ -451,6 +468,48 @@ mod tests {
 
     const AUTOBUILD: &str = "<VT>\nMSH|^~\\&|A|B<CR>\nPID|1||123<CR>\n<FS><CR>";
     const AUTOBUILD_BYTES: &[u8] = b"\x0bMSH|^~\\&|A|B\rPID|1||123\r\x1c\r";
+
+    struct CaptureSink(std::sync::Mutex<Vec<(String, Vec<u8>)>>);
+
+    impl crate::emitter::EventSink for CaptureSink {
+        fn status(&self, _: StatusPayload) -> Result<(), String> {
+            Ok(())
+        }
+        fn message(&self, p: MessagePayload) -> Result<(), String> {
+            self.0
+                .lock()
+                .unwrap()
+                .push((p.content, p.raw.unwrap_or_default()));
+            Ok(())
+        }
+        fn notify(&self, _: &str, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn split_multibyte_char_is_reassembled_and_raw_is_per_read() {
+        let sink = Arc::new(CaptureSink(Default::default()));
+        let q = MessageQueue::shared(
+            Emitter::with_sink(sink.clone()).scoped("s", 1),
+            Arc::new(RuleSet::disabled()),
+        );
+        let mut dec = translate::Utf8StreamDecoder::new();
+        for chunk in [&[0x43u8, 0x61, 0x66, 0xC3][..], &[0xA9][..]] {
+            let visible = dec.decode(chunk);
+            q.handle_received_message(visible, chunk.to_vec())
+                .await
+                .unwrap();
+        }
+        let got = sink.0.lock().unwrap().clone();
+        assert_eq!(
+            got,
+            vec![
+                ("Caf".to_string(), vec![0x43, 0x61, 0x66, 0xC3]),
+                ("é".to_string(), vec![0xA9]),
+            ]
+        );
+    }
 
     #[test]
     fn autobuild_hl7_is_one_item_with_exact_bytes() {

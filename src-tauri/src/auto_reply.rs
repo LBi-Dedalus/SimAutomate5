@@ -809,6 +809,37 @@ mod tests {
     }
 
     #[test]
+    fn literal_and_template_text_is_utf8_on_the_wire() {
+        let event = msg("QRY^A19", "X1", "");
+        let set = compile(vec![rule("0", hl7("QRY*"), None, literal("é<STX>€"))], &[]).unwrap();
+        match set.evaluate(&event) {
+            Outcome::Reply(reply) => {
+                assert_eq!(reply.frames, vec![vec![0xC3, 0xA9, 0x02, 0xE2, 0x82, 0xAC]]);
+            }
+            other => panic!("expected a reply, got {other:?}"),
+        }
+        let t = tpl("t", "é€", &[]);
+        let set = compile(
+            vec![rule(
+                "0",
+                hl7("QRY*"),
+                None,
+                Action::Template {
+                    template_id: "t".into(),
+                },
+            )],
+            &[t],
+        )
+        .unwrap();
+        match set.evaluate(&event) {
+            Outcome::Reply(reply) => {
+                assert_eq!(reply.frames, vec![vec![0xC3, 0xA9, 0xE2, 0x82, 0xAC]]);
+            }
+            other => panic!("expected a reply, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn no_auto_reply_suppresses_and_stops_lower_rules() {
         let set = compile(
             vec![

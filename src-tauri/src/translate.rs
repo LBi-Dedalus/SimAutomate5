@@ -76,38 +76,115 @@ impl Into<char> for ControlToken {
 }
 
 pub fn to_bytes(input: &str) -> Vec<u8> {
-    let mut output = Vec::with_capacity(input.len());
-    let chars: Vec<char> = input.chars().collect();
-    let mut i = 0;
-
-    while i < chars.len() {
-        if chars[i] == '<' && i + 1 < chars.len() {
-            if let Some(end) = chars[i + 1..].iter().position(|c| *c == '>') {
-                let token: String = chars[i..=i + end + 1].iter().collect();
-                if let Some(byte) = token_to_byte(&token) {
-                    output.push(byte);
-                    i += end + 2;
-                    continue;
-                }
+    // Text is UTF-8 on the wire; `<` and `>` are ASCII so slicing is safe.
+    let mut out = Vec::with_capacity(input.len());
+    let mut rest = input;
+    while let Some(start) = rest.find('<') {
+        out.extend_from_slice(&rest.as_bytes()[..start]);
+        let tail = &rest[start..];
+        if let Some(end) = tail.find('>') {
+            if let Some(b) = token_to_byte(&tail[..=end]) {
+                out.push(b);
+                rest = &tail[end + 1..];
+                continue;
             }
         }
-
-        output.push(chars[i] as u8);
-        i += 1;
+        out.push(b'<');
+        rest = &tail[1..];
     }
-
-    output
+    out.extend_from_slice(rest.as_bytes());
+    out
 }
 
+/// Decodes wire bytes as UTF-8 and shows control bytes as tokens.
+/// Invalid sequences are shown as U+FFFD (the Hex inspector shows exact bytes).
 pub fn to_human_readable(bytes: &[u8]) -> String {
-    let mut result = String::new();
-    for byte in bytes {
-        if let Some(token) = byte_to_token(*byte) {
-            result.push_str(token);
-        } else if *byte == b'\n' {
-            result.push('\n');
+    let (text, _) = decode_prefix(bytes, true);
+    text
+}
+
+/// Decodes `bytes`; returns the text and the number of trailing bytes held back.
+/// With `final_input == false`, a trailing incomplete-but-possibly-valid sequence is not
+/// decoded (it is the only thing ever held back, at most 3 bytes).
+fn decode_prefix(bytes: &[u8], final_input: bool) -> (String, usize) {
+    let mut result = String::with_capacity(bytes.len());
+    let mut chunks = bytes.utf8_chunks().peekable();
+    let mut held = 0;
+    while let Some(chunk) = chunks.next() {
+        result.push_str(&escape_controls(chunk.valid()));
+        let invalid = chunk.invalid();
+        if invalid.is_empty() {
+            continue;
+        }
+        // An incomplete sequence can only be reported by the last chunk.
+        if !final_input && chunks.peek().is_none() && is_incomplete_prefix(invalid) {
+            held = invalid.len();
         } else {
-            result.push(*byte as char);
+            result.push('\u{FFFD}');
+        }
+    }
+    (result, held)
+}
+
+/// True if `invalid` (the invalid part of the last chunk) is a valid UTF-8 prefix that
+/// merely lacks continuation bytes. `utf8_chunks` reports such a tail as a single chunk
+/// whose invalid part is shorter than the sequence length implied by its lead byte.
+fn is_incomplete_prefix(invalid: &[u8]) -> bool {
+    let needed = match invalid.first() {
+        Some(0xC2..=0xDF) => 2,
+        Some(0xE0..=0xEF) => 3,
+        Some(0xF0..=0xF4) => 4,
+        _ => return false,
+    };
+    // A lone-error chunk (e.g. `C3 41` -> invalid `C3`) is always followed by more bytes,
+    // so reaching the end of input with a short invalid part means truncation.
+    invalid.len() < needed
+}
+
+/// Incremental UTF-8 decoder for a byte stream read in arbitrary chunks. A multibyte
+/// character split across chunks is reassembled; genuinely invalid bytes become U+FFFD
+/// immediately. Output is escaped exactly like [`to_human_readable`].
+#[derive(Debug, Default)]
+pub struct Utf8StreamDecoder {
+    pending: Vec<u8>,
+}
+
+impl Utf8StreamDecoder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn decode(&mut self, chunk: &[u8]) -> String {
+        let mut data = std::mem::take(&mut self.pending);
+        data.extend_from_slice(chunk);
+        let (text, held) = decode_prefix(&data, false);
+        self.pending = data[data.len() - held..].to_vec();
+        text
+    }
+
+    /// Number of bytes currently held back awaiting continuation.
+    pub fn pending_len(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// Flushes at end of stream: a dangling partial sequence becomes U+FFFD.
+    pub fn finish(&mut self) -> String {
+        if self.pending.is_empty() {
+            String::new()
+        } else {
+            self.pending.clear();
+            "\u{FFFD}".to_string()
+        }
+    }
+}
+
+/// Replaces control characters 0x00-0x1F with their `<TOKEN>` form.
+pub fn escape_controls(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match u8::try_from(ch).ok().and_then(byte_to_token) {
+            Some(token) => result.push_str(token),
+            None => result.push(ch),
         }
     }
     result
@@ -125,4 +202,91 @@ fn byte_to_token(byte: u8) -> Option<&'static str> {
         .iter()
         .find(|(_, b)| (*b as u8) == byte)
         .map(|(t, _)| *t)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ascii_and_tokens() {
+        assert_eq!(to_bytes("A<STX>B<x>"), b"A\x02B<x>");
+        assert_eq!(to_bytes("<<STX>"), b"<\x02");
+        assert_eq!(to_bytes("a<b"), b"a<b");
+        assert_eq!(to_bytes("<"), b"<");
+    }
+
+    #[test]
+    fn unicode_is_utf8_encoded() {
+        assert_eq!(to_bytes("é"), [0xC3, 0xA9]);
+        let a = to_bytes("ą");
+        assert_eq!(a, [0xC4, 0x85]);
+        assert!(!a.contains(&0x05));
+        assert_eq!(to_bytes("€"), [0xE2, 0x82, 0xAC]);
+        assert_eq!(to_bytes("😀"), [0xF0, 0x9F, 0x98, 0x80]);
+        assert_eq!(to_bytes("é<ETX>€"), [0xC3, 0xA9, 0x03, 0xE2, 0x82, 0xAC]);
+    }
+
+    #[test]
+    fn decoding() {
+        assert_eq!(to_human_readable(&[0x02, 0xC3, 0xA9]), "<STX>é");
+        assert_eq!(to_human_readable(&[0x41, 0xFF]), "A\u{FFFD}");
+        assert_eq!(to_human_readable(b"a\nb"), "a<LF>b");
+    }
+
+    fn split_decode(data: &[u8], at: usize) -> String {
+        let mut d = Utf8StreamDecoder::new();
+        let mut out = d.decode(&data[..at]);
+        out.push_str(&d.decode(&data[at..]));
+        out.push_str(&d.finish());
+        out
+    }
+
+    #[test]
+    fn stream_split_at_every_boundary() {
+        for ch in ["é", "€", "😀"] {
+            let mut data = vec![0x02];
+            data.extend(to_bytes(&format!("A{ch}B")));
+            let expected = to_human_readable(&data);
+            assert_eq!(expected, format!("<STX>A{ch}B"));
+            for at in 0..=data.len() {
+                assert_eq!(split_decode(&data, at), expected, "char {ch} split {at}");
+            }
+        }
+    }
+
+    #[test]
+    fn stream_byte_by_byte() {
+        let data = to_bytes("<STX>Café €😀\u{FF}<ETX>");
+        let mut d = Utf8StreamDecoder::new();
+        let mut out = String::new();
+        for b in &data {
+            out.push_str(&d.decode(&[*b]));
+        }
+        out.push_str(&d.finish());
+        assert_eq!(out, to_human_readable(&data));
+    }
+
+    #[test]
+    fn stream_invalid_bytes() {
+        let mut d = Utf8StreamDecoder::new();
+        assert_eq!(d.decode(&[0x41, 0xFF, 0x42]), "A\u{FFFD}B");
+        assert_eq!(d.pending_len(), 0);
+        assert_eq!(d.decode(&[0xC3]), "");
+        assert_eq!(d.pending_len(), 1);
+        assert_eq!(d.finish(), "\u{FFFD}");
+        assert_eq!(d.finish(), "");
+        assert_eq!(d.decode(&[0xC3, 0x41]), "\u{FFFD}A");
+        // Held bytes followed by an invalid continuation.
+        assert_eq!(d.decode(&[0xE2, 0x82]), "");
+        assert_eq!(d.decode(&[0x41]), "\u{FFFD}A");
+        assert_eq!(d.finish(), "");
+    }
+
+    #[test]
+    fn round_trip() {
+        for s in ["ASCII", "àçèéêëîïôùûüÿœæ", "ąčęłńšž", "€", "😀"] {
+            assert_eq!(to_human_readable(&to_bytes(s)), s);
+        }
+    }
 }

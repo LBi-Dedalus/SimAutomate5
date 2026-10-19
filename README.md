@@ -30,6 +30,14 @@ SimAutomate5 is a Tauri desktop app for exchanging ASTM and HL7-style messages o
 - Metadata-only traffic logging; raw protocol payload bodies are not written to the log files.
 - Special character reference buttons for ASTM/HL7 control tokens.
 
+### Encoding
+
+- Message text is encoded and decoded as UTF-8 (`é` is sent as `C3 A9`, `€` as `E2 82 AC`), for both the composer and Autobuild.
+- Control tokens such as `<STX>` or `<CR>` stay single bytes (0x00-0x1F).
+- Received bytes are never re-encoded: the Hex inspector shows the exact bytes, and the request control ID (MSH-10) is echoed in auto replies byte for byte.
+- A multibyte character split across two network reads is reassembled for display.
+- Bytes that are not valid UTF-8 are displayed as U+FFFD (�) in the text view; use the Hex inspector for the exact bytes.
+
 ## Usage
 
 1. Launch the app.
