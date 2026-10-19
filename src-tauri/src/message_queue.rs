@@ -42,9 +42,49 @@ const MAX_USER_PAYLOAD: usize = 1024 * 1024;
 /// How long an ENQ/STX item waits for the peer's ACK before the send queue is reset.
 pub(crate) const ACK_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Which queue the ENQ/STX frame whose ACK is awaited came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AckOrigin {
+    /// A user message (`pending_messages`).
+    User,
+    /// An automatic transmission (`scheduled`).
+    Scheduled,
+}
+
+/// What `reset_sending` discarded.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Discarded {
+    /// Queued user items.
+    user: usize,
+    /// Scheduled automatic frames (including pure ACK/NAK replies).
+    scheduled: usize,
+}
+
+impl Discarded {
+    fn total(self) -> usize {
+        self.user + self.scheduled
+    }
+
+    /// Text for the warning, matching exactly what was dropped.
+    fn describe(self) -> String {
+        if self.scheduled == 0 {
+            format!("{} queued item(s) dropped", self.user)
+        } else if self.user == 0 {
+            format!("{} scheduled automatic frame(s) dropped", self.scheduled)
+        } else {
+            format!(
+                "{} queued item(s) and {} scheduled automatic frame(s) dropped",
+                self.user, self.scheduled
+            )
+        }
+    }
+}
+
 struct MessageQueueState {
     pending_messages: VecDeque<Vec<u8>>,
     waiting_for_ack: bool,
+    /// Origin of the frame being awaited (set together with `waiting_for_ack`).
+    ack_origin: Option<AckOrigin>,
     /// When the awaited ACK is overdue (set together with `waiting_for_ack`).
     ack_deadline: Option<Instant>,
     ack_timeout: Duration,
@@ -124,15 +164,17 @@ impl MessageQueueState {
     }
 
     /// Starts (or not, depending on the frame) the wait for the ACK of a frame just released.
-    fn start_ack_wait(&mut self, frame: &[u8], now: Instant) {
+    fn start_ack_wait(&mut self, frame: &[u8], now: Instant, origin: AckOrigin) {
         self.waiting_for_ack = requires_ack(frame);
         self.ack_deadline = self.waiting_for_ack.then(|| now + self.ack_timeout);
+        self.ack_origin = self.waiting_for_ack.then_some(origin);
     }
 
     /// Stops waiting for an ACK.
     fn stop_ack_wait(&mut self) {
         self.waiting_for_ack = false;
         self.ack_deadline = None;
+        self.ack_origin = None;
     }
 
     /// Whether the awaited ACK is overdue at `now`.
@@ -140,16 +182,31 @@ impl MessageQueueState {
         self.waiting_for_ack && self.ack_deadline.is_some_and(|deadline| now >= deadline)
     }
 
-    /// Stops sending: drops the waiting state and the queued user items (scheduled automatic
-    /// replies to the peer are kept). Returns how many user items were dropped.
-    fn reset_sending(&mut self) -> usize {
+    /// Stops sending: drops the waiting state and what would continue the aborted transmission.
+    /// - The awaited frame came from a user message (or nothing was awaited): the queued user
+    ///   items are dropped; scheduled automatic frames are kept.
+    /// - It came from an automatic transmission: ALL scheduled frames are dropped (the rest of
+    ///   that transmission, e.g. its STX/EOT, and also pure `<ACK>`/`<NAK>` replies); queued
+    ///   user items are kept.
+    /// Returns what was discarded.
+    fn reset_sending(&mut self) -> Discarded {
+        let origin = self.ack_origin;
         self.stop_ack_wait();
-        let count = self.pending_messages.len();
-        let bytes: usize = self.pending_messages.iter().map(Vec::len).sum();
-        self.pending_messages.clear();
-        self.queued_items -= count;
-        self.queued_bytes -= bytes;
-        count
+        let mut discarded = Discarded::default();
+        if origin == Some(AckOrigin::Scheduled) {
+            discarded.scheduled = self.scheduled.len();
+            let bytes: usize = self.scheduled.iter().map(|reply| reply.frame.len()).sum();
+            self.scheduled.clear();
+            self.queued_items -= discarded.scheduled;
+            self.queued_bytes -= bytes;
+        } else {
+            discarded.user = self.pending_messages.len();
+            let bytes: usize = self.pending_messages.iter().map(Vec::len).sum();
+            self.pending_messages.clear();
+            self.queued_items -= discarded.user;
+            self.queued_bytes -= bytes;
+        }
+        discarded
     }
 
     /// Ends the attempt: nothing stays queued.
@@ -174,7 +231,7 @@ impl MessageQueueState {
             .map(|(index, _)| index)?;
         let frame = self.pop_reply(index);
         if !is_control_reply(&frame) {
-            self.start_ack_wait(&frame, now);
+            self.start_ack_wait(&frame, now, AckOrigin::Scheduled);
         }
         Some(frame)
     }
@@ -206,6 +263,7 @@ impl MessageQueue {
             state: Mutex::new(MessageQueueState {
                 pending_messages: VecDeque::new(),
                 waiting_for_ack: false,
+                ack_origin: None,
                 ack_deadline: None,
                 ack_timeout,
                 rules,
@@ -301,7 +359,7 @@ impl MessageQueue {
                 }
                 if !state.waiting_for_ack {
                     if let Some(message) = state.pop_user() {
-                        state.start_ack_wait(&message, now);
+                        state.start_ack_wait(&message, now, AckOrigin::User);
                         self.emitter.only_log(
                             LogLevel::Inf,
                             file!(),
@@ -370,13 +428,14 @@ impl MessageQueue {
         }
     }
 
-    fn report_ack_timeout(&self, dropped: usize, timeout: Duration) {
+    fn report_ack_timeout(&self, dropped: Discarded, timeout: Duration) {
         self.emitter.warn(
             file!(),
             line!(),
             format!(
-                "No ACK received within {} ms: sending stopped, send queue cleared ({dropped} queued item(s) dropped)",
-                timeout.as_millis()
+                "No ACK received within {} ms: sending stopped, send queue cleared ({})",
+                timeout.as_millis(),
+                dropped.describe()
             ),
         );
     }
@@ -395,7 +454,7 @@ impl MessageQueue {
             (was_waiting, dropped)
         };
         match outcome {
-            (false, 0) => self.emitter.only_log(
+            (false, dropped) if dropped.total() == 0 => self.emitter.only_log(
                 LogLevel::Inf,
                 file!(),
                 line!(),
@@ -405,7 +464,8 @@ impl MessageQueue {
                 file!(),
                 line!(),
                 format!(
-                    "Received {what}: sending stopped, send queue cleared ({dropped} queued item(s) dropped)"
+                    "Received {what}: sending stopped, send queue cleared ({})",
+                    dropped.describe()
                 ),
             ),
         }
@@ -1066,10 +1126,122 @@ mod tests {
         assert_eq!(queue.recv().await, vec![0x06]);
     }
 
+    const AUTO_STX: &[u8] = b"\x021H|X\r\x035D\r\n";
+
+    /// Schedules an automatic ENQ / STX / EOT transmission and releases its ENQ.
+    async fn start_auto_send(queue: &SharedMessageQueue) {
+        queue
+            .state
+            .lock()
+            .await
+            .push_replies(
+                Instant::now(),
+                vec![vec![0x05], AUTO_STX.to_vec(), vec![0x04]],
+            )
+            .unwrap();
+        assert_eq!(queue.recv().await, vec![0x05]);
+        let s = queue.state.lock().await;
+        assert_eq!(s.ack_origin, Some(AckOrigin::Scheduled));
+        assert_eq!(s.scheduled.len(), 2);
+    }
+
+    async fn assert_auto_send_aborted(queue: &SharedMessageQueue, sink: &TypedSink, what: &str) {
+        // No continuation bytes are released.
+        assert!(timeout(Duration::from_millis(200), queue.recv())
+            .await
+            .is_err());
+        assert_idle(queue).await;
+        let warns = warnings(sink);
+        assert_eq!(warns.len(), 1, "{warns:?}");
+        assert!(warns[0].contains(what), "{warns:?}");
+        assert!(
+            warns[0].contains("2 scheduled automatic frame(s) dropped"),
+            "{warns:?}"
+        );
+        // A fresh transaction proceeds.
+        queue
+            .state
+            .lock()
+            .await
+            .push_replies(Instant::now(), vec![vec![0x05], AUTO_STX.to_vec()])
+            .unwrap();
+        assert_eq!(queue.recv().await, vec![0x05]);
+        queue.handle_frame(FrameEvent::Ack).await;
+        assert_eq!(queue.recv().await, AUTO_STX.to_vec());
+    }
+
+    #[tokio::test]
+    async fn automatic_send_timeout_drops_the_continuation() {
+        let (queue, sink) = short_queue(Arc::new(RuleSet::disabled()));
+        start_auto_send(&queue).await;
+        assert_auto_send_aborted(&queue, &sink, "No ACK received within 60 ms").await;
+    }
+
+    #[tokio::test]
+    async fn automatic_send_nak_drops_the_continuation() {
+        let (queue, sink) = short_queue(Arc::new(RuleSet::disabled()));
+        start_auto_send(&queue).await;
+        queue.handle_frame(FrameEvent::Nak).await;
+        assert_auto_send_aborted(&queue, &sink, "NAK").await;
+    }
+
+    #[tokio::test]
+    async fn automatic_send_eot_drops_the_continuation() {
+        let (queue, sink) = short_queue(Arc::new(RuleSet::disabled()));
+        start_auto_send(&queue).await;
+        queue.handle_frame(FrameEvent::Eot).await;
+        assert_auto_send_aborted(&queue, &sink, "EOT").await;
+    }
+
+    #[tokio::test]
+    async fn aborted_automatic_send_drops_control_replies_and_keeps_user_items() {
+        let (queue, sink) = short_queue(Arc::new(RuleSet::disabled()));
+        start_auto_send(&queue).await;
+        queue.enqueue_message("user").await.unwrap();
+        queue
+            .state
+            .lock()
+            .await
+            .push_replies(Instant::now(), vec![vec![0x06], vec![0x15]])
+            .unwrap();
+        queue.handle_frame(FrameEvent::Nak).await;
+        {
+            let s = queue.state.lock().await;
+            assert_eq!(s.scheduled.len(), 0);
+            assert_eq!(s.pending_messages.len(), 1);
+            assert_invariant(&s);
+        }
+        let warns = warnings(&sink);
+        assert!(warns[0].contains("4 scheduled automatic frame(s) dropped"));
+        assert!(!warns[0].contains("queued item(s)"));
+        assert_eq!(queue.recv().await, b"user".to_vec());
+    }
+
+    #[tokio::test]
+    async fn aborted_user_send_keeps_scheduled_frames() {
+        let (queue, sink) = short_queue(Arc::new(RuleSet::disabled()));
+        queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
+        assert_eq!(queue.recv().await, vec![0x05]);
+        assert_eq!(queue.state.lock().await.ack_origin, Some(AckOrigin::User));
+        queue
+            .state
+            .lock()
+            .await
+            .push_replies(far(), vec![AUTO_STX.to_vec()])
+            .unwrap();
+        queue.handle_frame(FrameEvent::Nak).await;
+        let s = queue.state.lock().await;
+        assert_eq!((s.pending_messages.len(), s.scheduled.len()), (0, 1));
+        assert!(s.ack_origin.is_none());
+        assert_invariant(&s);
+        assert!(warnings(&sink)[0].contains("1 queued item(s) dropped"));
+    }
+
     fn state() -> MessageQueueState {
         MessageQueueState {
             pending_messages: VecDeque::new(),
             waiting_for_ack: false,
+            ack_origin: None,
             ack_deadline: None,
             ack_timeout: ACK_TIMEOUT,
             rules: Arc::new(RuleSet::disabled()),
