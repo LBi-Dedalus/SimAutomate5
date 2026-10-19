@@ -31,17 +31,100 @@ struct ScheduledReply {
     frame: Vec<u8>,
 }
 
+/// Ceiling on queued items (user items + scheduled reply frames, combined).
+const MAX_ITEMS: usize = 1_024;
+/// Ceiling on queued bytes (user items + scheduled reply frames, combined).
+const MAX_BYTES: usize = 4 * 1024 * 1024;
+/// Largest user message accepted by `send_user_message`.
+const MAX_USER_PAYLOAD: usize = 1024 * 1024;
+
 struct MessageQueueState {
     pending_messages: VecDeque<Vec<u8>>,
     waiting_for_ack: bool,
     rules: Arc<RuleSet>,
     scheduled: Vec<ScheduledReply>,
     next_seq: u64,
+    /// Items in `pending_messages` and `scheduled` combined.
+    queued_items: usize,
+    /// Bytes in `pending_messages` and `scheduled` combined.
+    queued_bytes: usize,
     /// Set when the attempt ended: nothing is queued or scheduled any more.
     closed: bool,
 }
 
 impl MessageQueueState {
+    /// Whether `items` more items totalling `bytes` bytes fit.
+    fn check(&self, items: usize, bytes: usize) -> Result<(), String> {
+        if self.queued_items + items > MAX_ITEMS || self.queued_bytes + bytes > MAX_BYTES {
+            return Err(format!(
+                "send queue full ({} items, {} bytes)",
+                self.queued_items, self.queued_bytes
+            ));
+        }
+        Ok(())
+    }
+
+    /// All-or-nothing admission of user items.
+    fn push_user(&mut self, items: Vec<Vec<u8>>) -> Result<(), String> {
+        let bytes = items.iter().map(Vec::len).sum();
+        self.check(items.len(), bytes)?;
+        self.queued_items += items.len();
+        self.queued_bytes += bytes;
+        self.pending_messages.extend(items);
+        Ok(())
+    }
+
+    /// All-or-nothing admission of every frame of one automatic reply.
+    fn push_replies(&mut self, due: Instant, frames: Vec<Vec<u8>>) -> Result<(), String> {
+        let bytes = frames.iter().map(Vec::len).sum();
+        self.check(frames.len(), bytes)?;
+        self.queued_items += frames.len();
+        self.queued_bytes += bytes;
+        for frame in frames {
+            let seq = self.next_seq;
+            self.next_seq += 1;
+            self.scheduled.push(ScheduledReply { due, seq, frame });
+        }
+        Ok(())
+    }
+
+    fn pop_user(&mut self) -> Option<Vec<u8>> {
+        let item = self.pending_messages.pop_front()?;
+        self.release(item.len());
+        Some(item)
+    }
+
+    fn pop_reply(&mut self, index: usize) -> Vec<u8> {
+        let frame = self.scheduled.remove(index).frame;
+        self.release(frame.len());
+        frame
+    }
+
+    /// Only called by `pop_*`.
+    fn release(&mut self, bytes: usize) {
+        self.queued_items -= 1;
+        self.queued_bytes -= bytes;
+    }
+
+    /// Drops every scheduled reply and returns how many there were.
+    fn clear_replies(&mut self) -> usize {
+        let count = self.scheduled.len();
+        let bytes: usize = self.scheduled.iter().map(|r| r.frame.len()).sum();
+        self.scheduled.clear();
+        self.queued_items -= count;
+        self.queued_bytes -= bytes;
+        count
+    }
+
+    /// Ends the attempt: nothing stays queued.
+    fn close(&mut self) {
+        self.closed = true;
+        self.pending_messages.clear();
+        self.scheduled.clear();
+        self.queued_items = 0;
+        self.queued_bytes = 0;
+    }
+
     /// Earliest due reply that may be released now.
     fn take_due(&mut self, now: Instant) -> Option<Vec<u8>> {
         let waiting = self.waiting_for_ack;
@@ -52,11 +135,11 @@ impl MessageQueueState {
             .filter(|(_, reply)| reply.due <= now && (!waiting || is_control_reply(&reply.frame)))
             .min_by_key(|(_, reply)| (reply.due, reply.seq))
             .map(|(index, _)| index)?;
-        let reply = self.scheduled.remove(index);
-        if !is_control_reply(&reply.frame) {
-            self.waiting_for_ack = requires_ack(&reply.frame);
+        let frame = self.pop_reply(index);
+        if !is_control_reply(&frame) {
+            self.waiting_for_ack = requires_ack(&frame);
         }
-        Some(reply.frame)
+        Some(frame)
     }
 
     /// Earliest future moment at which a reply becomes releasable.
@@ -80,6 +163,8 @@ impl MessageQueue {
                 rules,
                 scheduled: Vec::new(),
                 next_seq: 0,
+                queued_items: 0,
+                queued_bytes: 0,
                 closed: false,
             }),
             ready: Notify::new(),
@@ -89,8 +174,7 @@ impl MessageQueue {
     /// Replaces the rules; replies scheduled by the previous rules are dropped.
     pub(crate) async fn update_rules(&self, rules: Arc<RuleSet>) {
         let mut state = self.state.lock().await;
-        let dropped = state.scheduled.len();
-        state.scheduled.clear();
+        let dropped = state.clear_replies();
         state.rules = rules;
         drop(state);
         if dropped > 0 {
@@ -107,12 +191,16 @@ impl MessageQueue {
     /// The attempt is over: pending user messages and automatic replies are discarded.
     pub(crate) async fn close(&self) {
         let mut state = self.state.lock().await;
-        state.closed = true;
-        state.pending_messages.clear();
-        state.scheduled.clear();
+        state.close();
     }
 
-    pub(crate) async fn send_user_message(&self, payload: &SendRequest) {
+    pub(crate) async fn send_user_message(&self, payload: &SendRequest) -> Result<(), String> {
+        if payload.message.len() > MAX_USER_PAYLOAD {
+            return Err(format!(
+                "Message too large ({} bytes, maximum {MAX_USER_PAYLOAD})",
+                payload.message.len()
+            ));
+        }
         self.emitter.only_log(
             LogLevel::Inf,
             file!(),
@@ -124,17 +212,19 @@ impl MessageQueue {
             ),
         );
 
-        self.enqueue_message(&payload.message).await;
+        self.enqueue_message(&payload.message).await
     }
 
-    async fn enqueue_message(&self, message: &str) {
+    async fn enqueue_message(&self, message: &str) -> Result<(), String> {
+        let items = split_message(message);
         let mut state = self.state.lock().await;
         if state.closed {
-            return;
+            return Ok(());
         }
-        state.pending_messages.extend(split_message(message));
+        state.push_user(items)?;
         drop(state);
         self.ready.notify_one();
+        Ok(())
     }
 
     pub(crate) async fn recv(&self) -> Vec<u8> {
@@ -155,7 +245,7 @@ impl MessageQueue {
                     return frame;
                 }
                 if !state.waiting_for_ack {
-                    if let Some(message) = state.pending_messages.pop_front() {
+                    if let Some(message) = state.pop_user() {
                         state.waiting_for_ack = requires_ack(&message);
                         self.emitter.only_log(
                             LogLevel::Inf,
@@ -318,12 +408,16 @@ impl MessageQueue {
             Outcome::Reply(reply) => {
                 let due = Instant::now() + reply.delay;
                 let frames = reply.frames.len();
-                for frame in reply.frames {
-                    let seq = state.next_seq;
-                    state.next_seq += 1;
-                    state.scheduled.push(ScheduledReply { due, seq, frame });
-                }
+                let pushed = state.push_replies(due, reply.frames);
                 drop(state);
+                if let Err(e) = pushed {
+                    self.emitter.error(
+                        file!(),
+                        line!(),
+                        format!("Auto reply rule \"{}\" dropped: {e}", reply.rule_name),
+                    );
+                    return;
+                }
                 self.emitter.only_log(
                     LogLevel::Inf,
                     file!(),
@@ -622,7 +716,8 @@ mod tests {
         let queue = queue();
         queue
             .enqueue_message(&format!("{AUTOBUILD}\n{AUTOBUILD}"))
-            .await;
+            .await
+            .unwrap();
         for _ in 0..2 {
             let item = timeout(Duration::from_millis(200), queue.recv())
                 .await
@@ -634,12 +729,213 @@ mod tests {
     #[tokio::test]
     async fn astm_items_still_wait_for_ack() {
         let queue = queue();
-        queue.enqueue_message("<ENQ>\nsecond").await;
+        queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
         assert_eq!(queue.recv().await, vec![0x05]);
         assert!(timeout(Duration::from_millis(100), queue.recv())
             .await
             .is_err());
         queue.handle_frame(FrameEvent::Ack).await;
         assert_eq!(queue.recv().await, b"second".to_vec());
+    }
+
+    fn state() -> MessageQueueState {
+        MessageQueueState {
+            pending_messages: VecDeque::new(),
+            waiting_for_ack: false,
+            rules: Arc::new(RuleSet::disabled()),
+            scheduled: Vec::new(),
+            next_seq: 0,
+            queued_items: 0,
+            queued_bytes: 0,
+            closed: false,
+        }
+    }
+
+    fn assert_invariant(s: &MessageQueueState) {
+        let bytes = s.pending_messages.iter().map(Vec::len).sum::<usize>()
+            + s.scheduled.iter().map(|r| r.frame.len()).sum::<usize>();
+        assert_eq!(s.queued_bytes, bytes);
+        assert_eq!(s.queued_items, s.pending_messages.len() + s.scheduled.len());
+    }
+
+    fn far() -> Instant {
+        Instant::now() + Duration::from_secs(3600)
+    }
+
+    fn ack_rules() -> Arc<RuleSet> {
+        use crate::auto_reply::{Action, AutoReplyConfig, Rule, Trigger};
+        Arc::new(
+            RuleSet::compile(
+                &AutoReplyConfig {
+                    enabled: true,
+                    rules: vec![Rule {
+                        id: "1".into(),
+                        name: "ack".into(),
+                        enabled: true,
+                        trigger: Trigger::AstmEnq,
+                        condition: None,
+                        action: Action::Literal {
+                            text: "<ACK>".into(),
+                        },
+                        delay_ms: 0,
+                    }],
+                },
+                &[],
+            )
+            .unwrap(),
+        )
+    }
+
+    #[test]
+    fn exact_limit_is_accepted() {
+        let mut s = state();
+        s.push_user(vec![vec![1]; MAX_ITEMS]).unwrap();
+        assert_eq!((s.queued_items, s.queued_bytes), (MAX_ITEMS, MAX_ITEMS));
+        assert_invariant(&s);
+
+        let mut s = state();
+        s.push_user(vec![vec![0; MAX_BYTES / 4]; 4]).unwrap();
+        assert_eq!(s.queued_bytes, MAX_BYTES);
+        assert_invariant(&s);
+    }
+
+    #[test]
+    fn one_over_limit_is_rejected() {
+        let mut s = state();
+        s.push_user(vec![vec![1]; MAX_ITEMS]).unwrap();
+        assert!(s.push_user(vec![vec![1]]).is_err());
+        assert!(s.push_replies(far(), vec![vec![1]]).is_err());
+        assert_eq!((s.queued_items, s.queued_bytes), (MAX_ITEMS, MAX_ITEMS));
+        assert_invariant(&s);
+
+        let mut s = state();
+        s.push_user(vec![vec![0; MAX_BYTES - 1]]).unwrap();
+        assert!(s.push_replies(far(), vec![vec![0; 2]]).is_err());
+        assert_eq!((s.queued_items, s.queued_bytes), (1, MAX_BYTES - 1));
+        assert!(s.scheduled.is_empty());
+        assert_invariant(&s);
+    }
+
+    #[test]
+    fn rejection_is_all_or_nothing() {
+        let mut s = state();
+        s.push_user(vec![vec![1]; MAX_ITEMS - 1]).unwrap();
+        assert!(s.push_user(vec![vec![1]; 2]).is_err());
+        assert!(s.push_replies(far(), vec![vec![1]; 2]).is_err());
+        assert_eq!(s.queued_items, MAX_ITEMS - 1);
+        assert!(s.scheduled.is_empty());
+        assert_invariant(&s);
+    }
+
+    #[tokio::test]
+    async fn user_payload_too_large_is_rejected() {
+        let queue = queue();
+        let err = queue
+            .send_user_message(&SendRequest {
+                message: "a".repeat(MAX_USER_PAYLOAD + 1),
+            })
+            .await
+            .unwrap_err();
+        assert!(err.contains("Message too large"));
+        let state = queue.state.lock().await;
+        assert_eq!((state.queued_items, state.queued_bytes), (0, 0));
+        drop(state);
+        queue
+            .send_user_message(&SendRequest {
+                message: "a".repeat(MAX_USER_PAYLOAD),
+            })
+            .await
+            .unwrap();
+        assert_eq!(queue.state.lock().await.queued_items, 1);
+    }
+
+    #[tokio::test]
+    async fn full_queue_rejects_user_message_and_drops_auto_reply() {
+        let queue = MessageQueue::shared(Emitter::with_sink(Arc::new(NoSink)), ack_rules());
+        // Sanity: with room, the ACK reply is scheduled.
+        queue.handle_frame(FrameEvent::Enq).await;
+        assert_eq!(queue.state.lock().await.scheduled.len(), 1);
+        queue.update_rules(ack_rules()).await;
+        assert_eq!(queue.state.lock().await.queued_items, 0);
+
+        queue
+            .state
+            .lock()
+            .await
+            .push_user(vec![vec![1]; MAX_ITEMS])
+            .unwrap();
+        queue.handle_frame(FrameEvent::Enq).await; // pure <ACK> is dropped too
+        let err = queue.enqueue_message("x").await.unwrap_err();
+        assert!(err.contains("send queue full"));
+        let state = queue.state.lock().await;
+        assert!(state.scheduled.is_empty());
+        assert_eq!(state.queued_items, MAX_ITEMS);
+        assert_invariant(&state);
+    }
+
+    #[test]
+    fn delayed_burst_is_capped() {
+        let mut s = state();
+        let due = far();
+        for _ in 0..10_000 {
+            let _ = s.push_replies(due, vec![vec![7; 10]]);
+        }
+        assert_eq!(s.queued_items, MAX_ITEMS);
+        assert!(s.queued_bytes <= MAX_BYTES);
+        assert_invariant(&s);
+    }
+
+    #[tokio::test]
+    async fn drain_resets_counters() {
+        let queue = queue();
+        let items = MAX_ITEMS / 2;
+        queue
+            .state
+            .lock()
+            .await
+            .push_user(vec![vec![1, 2, 3]; items])
+            .unwrap();
+        queue
+            .state
+            .lock()
+            .await
+            .push_replies(Instant::now(), vec![vec![9]; 5])
+            .unwrap();
+        for _ in 0..items + 5 {
+            timeout(Duration::from_millis(200), queue.recv())
+                .await
+                .expect("released");
+        }
+        let state = queue.state.lock().await;
+        assert_eq!((state.queued_items, state.queued_bytes), (0, 0));
+        assert_invariant(&state);
+    }
+
+    #[tokio::test]
+    async fn close_and_update_rules_reset_counters() {
+        let queue = queue();
+        {
+            let mut s = queue.state.lock().await;
+            s.push_user(vec![vec![1; 4]; 3]).unwrap();
+            s.push_replies(far(), vec![vec![2; 5]; 2]).unwrap();
+            assert_eq!((s.queued_items, s.queued_bytes), (5, 22));
+            assert_invariant(&s);
+        }
+        queue.update_rules(Arc::new(RuleSet::disabled())).await;
+        {
+            let s = queue.state.lock().await;
+            assert_eq!((s.queued_items, s.queued_bytes), (3, 12));
+            assert_invariant(&s);
+        }
+        queue
+            .state
+            .lock()
+            .await
+            .push_replies(far(), vec![vec![2; 5]])
+            .unwrap();
+        queue.close().await;
+        let s = queue.state.lock().await;
+        assert_eq!((s.queued_items, s.queued_bytes), (0, 0));
+        assert!(s.closed && s.pending_messages.is_empty() && s.scheduled.is_empty());
     }
 }

@@ -45,8 +45,7 @@ pub async fn send(
         .await
         .connection_manager
         .send_target(session_id, attempt)?;
-    queue.send_user_message(payload).await;
-    Ok(())
+    queue.send_user_message(payload).await
 }
 
 /// Stops one session. With `remove` the session is forgotten (close), otherwise it stays
