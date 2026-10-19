@@ -10,7 +10,9 @@
 //! * A standalone `ENQ` outside of any frame.
 //! * A standalone `ACK` outside of any frame (used by the send queue, not by the rules).
 //!
-//! `NAK`, `EOT`, line breaks and any other stray byte between frames are ignored. A new
+//! * A standalone `NAK` or `EOT` outside of any frame (the send queue stops on them).
+//!
+//! Line breaks and any other stray byte between frames are ignored. A new
 //! `VT` / `STX` inside a frame restarts the frame (resync) and reports the interrupted one as
 //! malformed. A frame bigger than [`MAX_FRAME_BYTES`] is dropped (everything up to the next
 //! start byte is ignored). Nothing partial is ever reported as a frame.
@@ -20,7 +22,9 @@ pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
 const STX: u8 = 0x02;
 const ETX: u8 = 0x03;
 const ENQ: u8 = 0x05;
+const EOT: u8 = 0x04;
 const ACK: u8 = 0x06;
+const NAK: u8 = 0x15;
 const VT: u8 = 0x0b;
 const LF: u8 = 0x0a;
 const CR: u8 = 0x0d;
@@ -37,6 +41,10 @@ pub enum FrameEvent {
     Enq,
     /// A standalone `ACK` outside of any frame (an `ACK` inside a frame is payload).
     Ack,
+    /// A standalone `NAK` outside of any frame.
+    Nak,
+    /// A standalone `EOT` outside of any frame.
+    Eot,
     /// A frame that was abandoned: nothing is replied to it.
     Malformed(&'static str),
     /// A frame exceeding [`MAX_FRAME_BYTES`] was dropped.
@@ -90,6 +98,8 @@ impl FrameBuffer {
         match byte {
             ENQ => out.push(FrameEvent::Enq),
             ACK => out.push(FrameEvent::Ack),
+            NAK => out.push(FrameEvent::Nak),
+            EOT => out.push(FrameEvent::Eot),
             VT => self.state = State::Hl7(Vec::new()),
             STX => self.state = State::Astm(vec![STX]),
             _ => self.state = State::Idle,
@@ -233,7 +243,7 @@ mod tests {
 
     #[test]
     fn control_bytes_outside_frames_are_never_triggers() {
-        let events = FrameBuffer::new().feed(&[0x15, 0x04, b'\r', b'\n', b'x']);
+        let events = FrameBuffer::new().feed(b"\r\nx");
         assert!(events.is_empty());
         assert_eq!(FrameBuffer::new().feed(&[ENQ]), vec![FrameEvent::Enq]);
     }
@@ -264,6 +274,18 @@ mod tests {
             events[..],
             [FrameEvent::Ack, FrameEvent::AstmFrame(_)]
         ));
+    }
+
+    #[test]
+    fn standalone_nak_and_eot_surface_but_are_payload_inside_frames() {
+        assert_eq!(
+            FrameBuffer::new().feed(&[NAK, EOT, b'x', NAK]),
+            vec![FrameEvent::Nak, FrameEvent::Eot, FrameEvent::Nak]
+        );
+        let events = FrameBuffer::new().feed(b"\x0bMSH|a\x15b\x04\x1c\r");
+        assert!(matches!(events[..], [FrameEvent::Hl7(_)]));
+        let events = FrameBuffer::new().feed(b"\x021H|\x15\x04\r\x0342\r\n");
+        assert!(matches!(events[..], [FrameEvent::AstmFrame(_)]));
     }
 
     #[test]

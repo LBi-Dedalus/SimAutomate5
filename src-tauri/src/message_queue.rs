@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::{Mutex, Notify};
 use tokio::time::{sleep_until, Instant};
@@ -38,9 +39,15 @@ const MAX_BYTES: usize = 4 * 1024 * 1024;
 /// Largest user message accepted by `send_user_message`.
 const MAX_USER_PAYLOAD: usize = 1024 * 1024;
 
+/// How long an ENQ/STX item waits for the peer's ACK before the send queue is reset.
+pub(crate) const ACK_TIMEOUT: Duration = Duration::from_secs(10);
+
 struct MessageQueueState {
     pending_messages: VecDeque<Vec<u8>>,
     waiting_for_ack: bool,
+    /// When the awaited ACK is overdue (set together with `waiting_for_ack`).
+    ack_deadline: Option<Instant>,
+    ack_timeout: Duration,
     rules: Arc<RuleSet>,
     scheduled: Vec<ScheduledReply>,
     next_seq: u64,
@@ -116,8 +123,38 @@ impl MessageQueueState {
         count
     }
 
+    /// Starts (or not, depending on the frame) the wait for the ACK of a frame just released.
+    fn start_ack_wait(&mut self, frame: &[u8], now: Instant) {
+        self.waiting_for_ack = requires_ack(frame);
+        self.ack_deadline = self.waiting_for_ack.then(|| now + self.ack_timeout);
+    }
+
+    /// Stops waiting for an ACK.
+    fn stop_ack_wait(&mut self) {
+        self.waiting_for_ack = false;
+        self.ack_deadline = None;
+    }
+
+    /// Whether the awaited ACK is overdue at `now`.
+    fn ack_overdue(&self, now: Instant) -> bool {
+        self.waiting_for_ack && self.ack_deadline.is_some_and(|deadline| now >= deadline)
+    }
+
+    /// Stops sending: drops the waiting state and the queued user items (scheduled automatic
+    /// replies to the peer are kept). Returns how many user items were dropped.
+    fn reset_sending(&mut self) -> usize {
+        self.stop_ack_wait();
+        let count = self.pending_messages.len();
+        let bytes: usize = self.pending_messages.iter().map(Vec::len).sum();
+        self.pending_messages.clear();
+        self.queued_items -= count;
+        self.queued_bytes -= bytes;
+        count
+    }
+
     /// Ends the attempt: nothing stays queued.
     fn close(&mut self) {
+        self.stop_ack_wait();
         self.closed = true;
         self.pending_messages.clear();
         self.scheduled.clear();
@@ -137,7 +174,7 @@ impl MessageQueueState {
             .map(|(index, _)| index)?;
         let frame = self.pop_reply(index);
         if !is_control_reply(&frame) {
-            self.waiting_for_ack = requires_ack(&frame);
+            self.start_ack_wait(&frame, now);
         }
         Some(frame)
     }
@@ -155,11 +192,22 @@ impl MessageQueueState {
 
 impl MessageQueue {
     pub(crate) fn shared(emitter: Emitter, rules: Arc<RuleSet>) -> SharedMessageQueue {
+        Self::with_ack_timeout(emitter, rules, ACK_TIMEOUT)
+    }
+
+    /// Same as [`Self::shared`] with a custom ACK wait (tests use short durations).
+    pub(crate) fn with_ack_timeout(
+        emitter: Emitter,
+        rules: Arc<RuleSet>,
+        ack_timeout: Duration,
+    ) -> SharedMessageQueue {
         Arc::new(Self {
             emitter,
             state: Mutex::new(MessageQueueState {
                 pending_messages: VecDeque::new(),
                 waiting_for_ack: false,
+                ack_deadline: None,
+                ack_timeout,
                 rules,
                 scheduled: Vec::new(),
                 next_seq: 0,
@@ -235,6 +283,13 @@ impl MessageQueue {
             {
                 let mut state = self.state.lock().await;
                 let now = Instant::now();
+                if state.ack_overdue(now) {
+                    let dropped = state.reset_sending();
+                    let timeout = state.ack_timeout;
+                    drop(state);
+                    self.report_ack_timeout(dropped, timeout);
+                    continue;
+                }
                 if let Some(frame) = state.take_due(now) {
                     self.emitter.only_log(
                         LogLevel::Inf,
@@ -246,7 +301,7 @@ impl MessageQueue {
                 }
                 if !state.waiting_for_ack {
                     if let Some(message) = state.pop_user() {
-                        state.waiting_for_ack = requires_ack(&message);
+                        state.start_ack_wait(&message, now);
                         self.emitter.only_log(
                             LogLevel::Inf,
                             file!(),
@@ -256,7 +311,11 @@ impl MessageQueue {
                         return message;
                     }
                 }
-                wake_at = state.next_wakeup(now);
+                let ack_wake = state.ack_deadline.filter(|_| state.waiting_for_ack);
+                wake_at = match (state.next_wakeup(now), ack_wake) {
+                    (Some(a), Some(b)) => Some(a.min(b)),
+                    (a, b) => a.or(b),
+                };
             }
 
             // Never sleeps while holding the lock or in the receive path: a delayed reply only
@@ -311,18 +370,68 @@ impl MessageQueue {
         }
     }
 
+    fn report_ack_timeout(&self, dropped: usize, timeout: Duration) {
+        self.emitter.warn(
+            file!(),
+            line!(),
+            format!(
+                "No ACK received within {} ms: sending stopped, send queue cleared ({dropped} queued item(s) dropped)",
+                timeout.as_millis()
+            ),
+        );
+    }
+
+    /// A standalone NAK or EOT: the peer refuses or ends the transmission. Nothing is resent
+    /// and nothing advances: the send queue is cleared (only when something was in flight or
+    /// queued, otherwise the byte is just logged).
+    async fn handle_abort(&self, what: &str) {
+        let outcome = {
+            let mut state = self.state.lock().await;
+            if state.closed {
+                return;
+            }
+            let was_waiting = state.waiting_for_ack;
+            let dropped = state.reset_sending();
+            (was_waiting, dropped)
+        };
+        match outcome {
+            (false, 0) => self.emitter.only_log(
+                LogLevel::Inf,
+                file!(),
+                line!(),
+                format!("received {what} with nothing to send"),
+            ),
+            (_, dropped) => self.emitter.warn(
+                file!(),
+                line!(),
+                format!(
+                    "Received {what}: sending stopped, send queue cleared ({dropped} queued item(s) dropped)"
+                ),
+            ),
+        }
+        self.ready.notify_one();
+    }
+
     async fn handle_ack(&self) -> Result<(), String> {
-        let should_release = {
+        let (should_release, timed_out) = {
             let mut state = self.state.lock().await;
 
-            if state.waiting_for_ack {
-                state.waiting_for_ack = false;
-                true
+            if state.ack_overdue(Instant::now()) {
+                // Too late: the timeout wins, this ACK is ignored.
+                let timeout = state.ack_timeout;
+                (false, Some((state.reset_sending(), timeout)))
+            } else if state.waiting_for_ack {
+                state.stop_ack_wait();
+                (true, None)
             } else {
-                false
+                (false, None)
             }
         };
 
+        if let Some((dropped, timeout)) = timed_out {
+            self.report_ack_timeout(dropped, timeout);
+            self.ready.notify_one();
+        }
         if should_release {
             self.emitter.only_log(
                 LogLevel::Inf,
@@ -351,6 +460,12 @@ impl MessageQueue {
         if event == FrameEvent::Ack {
             let _ = self.handle_ack().await;
             return;
+        }
+        // NAK / EOT stop the send queue whatever the rules say.
+        match event {
+            FrameEvent::Nak => return self.handle_abort("NAK").await,
+            FrameEvent::Eot => return self.handle_abort("EOT").await,
+            _ => {}
         }
         let mut state = self.state.lock().await;
         if state.closed || !state.rules.is_enabled() {
@@ -738,10 +853,225 @@ mod tests {
         assert_eq!(queue.recv().await, b"second".to_vec());
     }
 
+    struct TypedSink(std::sync::Mutex<Vec<(String, String)>>);
+
+    impl crate::emitter::EventSink for TypedSink {
+        fn status(&self, _: StatusPayload) -> Result<(), String> {
+            Ok(())
+        }
+        fn message(&self, p: MessagePayload) -> Result<(), String> {
+            self.0
+                .lock()
+                .unwrap()
+                .push((format!("{:?}", p.msg_type), p.content));
+            Ok(())
+        }
+        fn notify(&self, _: &str, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    const SHORT: Duration = Duration::from_millis(60);
+
+    fn short_queue(rules: Arc<RuleSet>) -> (SharedMessageQueue, Arc<TypedSink>) {
+        let sink = Arc::new(TypedSink(Default::default()));
+        let q = MessageQueue::with_ack_timeout(
+            Emitter::with_sink(sink.clone()).scoped("s", 1),
+            rules,
+            SHORT,
+        );
+        (q, sink)
+    }
+
+    fn warnings(sink: &TypedSink) -> Vec<String> {
+        sink.0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(kind, _)| kind == "SystemWarn")
+            .map(|(_, content)| content.clone())
+            .collect()
+    }
+
+    async fn assert_idle(queue: &SharedMessageQueue) {
+        let state = queue.state.lock().await;
+        assert!(!state.waiting_for_ack);
+        assert!(state.ack_deadline.is_none());
+        assert_eq!((state.queued_items, state.queued_bytes), (0, 0));
+        assert_invariant(&state);
+    }
+
+    #[test]
+    fn default_ack_timeout_is_ten_seconds() {
+        assert_eq!(ACK_TIMEOUT, Duration::from_secs(10));
+        assert_eq!(state().ack_timeout, Duration::from_secs(10));
+    }
+
+    #[tokio::test]
+    async fn missing_ack_times_out_clears_queue_and_reports() {
+        let (queue, sink) = short_queue(Arc::new(RuleSet::disabled()));
+        queue.enqueue_message("<ENQ>\nsecond\nthird").await.unwrap();
+        assert_eq!(queue.recv().await, vec![0x05]);
+        // Nothing else is released: the queue was cleared when the ACK window elapsed.
+        assert!(timeout(Duration::from_millis(400), queue.recv())
+            .await
+            .is_err());
+        assert_idle(&queue).await;
+        let warns = warnings(&sink);
+        assert_eq!(warns.len(), 1, "{warns:?}");
+        assert!(warns[0].contains("No ACK received within 60 ms"));
+        // The queue is usable again.
+        queue.enqueue_message("next").await.unwrap();
+        assert_eq!(queue.recv().await, b"next".to_vec());
+    }
+
+    #[tokio::test]
+    async fn ack_within_the_window_does_not_time_out() {
+        let (queue, sink) = short_queue(Arc::new(RuleSet::disabled()));
+        queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
+        assert_eq!(queue.recv().await, vec![0x05]);
+        queue.handle_frame(FrameEvent::Ack).await;
+        assert_eq!(queue.recv().await, b"second".to_vec());
+        tokio::time::sleep(SHORT * 2).await;
+        assert!(warnings(&sink).is_empty());
+    }
+
+    #[tokio::test]
+    async fn late_ack_after_reset_is_ignored() {
+        let (queue, sink) = short_queue(Arc::new(RuleSet::disabled()));
+        queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
+        assert_eq!(queue.recv().await, vec![0x05]);
+        assert!(timeout(Duration::from_millis(300), queue.recv())
+            .await
+            .is_err());
+        queue.handle_frame(FrameEvent::Ack).await;
+        assert_idle(&queue).await;
+        assert_eq!(warnings(&sink).len(), 1);
+        assert!(timeout(Duration::from_millis(100), queue.recv())
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn ack_arriving_after_the_deadline_is_a_timeout_not_a_release() {
+        let (queue, sink) = short_queue(Arc::new(RuleSet::disabled()));
+        queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
+        assert_eq!(queue.recv().await, vec![0x05]);
+        tokio::time::sleep(SHORT * 2).await; // recv is not polled: nobody noticed yet
+        queue.handle_frame(FrameEvent::Ack).await;
+        assert_idle(&queue).await;
+        assert_eq!(warnings(&sink).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn duplicate_ack_is_harmless() {
+        let (queue, sink) = short_queue(Arc::new(RuleSet::disabled()));
+        queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
+        assert_eq!(queue.recv().await, vec![0x05]);
+        queue.handle_frame(FrameEvent::Ack).await;
+        assert_eq!(queue.recv().await, b"second".to_vec());
+        queue.handle_frame(FrameEvent::Ack).await; // duplicate
+        assert_idle(&queue).await;
+        assert!(warnings(&sink).is_empty());
+        queue.enqueue_message("third").await.unwrap();
+        assert_eq!(queue.recv().await, b"third".to_vec());
+    }
+
+    #[tokio::test]
+    async fn nak_stops_sending_and_clears_the_queue_without_resend() {
+        let (queue, sink) = short_queue(Arc::new(RuleSet::disabled()));
+        queue.enqueue_message("<ENQ>\nsecond\nthird").await.unwrap();
+        assert_eq!(queue.recv().await, vec![0x05]);
+        queue.handle_frame(FrameEvent::Nak).await;
+        assert_idle(&queue).await;
+        let warns = warnings(&sink);
+        assert_eq!(warns.len(), 1);
+        assert!(warns[0].contains("NAK"));
+        assert!(timeout(Duration::from_millis(200), queue.recv())
+            .await
+            .is_err());
+        // Not blocked any more, and the timeout does not fire later.
+        queue.enqueue_message("next").await.unwrap();
+        assert_eq!(queue.recv().await, b"next".to_vec());
+        assert_eq!(warnings(&sink).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn eot_does_not_leave_the_queue_blocked() {
+        let (queue, sink) = short_queue(Arc::new(RuleSet::disabled()));
+        queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
+        assert_eq!(queue.recv().await, vec![0x05]);
+        queue.handle_frame(FrameEvent::Eot).await;
+        assert_idle(&queue).await;
+        assert!(warnings(&sink)[0].contains("EOT"));
+        // Idle NAK/EOT are only logged.
+        queue.handle_frame(FrameEvent::Nak).await;
+        queue.handle_frame(FrameEvent::Eot).await;
+        assert_eq!(warnings(&sink).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn disconnect_cancels_the_ack_wait() {
+        let (queue, sink) = short_queue(Arc::new(RuleSet::disabled()));
+        queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
+        assert_eq!(queue.recv().await, vec![0x05]);
+        queue.close().await;
+        assert_idle(&queue).await;
+        tokio::time::sleep(SHORT * 3).await;
+        assert!(warnings(&sink).is_empty());
+        queue.handle_frame(FrameEvent::Ack).await;
+        queue.handle_frame(FrameEvent::Nak).await;
+        assert!(warnings(&sink).is_empty());
+    }
+
+    #[tokio::test]
+    async fn pending_recv_is_woken_by_the_deadline_and_stays_usable() {
+        let (queue, _sink) = short_queue(Arc::new(RuleSet::disabled()));
+        queue.enqueue_message("<ENQ>").await.unwrap();
+        assert_eq!(queue.recv().await, vec![0x05]);
+        let waiter = tokio::spawn({
+            let queue = queue.clone();
+            async move { queue.recv().await }
+        });
+        tokio::time::sleep(SHORT * 3).await;
+        assert!(!waiter.is_finished());
+        queue.enqueue_message("after").await.unwrap();
+        assert_eq!(waiter.await.unwrap(), b"after".to_vec());
+    }
+
+    #[tokio::test]
+    async fn control_reply_still_goes_out_while_waiting_for_our_ack() {
+        let (queue, sink) = short_queue(ack_rules());
+        queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
+        assert_eq!(queue.recv().await, vec![0x05]);
+        // The peer sends its own ENQ before answering ours: our <ACK> must not wait.
+        queue.handle_frame(FrameEvent::Enq).await;
+        assert_eq!(queue.recv().await, vec![0x06]);
+        assert!(queue.state.lock().await.waiting_for_ack);
+        // Then the peer ACKs our ENQ: the queue resumes.
+        queue.handle_frame(FrameEvent::Ack).await;
+        assert_eq!(queue.recv().await, b"second".to_vec());
+        assert!(warnings(&sink).is_empty());
+    }
+
+    #[tokio::test]
+    async fn control_reply_keeps_working_after_a_timeout_reset() {
+        let (queue, _sink) = short_queue(ack_rules());
+        queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
+        assert_eq!(queue.recv().await, vec![0x05]);
+        assert!(timeout(Duration::from_millis(300), queue.recv())
+            .await
+            .is_err());
+        queue.handle_frame(FrameEvent::Enq).await;
+        assert_eq!(queue.recv().await, vec![0x06]);
+    }
+
     fn state() -> MessageQueueState {
         MessageQueueState {
             pending_messages: VecDeque::new(),
             waiting_for_ack: false,
+            ack_deadline: None,
+            ack_timeout: ACK_TIMEOUT,
             rules: Arc::new(RuleSet::disabled()),
             scheduled: Vec::new(),
             next_seq: 0,
