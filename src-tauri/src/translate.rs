@@ -69,6 +69,20 @@ const CONTROL_TOKENS: [(&str, ControlToken); 32] = [
     ("<US>", ControlToken::US),
 ];
 
+/// Byte length of the longest entry in `CONTROL_TOKENS` (e.g. "<NUL>").
+const MAX_TOKEN_LEN: usize = {
+    let mut max = 0;
+    let mut i = 0;
+    while i < CONTROL_TOKENS.len() {
+        let len = CONTROL_TOKENS[i].0.len();
+        if len > max {
+            max = len;
+        }
+        i += 1;
+    }
+    max
+};
+
 impl Into<char> for ControlToken {
     fn into(self) -> char {
         self as u8 as char
@@ -82,7 +96,10 @@ pub fn to_bytes(input: &str) -> Vec<u8> {
     while let Some(start) = rest.find('<') {
         out.extend_from_slice(&rest.as_bytes()[..start]);
         let tail = &rest[start..];
-        if let Some(end) = tail.find('>') {
+        // A token is at most MAX_TOKEN_LEN bytes, so only look that far for `>`.
+        let window = &tail.as_bytes()[..tail.len().min(MAX_TOKEN_LEN)];
+        if let Some(end) = window.iter().position(|&b| b == b'>') {
+            // `>` is ASCII, so `end + 1` is a char boundary.
             if let Some(b) = token_to_byte(&tail[..=end]) {
                 out.push(b);
                 rest = &tail[end + 1..];
@@ -214,6 +231,40 @@ mod tests {
         assert_eq!(to_bytes("<<STX>"), b"<\x02");
         assert_eq!(to_bytes("a<b"), b"a<b");
         assert_eq!(to_bytes("<"), b"<");
+    }
+
+    #[test]
+    fn malformed_inputs() {
+        assert_eq!(to_bytes("<<<<"), b"<<<<");
+        assert_eq!(to_bytes("<<<STX>"), b"<<\x02");
+        assert_eq!(to_bytes("<STX"), b"<STX");
+        assert_eq!(to_bytes("<ABCDEF>"), b"<ABCDEF>");
+        assert_eq!(to_bytes("<NUL"), b"<NUL");
+        assert_eq!(to_bytes("<NUL>>"), b"\x00>");
+    }
+
+    #[test]
+    fn multibyte_near_brackets() {
+        assert_eq!(to_bytes("<é>"), "<é>".as_bytes());
+        assert_eq!(to_bytes("<😀"), "<😀".as_bytes());
+        assert_eq!(to_bytes("<é€"), "<é€".as_bytes());
+        assert_eq!(to_bytes("<😀>"), "<😀>".as_bytes());
+        assert_eq!(to_bytes("<é<STX>"), b"<\xC3\xA9\x02");
+        assert_eq!(to_bytes("<€€€"), "<€€€".as_bytes());
+    }
+
+    #[test]
+    fn max_token_len_matches_table() {
+        assert!(CONTROL_TOKENS.iter().all(|(t, _)| t.len() <= MAX_TOKEN_LEN));
+        assert!(CONTROL_TOKENS.iter().any(|(t, _)| t.len() == MAX_TOKEN_LEN));
+    }
+
+    #[test]
+    fn large_input_of_open_brackets() {
+        let input = "<".repeat(1_000_000);
+        let out = to_bytes(&input);
+        assert_eq!(out.len(), 1_000_000);
+        assert!(out.iter().all(|&b| b == b'<'));
     }
 
     #[test]
