@@ -22,7 +22,7 @@ use russh::{Channel, ChannelOpenFailure, Disconnect, Preferred};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
-use tokio::time::{timeout, Duration};
+use tokio::time::{sleep, timeout, Duration};
 
 use super::streams::{serve, ConnectionContext};
 use crate::emitter::Emitter;
@@ -32,6 +32,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
 const KEEPALIVE_MAX: usize = 3;
 const CHANNEL_OPEN_TIMEOUT: Duration = Duration::from_secs(1);
+const CHANNEL_RETRY_DELAY: Duration = Duration::from_secs(1);
 const DISCONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const DEFAULT_KEY_FILES: [&str; 3] = ["id_ed25519", "id_ecdsa", "id_rsa"];
 /// Loopback of the SSH host: the server mode never opens a port to the network.
@@ -658,52 +659,107 @@ async fn open_forward_channel(
     port: Port,
 ) -> Result<Channel<Msg>, ()> {
     let target = format!("{}:{}", host.as_str(), port.get());
-    emitter.only_log(
-        LogLevel::Inf,
-        file!(),
-        line!(),
-        format!("ssh channel opening address={target}"),
-    );
-    let open = session.channel_open_direct_tcpip(
-        host.as_str().to_string(),
-        u32::from(port.get()),
-        "127.0.0.1",
-        0,
-    );
-    tokio::pin!(open);
-
-    let mut waits = 1;
+    let mut attempt = 1;
     loop {
-        match timeout(CHANNEL_OPEN_TIMEOUT, &mut open).await {
-            Ok(Ok(channel)) => {
+        emitter.only_log(
+            LogLevel::Inf,
+            file!(),
+            line!(),
+            format!("ssh channel opening attempt={attempt} address={target}"),
+        );
+        // One pending open at a time: a new one is only sent once the previous one resolved.
+        let open = session.channel_open_direct_tcpip(
+            host.as_str().to_string(),
+            u32::from(port.get()),
+            "127.0.0.1",
+            0,
+        );
+        tokio::pin!(open);
+
+        let mut waits = 1;
+        let result = loop {
+            match timeout(CHANNEL_OPEN_TIMEOUT, &mut open).await {
+                Ok(result) => break result,
+                Err(_) => {
+                    emitter.warn(
+                        file!(),
+                        line!(),
+                        format!(
+                            "Connection to {target} through SSH timed out, still waiting for \
+                             the target to accept: attempt={attempt} wait={waits}"
+                        ),
+                    );
+                    waits += 1;
+                }
+            }
+        };
+
+        match result {
+            Ok(channel) => {
                 emitter.only_log(
                     LogLevel::Inf,
                     file!(),
                     line!(),
-                    format!("ssh channel succeeded after {waits} wait(s) address={target}"),
+                    format!("ssh channel succeeded attempt={attempt} address={target}"),
                 );
                 return Ok(channel);
             }
-            Ok(Err(err)) => {
-                emitter.error(
-                    file!(),
-                    line!(),
-                    format!("Connection to {target} through SSH failed: {err}"),
-                );
-                return Err(());
-            }
-            Err(_) => {
-                emitter.warn(
-                    file!(),
-                    line!(),
-                    format!(
-                        "Connection to {target} through SSH timed out, still waiting for the \
-                         target to accept: attempt={waits}"
-                    ),
-                );
-                waits += 1;
-            }
+            Err(err) => match classify_open_error(&err) {
+                OpenErrorKind::Retry => {
+                    emitter.warn(
+                        file!(),
+                        line!(),
+                        format!(
+                            "Target {target} not reachable from the SSH host ({err}), \
+                             retrying in 1s: attempt={attempt}"
+                        ),
+                    );
+                }
+                OpenErrorKind::Fatal(message) => {
+                    emitter.error(
+                        file!(),
+                        line!(),
+                        format!("Connection to {target} through SSH failed: {message}"),
+                    );
+                    return Err(());
+                }
+            },
         }
+
+        // Cancelled by the caller's shutdown select, like the rest of the connect phase.
+        sleep(CHANNEL_RETRY_DELAY).await;
+        attempt += 1;
+    }
+}
+
+/// What to do after a failed `direct-tcpip` open.
+#[derive(Debug, PartialEq, Eq)]
+enum OpenErrorKind {
+    /// The target does not accept (yet): open a new channel after a delay.
+    Retry,
+    /// Retrying is pointless or the session is broken: end with this message.
+    Fatal(String),
+}
+
+fn classify_open_error(err: &russh::Error) -> OpenErrorKind {
+    match err {
+        russh::Error::ChannelOpenFailure(ChannelOpenFailure::ConnectFailed)
+        | russh::Error::ChannelOpenFailure(ChannelOpenFailure::ResourceShortage) => {
+            OpenErrorKind::Retry
+        }
+        russh::Error::ChannelOpenFailure(ChannelOpenFailure::AdministrativelyProhibited) => {
+            OpenErrorKind::Fatal(
+                "the SSH server forbids TCP forwarding (administratively prohibited): \
+                 check AllowTcpForwarding / PermitOpen in sshd_config"
+                    .to_string(),
+            )
+        }
+        russh::Error::ChannelOpenFailure(ChannelOpenFailure::UnknownChannelType) => {
+            OpenErrorKind::Fatal(
+                "the SSH server does not support direct-tcpip channels".to_string(),
+            )
+        }
+        err => OpenErrorKind::Fatal(err.to_string()),
     }
 }
 
@@ -902,6 +958,36 @@ mod tests {
     use russh::keys::parse_public_key_base64;
 
     use super::*;
+
+    #[test]
+    fn classify_open_error_retries_refused_target() {
+        for reason in [
+            ChannelOpenFailure::ConnectFailed,
+            ChannelOpenFailure::ResourceShortage,
+        ] {
+            assert_eq!(
+                classify_open_error(&russh::Error::ChannelOpenFailure(reason)),
+                OpenErrorKind::Retry
+            );
+        }
+    }
+
+    #[test]
+    fn classify_open_error_is_fatal_otherwise() {
+        let fatal = [
+            russh::Error::ChannelOpenFailure(ChannelOpenFailure::AdministrativelyProhibited),
+            russh::Error::ChannelOpenFailure(ChannelOpenFailure::UnknownChannelType),
+            russh::Error::ChannelOpenFailure(ChannelOpenFailure::Other {
+                code: 42,
+                reason: "x".into(),
+            }),
+            russh::Error::Disconnect,
+            russh::Error::SendError,
+        ];
+        for err in fatal {
+            assert!(matches!(classify_open_error(&err), OpenErrorKind::Fatal(_)));
+        }
+    }
 
     struct TempDir(PathBuf);
 
