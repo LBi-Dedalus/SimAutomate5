@@ -6,10 +6,13 @@ SimAutomate5 is a Tauri desktop app for exchanging ASTM and HL7-style messages o
 
 - Client mode connects to a remote host and port over TCP.
 - Server mode starts a listener on `0.0.0.0` for one client connection.
+- SSH Client mode reaches a host through an SSH tunnel (like `ssh -L`), for a VM that only exposes port 22. The host and port are the target as seen from the VM.
+- SSH Server mode asks the VM's sshd to listen on its `127.0.0.1:<port>` (like `ssh -R`) and serves one client connecting there.
+- SSH details: the host key must already be in `~/.ssh/known_hosts` (run `ssh <host>` once, the app never writes that file). The check is simpler than OpenSSH's: `@revoked`, `@cert-authority`, `!` negation, wildcards, tab separators and several keys of the same algorithm for one host are not supported, and host names are matched case-sensitively. Authentication uses a private key without passphrase, taken from the `IdentityFile` of the matching `Host` in `~/.ssh/config` or from `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa`. An empty SSH user falls back to the `User` of the SSH config, then to the OS user. `Include`, `Match` and `ProxyJump` in the SSH config are not supported.
 - Live connection status indicator: Disconnected, Connecting, Listening (server), Connected, or Error.
 - Multiple simultaneous sessions (client and/or server), listed in the sidebar; each has its own conversation, counters, draft and inspector state. Sessions are runtime-only (not restored at launch).
 - Labelled left navigation: Home, Session, Templates, Auto reply, Autobuild.
-- Home quick connect (Client/Server, host/port) always opens a new session; recent endpoints (browser storage).
+- Home quick connect (Client/SSH Client/Server/SSH Server, host/port, plus SSH host/port/user for the SSH modes) always opens a new session; recent endpoints (browser storage).
 - Session view with conversation bubbles for sent, received, and system messages with timestamps, plus a docked message inspector (Parsed HL7 / Raw / Hex of the selected message; parsing is best effort per received chunk) and "Save as template".
 - Templates: list with search and an always-docked editor (create, edit, `{{VARIABLES}}`, exact preview, load in composer, send). Unsaved edits show a floating **Save** pill at the bottom of the editor; the selected template's card carries a ✕ delete button that asks for a second click ("Sure?") to confirm. Each template has an optional **Apply Autobuild** switch (with a **No ETB** sub-option): when on, the resolved message is wrapped in HL7 (MLLP) or ASTM framing, like the Autobuild view, before it is sent or loaded in the composer; the editor's single preview box shows the built result while the switch is on (tagged "After Autobuild") and the plain resolved text otherwise, and cards show an "Autobuild" badge. Auto reply rules that use a saved template ignore this option and send the template payload as before. Templates are stored in `config.json` in the app config directory; built-ins are offered only when no templates have been saved yet.
 - Message composer with:
@@ -44,6 +47,7 @@ SimAutomate5 is a Tauri desktop app for exchanging ASTM and HL7-style messages o
 2. Choose a mode:
    - Client: enter host and port, then connect.
    - Server: enter a port, then start the server.
+   - SSH Client / SSH Server: same as above, plus the SSH host, SSH port (22 by default) and optionally the SSH user.
 3. If needed, open **Auto reply**, add rules (when receiving → reply with), save them and turn **Enabled** on.
 4. Type a message in the Session composer (or load a template).
 5. Use **Autobuild** (sidebar or composer button) if you want the backend to format ASTM or HL7/MLLP content; pick one of the recent autobuilds to reuse it.

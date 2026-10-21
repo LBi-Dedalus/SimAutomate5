@@ -16,6 +16,7 @@
 
 #connect-form {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--space-3);
   max-width: 720px;
@@ -37,8 +38,54 @@
     margin-bottom: var(--space-1);
   }
 
+  & label {
+    min-width: 140px;
+  }
+
+  /*
+   * Natural wrapping, no hard line break. Content width = 720 - 2*16 = 688px,
+   * gap g = var(--space-3) (assumed <= 12px), min-width of a label = 140px.
+   * An item wraps when (line so far + g + its basis) > 688.
+   *   Line 1 (SSH client): Mode 220 + Host 200 + Port 120 + 2g(24) = 564;
+   *     next SSH host: remaining 688 - 564 - 12 = 112 < 140 (its min-width) -> wraps.
+   *   Line 1 (SSH server): Mode 220 + server Port 320 + g(12) = 552;
+   *     remaining 688 - 552 - 12 = 124 < 140 -> SSH host wraps.
+   *   Non-SSH client: 564 + g + Connect (~80) = ~656 <= 688 -> one line.
+   *   Non-SSH server: 552 + g + Connect (~80) = ~644 <= 688 -> one line.
+   *   Line 2: SSH host 200 + SSH port 100 + SSH user 200 + Connect ~80 + 3g(36)
+   *     = ~616 <= 688 -> fits, the button ends the line.
+   * Port fields grow (flex-grow) to fill line 1; SSH host/user grow on line 2.
+   */
+  & #client-host-field {
+    flex: 0 0 200px;
+  }
+
   & #client-port-field {
-    flex: 0 0 120px;
+    flex: 1 1 120px;
+    min-width: 0;
+  }
+
+  & #server-port-field {
+    flex: 1 1 320px;
+  }
+
+  & .ssh-host-field,
+  & .ssh-user-field {
+    flex: 1 1 200px;
+  }
+
+  & .ssh-port-field {
+    flex: 0 0 100px;
+    min-width: 0;
+  }
+
+  /* Wrapper is transparent to layout: its labels are items of the form's flex (.hidden hides it). */
+  & #ssh-fields {
+    display: contents;
+  }
+
+  & #connect-btn {
+    flex: 0 0 auto;
   }
 }
 

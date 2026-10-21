@@ -68,9 +68,14 @@ form.host = Object.assign(new FakeNode("host"), { valid: () => true });
 form.host.valid = () => form.host.disabled || !form.host.required || form.host.value.trim() !== "";
 form.port = portField("port");
 form["server-port"] = portField("server-port");
+form["ssh-host"] = new FakeNode("ssh-host");
+form["ssh-host"].valid = () => form["ssh-host"].disabled || !form["ssh-host"].required || form["ssh-host"].value.trim() !== "";
+form["ssh-port"] = portField("ssh-port");
+form["ssh-port"].value = "22";
+form["ssh-user"] = Object.assign(new FakeNode("ssh-user"), { valid: () => true });
 form.invalidReports = 0;
 form.reportValidity = () => {
-  const ok = [form.host, form.port, form["server-port"]].every((f) => f.valid());
+  const ok = [form.host, form.port, form["server-port"], form["ssh-host"], form["ssh-port"], form["ssh-user"]].every((f) => f.valid());
   if (!ok) form.invalidReports += 1;
   return ok;
 };
@@ -110,11 +115,117 @@ const submit = async () => {
   await tick();
 };
 
-test("initial state: client fields active, server field disabled", () => {
+test("initial state: client fields active, server and SSH fields disabled", () => {
   assert.equal(form.host.disabled, false);
   assert.equal(form.port.disabled, false);
   assert.equal(form["server-port"].disabled, true);
   assert.equal(form["server-port"].required, false);
+  for (const name of ["ssh-host", "ssh-port", "ssh-user"]) {
+    assert.equal(form[name].disabled, true, name);
+    assert.equal(form[name].required, false, name);
+  }
+  assert.equal(getNode("ssh-fields").classes.has("hidden"), true);
+});
+
+test("each mode enables, requires and labels its own fields", () => {
+  const expectations = {
+    "client-mode": { label: "Connect", host: true, server: false, ssh: false },
+    "ssh-client-mode": { label: "Connect via SSH", host: true, server: false, ssh: true },
+    "server-mode": { label: "Start server", host: false, server: true, ssh: false },
+    "ssh-server-mode": { label: "Start server via SSH", host: false, server: true, ssh: true },
+  };
+  for (const [id, want] of Object.entries(expectations)) {
+    getNode(id).fire("click");
+    assert.equal(getNode("connect-btn").textContent, want.label, id);
+    for (const f of [form.host, form.port]) {
+      assert.equal(f.disabled, !want.host, `${id} host/port`);
+      assert.equal(f.required, want.host, `${id} host/port required`);
+    }
+    assert.equal(form["server-port"].disabled, !want.server, id);
+    assert.equal(form["server-port"].required, want.server, id);
+    for (const name of ["ssh-host", "ssh-port"]) {
+      assert.equal(form[name].disabled, !want.ssh, `${id} ${name}`);
+      assert.equal(form[name].required, want.ssh, `${id} ${name} required`);
+    }
+    assert.equal(form["ssh-user"].disabled, !want.ssh, id);
+    assert.equal(form["ssh-user"].required, false, `${id} ssh-user never required`);
+    assert.equal(getNode("ssh-fields").classes.has("hidden"), !want.ssh, id);
+    assert.equal(getNode(id).classes.has("on"), true, id);
+    for (const other of Object.keys(expectations).filter((o) => o !== id)) {
+      assert.equal(getNode(other).classes.has("on"), false, `${other} off in ${id}`);
+    }
+  }
+  const hint = () => getNode("connect-hint");
+  getNode("client-mode").fire("click");
+  assert.equal(hint().classes.has("hidden"), true);
+  getNode("ssh-client-mode").fire("click");
+  assert.match(hint().textContent, /no passphrase/);
+  getNode("server-mode").fire("click");
+  assert.match(hint().textContent, /0\.0\.0\.0/);
+  getNode("ssh-server-mode").fire("click");
+  assert.match(hint().textContent, /127\.0\.0\.1/);
+  assert.match(hint().textContent, /no passphrase/);
+  getNode("client-mode").fire("click");
+});
+
+test("SSH client sends SshClientConnectRequest, SSH server sends SshServerStartRequest", async () => {
+  getNode("ssh-client-mode").fire("click");
+  form.host.value = "10.0.0.5";
+  form.port.value = "2575";
+  form["ssh-host"].value = "Vm.Example.com";
+  form["ssh-port"].value = "2222";
+  form["ssh-user"].value = " lis ";
+  await submit();
+  assert.deepEqual(connects().at(-1).args.req, {
+    type: "SshClientConnectRequest",
+    ip: "10.0.0.5",
+    port: 2575,
+    ssh_host: "vm.example.com",
+    ssh_port: 2222,
+    ssh_user: "lis",
+  });
+
+  getNode("ssh-server-mode").fire("click");
+  form["server-port"].value = "5001";
+  form["ssh-user"].value = ""; // empty user is allowed: the backend resolves it
+  await submit();
+  assert.deepEqual(connects().at(-1).args.req, {
+    type: "SshServerStartRequest",
+    port: 5001,
+    ssh_host: "vm.example.com",
+    ssh_port: 2222,
+    ssh_user: "",
+  });
+  getNode("client-mode").fire("click");
+});
+
+test("SSH host and SSH port are required in SSH modes only", async () => {
+  getNode("ssh-client-mode").fire("click");
+  form.host.value = "10.0.0.5";
+  form.port.value = "2575";
+  const before = connects().length;
+  form["ssh-host"].value = "";
+  await submit();
+  assert.equal(connects().length, before, "missing SSH host");
+  form["ssh-host"].value = "vm";
+  form["ssh-port"].value = "";
+  await submit();
+  assert.equal(connects().length, before, "missing SSH port");
+  form["ssh-port"].value = "70000";
+  await submit();
+  assert.equal(connects().length, before, "invalid SSH port");
+  form["ssh-port"].value = "22";
+  await submit();
+  assert.equal(connects().length, before + 1);
+
+  // Plain client ignores stale invalid SSH values.
+  getNode("client-mode").fire("click");
+  form["ssh-host"].value = "";
+  form["ssh-port"].value = "0";
+  await submit();
+  assert.equal(connects().length, before + 2);
+  assert.equal(connects().at(-1).args.req.type, "ClientConnectRequest");
+  form["ssh-port"].value = "22";
 });
 
 test("stale invalid client port does not block a valid server start", async () => {

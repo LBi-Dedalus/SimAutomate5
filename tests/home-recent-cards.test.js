@@ -56,14 +56,16 @@ const getNode = (id) => {
   return nodes.get(id);
 };
 const form = getNode("connect-form");
-for (const name of ["host", "port", "server-port"]) form[name] = new FakeNode(name);
+for (const name of ["host", "port", "server-port", "ssh-host", "ssh-port", "ssh-user"]) form[name] = new FakeNode(name);
 
 const storage = new Map([
   [
     "simautomate:recent-endpoints",
     JSON.stringify([
-      { mode: "client", host: "10.0.0.1", port: 6000, lastUsed: 2 },
-      { mode: "server", host: "", port: 5001, lastUsed: 1 },
+      { mode: "client", host: "10.0.0.1", port: 6000, lastUsed: 4 },
+      { mode: "server", host: "", port: 5001, lastUsed: 3 },
+      { mode: "ssh-client", host: "10.0.0.2", port: 2575, sshHost: "vm", sshPort: 22, sshUser: "lis", lastUsed: 2 },
+      { mode: "ssh-server", host: "", port: 5002, sshHost: "vm", sshPort: 2222, sshUser: "", lastUsed: 1 },
     ]),
   ],
 ]);
@@ -92,16 +94,48 @@ const goOf = (card) => card.children[0].children.find((n) => n.classes.has("go")
 
 test("each recent card pairs the verb with the quiet arrow", () => {
   const cards = getNode("recent-list").children;
-  assert.equal(cards.length, 2);
+  assert.equal(cards.length, 4);
 
-  const [client, server] = cards.map(goOf);
+  const [client, server, sshClient, sshServer] = cards.map(goOf);
   assert.deepEqual(client.children.map((n) => n.textContent), ["Connect ", "↗"]);
   assert.equal(client.children[0].classes.has("verb"), true);
   assert.deepEqual(server.children.map((n) => n.textContent), ["Listen ", "↗"]);
   assert.equal(server.children[0].classes.has("verb"), true);
+  assert.equal(sshClient.children[0].textContent, "Connect ");
+  assert.equal(sshServer.children[0].textContent, "Listen ");
 });
 
-test("the server hint follows the selected mode", () => {
+const slot = (node, name) => {
+  const found = [];
+  const visit = (n) => {
+    for (const c of n.children) {
+      if (c.dataset?.slot === name) found.push(c);
+      visit(c);
+    }
+  };
+  visit(node);
+  return found[0];
+};
+
+test("recent cards show the mode and the SSH tunnel, and carry it for reconnecting", () => {
+  const cards = getNode("recent-list").children;
+  assert.deepEqual(
+    cards.map((c) => [slot(c, "kind").textContent, slot(c, "endpoint").textContent]),
+    [
+      ["Client", "10.0.0.1:6000"],
+      ["Server", ":5001"],
+      ["SSH Client", "lis@vm:22 → 10.0.0.2:2575"],
+      ["SSH Server", ":5002 ← vm:2222"],
+    ],
+  );
+  assert.deepEqual({ ...cards[0].dataset }, { action: "click:home.useRecent", mode: "client", host: "10.0.0.1", port: 6000 });
+  assert.equal(cards[2].dataset.sshHost, "vm");
+  assert.equal(cards[2].dataset.sshPort, 22);
+  assert.equal(cards[2].dataset.sshUser, "lis");
+  assert.equal("sshHost" in cards[0].dataset, false);
+});
+
+test("the hint follows the selected mode", () => {
   assert.equal(getNode("connect-hint").classes.has("hidden"), true, "client mode by default");
   getNode("server-mode").fire("click");
   assert.equal(getNode("connect-hint").classes.has("hidden"), false);

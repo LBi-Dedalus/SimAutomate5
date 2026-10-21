@@ -47,7 +47,8 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend and a R
 
 - Client mode accepts a host and port.
 - Server mode accepts a port and binds a listener on `0.0.0.0`.
-- The app exposes a simple mode selector for switching between client and server configuration.
+- SSH Client mode accepts the same host and port (the target as seen from the SSH server) plus an SSH host, SSH port and optional SSH user. SSH Server mode accepts a port plus the same SSH fields. The SSH host and port are required; an empty user is resolved by the backend.
+- The app exposes a mode selector for switching between Client, SSH Client, Server and SSH Server configuration.
 - Configuration fields of Home are never locked by other sessions' state.
 - The connection badge reflects one of five states for the selected session: disconnected, connecting, listening (server bound, waiting for a client), connected, or error.
 
@@ -63,6 +64,9 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend and a R
 - A failed, interrupted or closed session releases only its own transport and port.
 - On app exit every transport is signalled to stop.
 - Each session owns the read/write loop until disconnect, EOF, or an error occurs.
+- `connect_socket` takes a `req` tagged by `type`: `ClientConnectRequest {ip, port}`, `ServerStartRequest {port}`, `SshClientConnectRequest {ip, port, ssh_host, ssh_port, ssh_user}` or `SshServerStartRequest {port, ssh_host, ssh_port, ssh_user}`. The backend parses it once into a validated `ConnectionSpec`; invalid input is an error with no side effect.
+- SSH tunnelling (russh, in `transport/ssh.rs`): the SSH connection and authentication are attempted once with a 10 second timeout (no retry; an unknown or changed host key, an encrypted key or an authentication failure is an error). The host key is checked against `~/.ssh/known_hosts` (never written) with russh's own check, which is simpler than OpenSSH's (no `@revoked`/`@cert-authority`, no `!` negation or wildcards, case-sensitive host names, a second key of the same algorithm for a host is a change). Keepalives are sent every 15 s and a dead link is detected after 3 missed ones. SSH Client opens a `direct-tcpip` channel to the target: the request is sent once and the backend waits for that single channel open (never re-sending it), logging a warning every second while the target is slow to accept, until it succeeds, is refused or is interrupted. SSH Server requests a remote forward on the VM's `127.0.0.1`, emits `listening` once it is registered, accepts the first forwarded channel and then cancels the forward. Once established, the channel feeds the same read/write loop as a TCP connection.
+- Backend layout: `transport/` holds `connection_manager` (session registry), `runner` (one connection task), `tcp`, `ssh` and `streams` (`AsyncStream`, `ConnectionContext`, the shared read/write loops); `ids.rs` holds the validated `SessionId` and `Attempt`.
 
 ### Messaging UI
 

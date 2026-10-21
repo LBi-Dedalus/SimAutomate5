@@ -5,6 +5,7 @@ use tauri::{AppHandle, Emitter as _};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::{
+    ids::{Attempt, SessionId},
     logger::AppLogger,
     models::{
         ConnectionStatus, FrontendLogEntry, LogLevel, MessagePayload, MessageType, StatusPayload,
@@ -57,8 +58,8 @@ impl EventSink for TauriSink {
 /// Identifies who produced an event: a session and one of its connection attempts.
 #[derive(Clone, Debug)]
 struct Scope {
-    session_id: String,
-    attempt: u64,
+    session_id: SessionId,
+    attempt: Attempt,
 }
 
 /// Root emitters (no scope) only write logs: events always belong to a session,
@@ -90,12 +91,12 @@ impl Emitter {
     }
 
     /// Emitter whose events carry `session_id` and `attempt`.
-    pub fn scoped(&self, session_id: &str, attempt: u64) -> Self {
+    pub fn scoped(&self, session_id: &SessionId, attempt: Attempt) -> Self {
         Self {
             sink: self.sink.clone(),
             logger: self.logger.clone(),
             scope: Some(Scope {
-                session_id: session_id.to_string(),
+                session_id: session_id.clone(),
                 attempt,
             }),
         }
@@ -148,8 +149,8 @@ impl Emitter {
             return;
         };
         let payload = StatusPayload {
-            session_id: scope.session_id.clone(),
-            attempt: scope.attempt,
+            session_id: scope.session_id.to_string(),
+            attempt: scope.attempt.get(),
             status,
         };
 
@@ -177,8 +178,8 @@ impl Emitter {
             return;
         };
         let payload = MessagePayload {
-            session_id: scope.session_id.clone(),
-            attempt: scope.attempt,
+            session_id: scope.session_id.to_string(),
+            attempt: scope.attempt.get(),
             content,
             msg_type,
             timestamp: now_ts(),

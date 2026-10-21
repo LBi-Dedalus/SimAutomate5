@@ -9,7 +9,9 @@
         <small>Mode</small>
         <div class="seg" role="group" aria-label="Mode">
           <button type="button" id="client-mode" class="on" data-action="click:home.setClient">Client</button>
-                    <button type="button" id="server-mode" data-action="click:home.setServer">Server</button>
+          <button type="button" id="ssh-client-mode" data-action="click:home.setSshClient">SSH Client</button>
+          <button type="button" id="server-mode" data-action="click:home.setServer">Server</button>
+          <button type="button" id="ssh-server-mode" data-action="click:home.setSshServer">SSH Server</button>
         </div>
       </div>
 
@@ -28,9 +30,24 @@
         <input type="number" placeholder="12345" name="server-port" min="1" max="65535" step="1" data-action="change:config.persist" />
       </label>
 
+      <div class="hidden" id="ssh-fields">
+        <label class="ssh-host-field">
+          SSH host
+          <input type="text" placeholder="vm.example.com" name="ssh-host" data-action="change:config.persist" />
+        </label>
+        <label class="ssh-port-field">
+          SSH port
+          <input type="number" value="22" name="ssh-port" min="1" max="65535" step="1" data-action="change:config.persist" />
+        </label>
+        <label class="ssh-user-field">
+          SSH user
+          <input type="text" placeholder="from ~/.ssh/config or current user" name="ssh-user" data-action="change:config.persist" />
+        </label>
+      </div>
+
       <button id="connect-btn" type="submit">Connect</button>
     </form>
-    <p id="connect-hint" class="hidden">Server mode listens on all interfaces (0.0.0.0) and accepts one client.</p>
+    <p id="connect-hint" class="hidden"></p>
     <p id="connect-error" class="hidden" role="alert" data-variant="danger"></p>
 
     <h5>

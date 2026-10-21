@@ -4,6 +4,11 @@ import {
   recordRecent,
   clearRecent,
   describeEndpoint,
+  endpointText,
+  isServerMode,
+  isSshMode,
+  modeLabel,
+  MODES,
 } from "./recent-core.js";
 import { cloneTemplate } from "../include.js";
 import { logWarn } from "../log.js";
@@ -29,36 +34,62 @@ function init() {
 
 // ── Mode ────────────────────────────────────────────────────
 
+const SSH_KEY_HINT =
+  "The SSH key comes from ~/.ssh/config or the default key files (~/.ssh/id_ed25519, id_ecdsa, id_rsa) and must have no passphrase.";
+
+const MODE_UI = {
+  client: { button: "Connect", hint: null },
+  "ssh-client": { button: "Connect via SSH", hint: SSH_KEY_HINT },
+  server: {
+    button: "Start server",
+    hint: "Server mode listens on all interfaces (0.0.0.0) and accepts one client.",
+  },
+  "ssh-server": {
+    button: "Start server via SSH",
+    hint: `SSH server mode listens on the VM's 127.0.0.1 and accepts one client. ${SSH_KEY_HINT}`,
+  },
+};
+
 /** Home only configures the NEXT connection: the mode can always be changed. */
 function setMode(next) {
   mode = next;
-  const client = next === "client";
+  const server = isServerMode(next);
+  const ui = MODE_UI[next];
 
-  document.getElementById("client-mode").classList.toggle("on", client);
-  document.getElementById("server-mode").classList.toggle("on", !client);
-  document.getElementById("client-host-field").classList.toggle("hidden", !client);
-  document.getElementById("client-port-field").classList.toggle("hidden", !client);
-  document.getElementById("server-port-field").classList.toggle("hidden", client);
-  document.getElementById("connect-hint").classList.toggle("hidden", client);
+  for (const id of MODES) {
+    document.getElementById(`${id}-mode`).classList.toggle("on", id === next);
+  }
+  document.getElementById("client-host-field").classList.toggle("hidden", server);
+  document.getElementById("client-port-field").classList.toggle("hidden", server);
+  document.getElementById("server-port-field").classList.toggle("hidden", !server);
+  document.getElementById("ssh-fields").classList.toggle("hidden", !isSshMode(next));
+  const hint = document.getElementById("connect-hint");
+  hint.textContent = ui.hint ?? "";
+  hint.classList.toggle("hidden", !ui.hint);
 
   syncModeFields();
-  document.getElementById("connect-btn").textContent = client ? "Connect" : "Start server";
+  document.getElementById("connect-btn").textContent = ui.button;
 }
 
 /**
  * Only the fields of the active mode take part in validation: inactive ones are disabled
  * (a stale invalid value in a hidden field can neither block nor satisfy the active form).
+ * The SSH user is never required: the backend resolves an empty one.
  */
 function syncModeFields() {
-  const client = mode === "client";
+  const server = isServerMode(mode);
+  const ssh = isSshMode(mode);
   const form = document.getElementById("connect-form");
-  for (const [field, active] of [
-    [form.host, client],
-    [form.port, client],
-    [form["server-port"], !client],
+  for (const [field, active, required] of [
+    [form.host, !server, !server],
+    [form.port, !server, !server],
+    [form["server-port"], server, server],
+    [form["ssh-host"], ssh, ssh],
+    [form["ssh-port"], ssh, ssh],
+    [form["ssh-user"], ssh, false],
   ]) {
     field.disabled = !active;
-    field.required = active;
+    field.required = required;
   }
 }
 
@@ -83,24 +114,48 @@ function submitForm() {
   if (submitting) return;
   if (!form.reportValidity()) return;
 
-  if (mode === "client") {
-    startSession({ mode, host: form.host.value.trim(), port: Number(form.port.value) });
-  } else {
-    startSession({ mode, host: "", port: Number(form["server-port"].value) });
+  const server = isServerMode(mode);
+  startSession({
+    mode,
+    host: server ? "" : form.host.value.trim(),
+    port: Number(server ? form["server-port"].value : form.port.value),
+    ...(isSshMode(mode) && {
+      sshHost: form["ssh-host"].value.trim(),
+      sshPort: Number(form["ssh-port"].value),
+      sshUser: form["ssh-user"].value.trim(),
+    }),
+  });
+}
+
+/** The backend request (serde tag "type") of a normalized endpoint. */
+function buildRequest(endpoint) {
+  const { mode: m, host, port, sshHost, sshPort, sshUser } = endpoint;
+  const ssh = { ssh_host: sshHost, ssh_port: sshPort, ssh_user: sshUser };
+  switch (m) {
+    case "client":
+      return { type: "ClientConnectRequest", ip: host, port };
+    case "ssh-client":
+      return { type: "SshClientConnectRequest", ip: host, port, ...ssh };
+    case "server":
+      return { type: "ServerStartRequest", port };
+    default:
+      return { type: "SshServerStartRequest", port, ...ssh };
   }
 }
 
 /** Builds the backend request and opens one more session (never touches the others). */
-function startSession({ mode: sessionMode, host, port }) {
-  const endpoint = normalizeEndpoint({ mode: sessionMode, host, port });
+function startSession(input) {
+  const endpoint = normalizeEndpoint(input);
   if (!endpoint) {
-    showConnectError("Enter a valid host and a port between 1 and 65535.");
+    showConnectError(
+      isSshMode(input.mode)
+        ? "Enter a valid host, a port and an SSH host and SSH port between 1 and 65535."
+        : "Enter a valid host and a port between 1 and 65535.",
+    );
     return;
   }
-  const req =
-    sessionMode === "client"
-      ? { type: "ClientConnectRequest", ip: host, port }
-      : { type: "ServerStartRequest", port };
+  const sessionMode = endpoint.mode;
+  const req = buildRequest(endpoint);
 
   // The session is created only once the view is really shown, so a template-editor
   // guard that defers the navigation also defers (or cancels) the new session.
@@ -128,8 +183,8 @@ function startSession({ mode: sessionMode, host, port }) {
 function recordWhenUp(session) {
   if (!session || session.recorded || !session.endpoint) return;
   const up =
-    (session.mode === "client" && session.status === "connected") ||
-    (session.mode === "server" && session.status === "listening");
+    (!isServerMode(session.mode) && session.status === "connected") ||
+    (isServerMode(session.mode) && session.status === "listening");
   if (!up) return;
   store.markRecorded(session.id);
   const { error } = recordRecent(localStorage, session.endpoint);
@@ -162,10 +217,6 @@ function relativeTime(timestamp) {
   return new Date(timestamp).toLocaleDateString();
 }
 
-function endpointText(entry) {
-  return entry.mode === "client" ? `${entry.host}:${entry.port}` : `:${entry.port}`;
-}
-
 function renderRecent() {
   const list = document.getElementById("recent-list");
   const side = document.getElementById("side-recent");
@@ -181,9 +232,9 @@ function renderRecent() {
   document.getElementById("side-recent-empty").classList.toggle("hidden", entries.length > 0);
 
   for (const entry of entries) {
-    const client = entry.mode === "client";
+    const client = !isServerMode(entry.mode);
     const card = cloneTemplate(CARD_TEMPLATE, {
-      kind: client ? "Client" : "Server",
+      kind: modeLabel(entry.mode),
       verb: client ? "Connect " : "Listen ",
       endpoint: endpointText(entry),
     });
@@ -193,10 +244,10 @@ function renderRecent() {
   }
 
   for (const entry of entries.slice(0, 5)) {
-    const client = entry.mode === "client";
+    const client = !isServerMode(entry.mode);
     const item = cloneTemplate(SIDE_ITEM_TEMPLATE, {
       endpoint: endpointText(entry),
-      detail: [client ? "Client" : "Server", relativeTime(entry.lastUsed)].filter(Boolean).join(" · "),
+      detail: [modeLabel(entry.mode), relativeTime(entry.lastUsed)].filter(Boolean).join(" · "),
     });
     item.title = `${client ? "Connect to" : "Listen on"} ${endpointText(entry)} in a new session`;
     Object.assign(item.dataset, entryData(entry));
@@ -205,18 +256,32 @@ function renderRecent() {
 }
 
 /** The recent endpoint carried by a card / side item (read back by actions.home.useRecent). */
-const entryData = ({ mode: m, host, port }) => ({ mode: m, host, port });
+const entryData = ({ mode: m, host, port, sshHost, sshPort, sshUser }) => ({
+  mode: m,
+  host,
+  port,
+  ...(isSshMode(m) && { sshHost, sshPort, sshUser }),
+});
 
 /** A shortcut always opens a NEW session, whatever the other sessions are doing. */
 function useRecent(entry) {
   showConnectError(null);
-  startSession({ mode: entry.mode, host: entry.host, port: Number(entry.port) });
+  startSession({
+    mode: entry.mode,
+    host: entry.host,
+    port: Number(entry.port),
+    sshHost: entry.sshHost,
+    sshPort: Number(entry.sshPort),
+    sshUser: entry.sshUser,
+  });
 }
 
 window.actions ??= {};
 window.actions.home = {
   setClient: () => setMode("client"),
+  setSshClient: () => setMode("ssh-client"),
   setServer: () => setMode("server"),
+  setSshServer: () => setMode("ssh-server"),
   submit: (ev) => {
     ev.preventDefault();
     submitForm();

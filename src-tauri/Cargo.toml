@@ -26,4 +26,6 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net",
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
 tauri-plugin-notification = "2"
+russh = { version = "0.64", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh-config = "0.58"
 

@@ -5,6 +5,8 @@ import {
   RECENT_KEY,
   MAX_RECENT,
   normalizeEndpoint,
+  describeEndpoint,
+  endpointText,
   loadRecent,
   recordRecent,
   clearRecent,
@@ -41,6 +43,54 @@ test("normalizeEndpoint trims/lowercases hosts and drops the host of servers", (
   assert.equal(normalizeEndpoint({ mode: "client", host: "a", port: 70000 }), null);
   assert.equal(normalizeEndpoint({ mode: "client", host: "a", port: 1.5 }), null);
   assert.equal(normalizeEndpoint({ mode: "other", host: "a", port: 1 }), null);
+});
+
+test("recent entries of the SSH modes round trip, legacy ones keep loading", () => {
+  const ssh = { mode: "ssh-client", host: " H ", port: 2575, sshHost: " VM ", sshPort: "22", sshUser: " lis " };
+  assert.deepEqual(normalizeEndpoint(ssh), {
+    mode: "ssh-client", host: "h", port: 2575, sshHost: "vm", sshPort: 22, sshUser: "lis",
+  });
+  assert.deepEqual(normalizeEndpoint({ mode: "ssh-server", host: "x", port: 5, sshHost: "vm", sshPort: 2222 }), {
+    mode: "ssh-server", host: "", port: 5, sshHost: "vm", sshPort: 2222, sshUser: "",
+  });
+  assert.equal(normalizeEndpoint({ ...ssh, sshHost: "" }), null);
+  assert.equal(normalizeEndpoint({ ...ssh, sshHost: "a b" }), null);
+  assert.equal(normalizeEndpoint({ ...ssh, sshPort: 0 }), null);
+  assert.equal(normalizeEndpoint({ ...ssh, sshPort: undefined }), null);
+  assert.equal(normalizeEndpoint({ mode: "ssh-server", port: 5 }), null);
+
+  const storage = memoryStorage({
+    [RECENT_KEY]: JSON.stringify([
+      { mode: "client", host: "legacy", port: 1, lastUsed: 1 },
+      { mode: "server", host: "", port: 2, lastUsed: 2 },
+    ]),
+  });
+  recordRecent(storage, ssh, 10);
+  recordRecent(storage, { ...ssh, sshUser: "" }, 20); // other tunnel user = other entry
+  recordRecent(storage, { ...ssh, sshPort: 2222 }, 30);
+  const { entries } = recordRecent(storage, { ...ssh, sshUser: "lis" }, 40); // same as the first
+  assert.deepEqual(
+    entries.map((e) => [e.mode, e.host, e.port, e.sshHost, e.sshPort, e.sshUser, e.lastUsed]),
+    [
+      ["ssh-client", "h", 2575, "vm", 22, "lis", 40],
+      ["ssh-client", "h", 2575, "vm", 2222, "lis", 30],
+      ["ssh-client", "h", 2575, "vm", 22, "", 20],
+      ["server", "", 2, undefined, undefined, undefined, 2],
+      ["client", "legacy", 1, undefined, undefined, undefined, 1],
+    ],
+  );
+  assert.deepEqual(loadRecent(storage).entries, entries);
+});
+
+test("describeEndpoint / endpointText: compact labels for the four modes", () => {
+  const ep = (o) => normalizeEndpoint(o);
+  const tunnel = { sshHost: "vm", sshPort: 22, sshUser: "lis" };
+  assert.equal(describeEndpoint(ep({ mode: "client", host: "h", port: 1 })), "h:1");
+  assert.equal(describeEndpoint(ep({ mode: "server", port: 2 })), "Server :2");
+  assert.equal(describeEndpoint(ep({ mode: "ssh-client", host: "h", port: 1, ...tunnel })), "lis@vm:22 → h:1");
+  assert.equal(describeEndpoint(ep({ mode: "ssh-client", host: "h", port: 1, ...tunnel, sshUser: "" })), "vm:22 → h:1");
+  assert.equal(describeEndpoint(ep({ mode: "ssh-server", port: 2, ...tunnel })), "Server :2 ← lis@vm:22");
+  assert.equal(endpointText(ep({ mode: "ssh-server", port: 2, ...tunnel })), ":2 ← lis@vm:22");
 });
 
 test("recordRecent dedupes by mode+host+port and keeps most recent first", () => {

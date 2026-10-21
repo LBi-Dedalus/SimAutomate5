@@ -18,7 +18,8 @@ use tokio::sync::Mutex;
 use crate::app_state::AppState;
 use crate::auto_reply::{AutoReplyConfig, RuleSet};
 use crate::config_store::{ConfigStore, RevisionedConfig, Template};
-use crate::models::{ConnectRequest, SendRequest};
+use crate::ids::{Attempt, SessionId};
+use crate::models::{ConnectRequest, ConnectionSpec, SendRequest};
 
 pub async fn connect(
     state: &Mutex<AppState>,
@@ -26,11 +27,14 @@ pub async fn connect(
     attempt: u64,
     req: ConnectRequest,
 ) -> Result<(), String> {
+    let session_id = SessionId::parse(session_id)?;
+    let spec = ConnectionSpec::try_from(req)?;
+    let attempt = Attempt::parse(attempt)?;
     state
         .lock()
         .await
         .connection_manager
-        .connect(session_id, attempt, req)
+        .connect(&session_id, attempt, spec)
 }
 
 /// Queues a message on the given attempt of the given session, only if it is connected.
@@ -40,22 +44,25 @@ pub async fn send(
     attempt: u64,
     payload: &SendRequest,
 ) -> Result<(), String> {
+    let session_id = SessionId::parse(session_id)?;
+    let attempt = Attempt::parse(attempt)?;
     let queue = state
         .lock()
         .await
         .connection_manager
-        .send_target(session_id, attempt)?;
+        .send_target(&session_id, attempt)?;
     queue.send_user_message(payload).await
 }
 
 /// Stops one session. With `remove` the session is forgotten (close), otherwise it stays
 /// registered and can be reconnected (disconnect).
 pub async fn stop(state: &Mutex<AppState>, session_id: &str, remove: bool) -> Result<(), String> {
+    let session_id = SessionId::parse(session_id)?;
     let mut ticket = state
         .lock()
         .await
         .connection_manager
-        .begin_stop(session_id, remove)?;
+        .begin_stop(&session_id, remove)?;
     // The global lock is released here: other sessions keep working while this one tears down.
     ticket.run().await;
     state.lock().await.connection_manager.finish_stop(&ticket);
@@ -91,10 +98,13 @@ pub async fn init_auto_reply(store: &ConfigStore, state: &Mutex<AppState>) {
 /// The effective templates and auto reply rules (defaults for missing keys), stamped with the
 /// current configuration revision (loads do not change it).
 pub async fn load_config(store: &ConfigStore) -> Result<RevisionedConfig, String> {
-    store.load().await.map(|(revision, applied)| RevisionedConfig {
-        revision,
-        config: applied.config,
-    })
+    store
+        .load()
+        .await
+        .map(|(revision, applied)| RevisionedConfig {
+            revision,
+            config: applied.config,
+        })
 }
 
 /// Saves the templates (refused when a rule would break) and refreshes the running rules.
@@ -397,6 +407,41 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn an_unreachable_ssh_server_ends_in_error() {
+        let (sink, state) = setup();
+        let req = ConnectRequest::SshServerStartRequest {
+            port: free_port(),
+            ssh_host: "127.0.0.1".to_string(),
+            ssh_port: 1,
+            ssh_user: String::new(),
+        };
+        connect(&state, "ssh", 1, req).await.unwrap();
+        wait_for("the error status", || {
+            sink.has_status("ssh", 1, ConnectionStatus::Error)
+        })
+        .await;
+        stop(&state, "ssh", true).await.unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn invalid_ssh_requests_create_nothing() {
+        let (sink, state) = setup();
+        let req = ConnectRequest::SshClientConnectRequest {
+            ip: "h".to_string(),
+            port: 1,
+            ssh_host: " ".to_string(),
+            ssh_port: 22,
+            ssh_user: String::new(),
+        };
+        assert_eq!(
+            connect(&state, "ssh", 1, req).await.unwrap_err(),
+            "The SSH host is required"
+        );
+        assert!(stop(&state, "ssh", true).await.is_err());
+        assert!(sink.events().is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn invalid_requests_are_errors_and_create_nothing() {
         let (sink, state) = setup();
         assert!(connect(&state, "", 1, server(free_port())).await.is_err());
@@ -414,6 +459,23 @@ mod tests {
         assert!(stop(&state, "ghost", false).await.is_err());
         assert!(stop(&state, "ghost", true).await.is_err());
         assert!(stop(&state, "bad id", true).await.is_err());
+        assert_eq!(
+            connect(&state, "bad id", 1, server(free_port()))
+                .await
+                .unwrap_err(),
+            "Invalid session id: only letters, digits, '-' and '_' are allowed"
+        );
+        assert_eq!(
+            connect(&state, "ok", 0, server(free_port()))
+                .await
+                .unwrap_err(),
+            "Invalid attempt: it must be greater than zero"
+        );
+        assert_eq!(
+            send(&state, "ok", 0, &msg("x")).await.unwrap_err(),
+            "Invalid attempt: it must be greater than zero"
+        );
+        assert!(send(&state, "bad id", 1, &msg("x")).await.is_err());
 
         // A real session: wrong attempt and "already running" are rejected too.
         let port = free_port();
@@ -682,13 +744,9 @@ mod tests {
     }
 
     async fn apply(cfg: &TestConfig, state: &Mutex<AppState>, enabled: bool, rules: Vec<Rule>) {
-        save_auto_reply(
-            &cfg.store,
-            state,
-            &AutoReplyConfig { enabled, rules },
-        )
-        .await
-        .unwrap();
+        save_auto_reply(&cfg.store, state, &AutoReplyConfig { enabled, rules })
+            .await
+            .unwrap();
     }
 
     fn hl7_frame(msh9: &str, id: &str, extra: &str) -> Vec<u8> {
@@ -1297,9 +1355,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.contains("Rule r"), "{err}");
-        let err = save_templates(&cfg.store, &state, &[])
-            .await
-            .unwrap_err();
+        let err = save_templates(&cfg.store, &state, &[]).await.unwrap_err();
         assert!(err.contains("Rule r"), "{err}");
         assert_eq!(std::fs::read_to_string(&cfg.path).unwrap(), before);
         peer.write_all(&[0x05]).await.unwrap();
@@ -1371,20 +1427,13 @@ mod tests {
         let before = collect(&mut peer, 500).await;
         assert_eq!(before, vec![0x06], "default rules reply ACK to ENQ");
 
-        let saved = save_templates(
-            &cfg.store,
-            &state,
-            &config_store::builtin_templates(),
-        )
-        .await
-        .unwrap();
+        let saved = save_templates(&cfg.store, &state, &config_store::builtin_templates())
+            .await
+            .unwrap();
         assert!(saved.auto_reply.enabled);
         let loaded = load_config(&cfg.store).await.unwrap();
         assert_eq!(saved.config, loaded.config);
-        assert_eq!(
-            saved.config,
-            cfg.store.load().await.unwrap().1.config
-        );
+        assert_eq!(saved.config, cfg.store.load().await.unwrap().1.config);
         assert_eq!(saved.revision, loaded.revision);
         peer.write_all(&[0x05]).await.unwrap();
         assert_eq!(collect(&mut peer, 500).await, before);

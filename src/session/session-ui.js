@@ -5,6 +5,7 @@ import { cloneTemplate } from "../include.js";
 import { sessions, store } from "./sessions.js";
 import { showView } from "../nav.js";
 import { isBusyStatus, isTerminalStatus } from "./sessions-core.js";
+import { isServerMode, modeLabel } from "../home/recent-core.js";
 
 const SESSION_ITEM = "session/session-item.html";
 
@@ -125,7 +126,7 @@ function renderSidebar() {
     const active = session.id === store.activeId;
     const item = cloneTemplate(SESSION_ITEM, {
       label: endpointLabel(session),
-      detail: `${session.mode === "client" ? "Client" : "Server"} · ${STATUS_TEXT[session.status] ?? session.status}`,
+      detail: `${modeLabel(session.mode)} · ${STATUS_TEXT[session.status] ?? session.status}`,
       ...(session.unread > 0 && !active && { unread: String(Math.min(session.unread, 99)) }),
     });
     const part = (cls) => item.querySelector(`.${cls}`);
@@ -158,19 +159,20 @@ function renderHeader() {
   const working = !!session?.op;
 
   $("session-title").textContent = session ? session.label : "No session";
+  const server = isServerMode(session?.mode);
   const badge = $("session-mode");
   badge.classList.toggle("hidden", !session);
-  badge.textContent = session?.mode === "server" ? "Server" : "Client";
+  badge.textContent = modeLabel(session?.mode);
 
   const disconnect = $("session-disconnect");
   disconnect.classList.toggle("hidden", !busy);
   disconnect.disabled = working;
-  disconnect.textContent = session?.mode === "server" ? "Stop server" : "Disconnect";
+  disconnect.textContent = server ? "Stop server" : "Disconnect";
 
   const reconnect = $("session-reconnect");
   reconnect.classList.toggle("hidden", !terminal);
   reconnect.disabled = working;
-  reconnect.textContent = session?.mode === "server" ? "Restart server" : "Reconnect";
+  reconnect.textContent = server ? "Restart server" : "Reconnect";
 
   const close = $("session-close");
   close.classList.toggle("hidden", !session);

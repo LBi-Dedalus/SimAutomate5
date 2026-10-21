@@ -760,7 +760,10 @@ mod tests {
     async fn split_multibyte_char_is_reassembled_and_raw_is_per_read() {
         let sink = Arc::new(CaptureSink(Default::default()));
         let q = MessageQueue::shared(
-            Emitter::with_sink(sink.clone()).scoped("s", 1),
+            Emitter::with_sink(sink.clone()).scoped(
+                &crate::ids::SessionId::parse("s").unwrap(),
+                crate::ids::Attempt::parse(1).unwrap(),
+            ),
             Arc::new(RuleSet::disabled()),
         );
         let mut dec = translate::Utf8StreamDecoder::new();
@@ -936,7 +939,10 @@ mod tests {
     fn short_queue(rules: Arc<RuleSet>) -> (SharedMessageQueue, Arc<TypedSink>) {
         let sink = Arc::new(TypedSink(Default::default()));
         let q = MessageQueue::with_ack_timeout(
-            Emitter::with_sink(sink.clone()).scoped("s", 1),
+            Emitter::with_sink(sink.clone()).scoped(
+                &crate::ids::SessionId::parse("s").unwrap(),
+                crate::ids::Attempt::parse(1).unwrap(),
+            ),
             rules,
             SHORT,
         );

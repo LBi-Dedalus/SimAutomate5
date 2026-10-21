@@ -5,6 +5,7 @@ mod auto_reply;
 mod config_store;
 mod emitter;
 mod frames;
+mod ids;
 mod logger;
 mod message_builder;
 mod message_queue;
