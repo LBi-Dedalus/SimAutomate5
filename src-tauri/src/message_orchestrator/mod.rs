@@ -1,4 +1,5 @@
 mod composer;
+pub(crate) mod frames;
 mod protocol;
 mod state;
 #[cfg(test)]
@@ -11,7 +12,7 @@ use tokio::sync::{Mutex, Notify};
 use tokio::time::{sleep_until, Instant};
 
 use crate::auto_reply::{AutoReplyOutcome, AutoReplyRuleSet};
-use crate::frames::FrameEvent;
+use frames::{FrameBuffer, FrameEvent};
 use crate::models::{LogLevel, MessageType, SendRequest};
 use crate::reporting::ConnectionReporter;
 use crate::translate;
@@ -19,29 +20,41 @@ use crate::translate;
 use composer::split_message;
 use state::{AckOrigin, Discarded, MessageQueueState, ACK_TIMEOUT};
 
-pub(crate) type SharedMessageQueue = Arc<MessageQueue>;
+pub(crate) type SharedMessageOrchestrator = Arc<MessageOrchestrator>;
 
 /// Largest user message accepted by `send_user_message`.
 const MAX_USER_PAYLOAD: usize = 1024 * 1024;
 
-/// One queue per connection attempt. It holds the user messages (released one at a time, an
-/// ASTM ENQ/STX waits for its ACK) and the scheduled automatic replies.
+/// Stream state of the bytes received on one connection attempt.
+struct ReceiveState {
+    /// Reassembles multibyte characters split across reads.
+    decoder: translate::ControlTokenDecoder,
+    /// Extracts the complete protocol messages (ACK, NAK, EOT, ENQ, frames...).
+    frames: FrameBuffer,
+}
+
+/// One orchestrator per connection attempt, and the single entry point of the bytes received
+/// on it (`on_received`): it reports them, releases or aborts the send queue on ACK / NAK / EOT
+/// and schedules the automatic replies. It also holds the user messages (released one at a
+/// time, an ASTM ENQ/STX waits for its ACK) and the scheduled automatic replies.
 ///
 /// Scheduling policy: a due automatic reply goes out before any queued user message. While an
 /// ACK is awaited, only a PURE automatic `<ACK>` / `<NAK>` may go out: answering the peer's
 /// ENQ/frame must never wait for the peer to answer ours (that would deadlock a bidirectional
 /// exchange), but no other frame bypasses the wait.
-pub(crate) struct MessageQueue {
+pub(crate) struct MessageOrchestrator {
     reporter: ConnectionReporter,
     state: Mutex<MessageQueueState>,
+    // Separate lock so decoding never contends with the send loop.
+    receive: Mutex<ReceiveState>,
     ready: Notify,
 }
 
-impl MessageQueue {
+impl MessageOrchestrator {
     pub(crate) fn shared(
         reporter: ConnectionReporter,
         rules: Arc<AutoReplyRuleSet>,
-    ) -> SharedMessageQueue {
+    ) -> SharedMessageOrchestrator {
         Self::with_ack_timeout(reporter, rules, ACK_TIMEOUT)
     }
 
@@ -50,10 +63,14 @@ impl MessageQueue {
         reporter: ConnectionReporter,
         rules: Arc<AutoReplyRuleSet>,
         ack_timeout: Duration,
-    ) -> SharedMessageQueue {
+    ) -> SharedMessageOrchestrator {
         Arc::new(Self {
             reporter,
             state: Mutex::new(MessageQueueState::new(rules, ack_timeout)),
+            receive: Mutex::new(ReceiveState {
+                decoder: translate::ControlTokenDecoder::new(),
+                frames: FrameBuffer::new(),
+            }),
             ready: Notify::new(),
         })
     }
@@ -177,15 +194,12 @@ impl MessageQueue {
         }
     }
 
-    /// Raw chunk as read from the socket: shown as is, and an ACK releases the user queue.
-    /// `visible` is the text decoded by the connection's stream decoder (so characters split
-    /// across reads are reassembled); `message` is exactly the bytes of this read.
-    pub(crate) async fn handle_received_message(
-        &self,
-        visible: String,
-        message: Vec<u8>,
-    ) -> Result<(), String> {
-        if message.is_empty() {
+    /// Entry point of the bytes of one socket read: reports them as is, then handles the
+    /// protocol messages they complete (ACK releases the send queue, NAK / EOT abort it, the
+    /// others go through the auto reply rules). An empty read means the peer closed.
+    pub(crate) async fn on_received(&self, bytes: &[u8]) -> Result<(), String> {
+        if bytes.is_empty() {
+            self.on_closed().await;
             return Err("Connection closed by peer".to_string());
         }
 
@@ -193,28 +207,39 @@ impl MessageQueue {
             LogLevel::Inf,
             file!(),
             line!(),
-            format!("received message bytes={}", message.len()),
+            format!("received message bytes={}", bytes.len()),
         );
 
+        let (visible, events) = {
+            let mut receive = self.receive.lock().await;
+            (receive.decoder.decode(bytes), receive.frames.feed(bytes))
+        };
         self.reporter
-            .emit_message_with_raw(MessageType::Received, visible, message.clone());
-        // Standalone ACKs are detected by the frame parser (`handle_frame`), which also copes
-        // with ACKs coalesced with other data.
+            .emit_message_with_raw(MessageType::Received, visible, bytes.to_vec());
+        for event in events {
+            self.handle_frame(event).await;
+        }
         Ok(())
     }
 
-    /// Logs (metadata only) bytes of an incomplete UTF-8 sequence dropped when the peer closed.
-    pub(crate) fn log_incomplete_on_close(&self, pending_bytes: usize) {
-        if pending_bytes > 0 {
+    /// The peer closed: the dangling partial character is dropped (not emitted as a message)
+    /// and only its size is logged.
+    async fn on_closed(&self) {
+        let pending = {
+            let mut receive = self.receive.lock().await;
+            let pending = receive.decoder.pending_len();
+            let _ = receive.decoder.finish();
+            pending
+        };
+        if pending > 0 {
             self.reporter.only_log(
                 LogLevel::Inf,
                 file!(),
                 line!(),
-                format!("connection closed with incomplete UTF-8 sequence bytes={pending_bytes}"),
+                format!("connection closed with incomplete UTF-8 sequence bytes={pending}"),
             );
         }
     }
-
     fn report_ack_timeout(&self, dropped: Discarded, timeout: Duration) {
         self.reporter.warn(
             file!(),
@@ -302,7 +327,7 @@ impl MessageQueue {
 
     /// A complete protocol message (see `frames`): evaluates the rules once and schedules the
     /// reply. Failures are reported with metadata only (never the peer's content).
-    pub(crate) async fn handle_frame(&self, event: FrameEvent) {
+    async fn handle_frame(&self, event: FrameEvent) {
         // The ACK of our own transmission releases the send queue whatever the rules say.
         if event == FrameEvent::Ack {
             let _ = self.handle_ack().await;

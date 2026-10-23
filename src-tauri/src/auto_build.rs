@@ -86,7 +86,7 @@ fn build_astm_segment(line: &str, ending: AstmEndingMode, idx: usize, line_count
 }
 
 fn astm_checksum(body: &[u8]) -> String {
-    format!("{:02X}", crate::frames::astm_checksum(body))
+    format!("{:02X}", crate::message_orchestrator::frames::astm_checksum(body))
 }
 
 #[cfg(test)]

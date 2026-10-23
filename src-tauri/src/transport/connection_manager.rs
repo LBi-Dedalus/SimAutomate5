@@ -9,7 +9,7 @@ use super::runner::run_connection;
 use crate::auto_reply::AutoReplyRuleSet;
 use crate::config_store::RevisionedConfig;
 use crate::ids::{Attempt, ConnectionId, SessionId};
-use crate::message_queue::{MessageQueue, SharedMessageQueue};
+use crate::message_orchestrator::{MessageOrchestrator, SharedMessageOrchestrator};
 use crate::models::{ConnectionSpec, ConnectionStatus};
 use crate::reporting::{ConnectionReporter, ConnectionReporterFactory};
 
@@ -36,7 +36,7 @@ fn status_label(status: ConnectionStatus) -> &'static str {
 /// A connection attempt that is (or was until recently) executing.
 struct Running {
     attempt: Attempt,
-    message_queue: SharedMessageQueue,
+    message_orchestrator: SharedMessageOrchestrator,
     shutdown: oneshot::Sender<()>,
     /// Always holds the latest status; terminal statuses are published before the
     /// matching event is emitted, so "terminal" here means all resources are released.
@@ -164,13 +164,13 @@ impl ConnectionManager {
         }
 
         let reporter = self.reporter_factory.create(connection);
-        let message_queue = MessageQueue::shared(reporter.clone(), registry.rules.clone());
+        let message_orchestrator = MessageOrchestrator::shared(reporter.clone(), registry.rules.clone());
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let (status_tx, status_rx) = watch::channel(ConnectionStatus::Connecting);
         let join = tokio::spawn(run_connection(
             reporter.clone(),
             req,
-            message_queue.clone(),
+            message_orchestrator.clone(),
             shutdown_rx,
             Arc::new(status_tx),
         ));
@@ -186,7 +186,7 @@ impl ConnectionManager {
         session.last_attempt = Some(attempt);
         session.state = SessionState::Running(Running {
             attempt,
-            message_queue,
+            message_orchestrator,
             shutdown: shutdown_tx,
             status: status_rx,
             join,
@@ -200,7 +200,7 @@ impl ConnectionManager {
     pub async fn send_target(
         &self,
         connection: &ConnectionId,
-    ) -> Result<SharedMessageQueue, String> {
+    ) -> Result<SharedMessageOrchestrator, String> {
         let registry = self.registry.lock().await;
         let session = registry
             .sessions
@@ -210,7 +210,7 @@ impl ConnectionManager {
             SessionState::Running(running) if running.attempt == connection.attempt => {
                 let status = *running.status.borrow();
                 if status == ConnectionStatus::Connected {
-                    Ok(running.message_queue.clone())
+                    Ok(running.message_orchestrator.clone())
                 } else {
                     Err(format!(
                         "Cannot send: the session is {}, not connected",
@@ -281,7 +281,7 @@ impl ConnectionManager {
         for session in registry.sessions.values() {
             if let SessionState::Running(running) = &session.state {
                 running
-                    .message_queue
+                    .message_orchestrator
                     .update_rules(config.rules.clone())
                     .await;
             }

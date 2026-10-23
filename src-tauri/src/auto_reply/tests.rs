@@ -4,7 +4,7 @@ use super::*;
 use crate::config_store::{
     builtin_templates, AutobuildMode, Template, TemplateId, TemplateVariable,
 };
-use crate::frames::FrameEvent;
+use crate::message_orchestrator::frames::FrameEvent;
 use crate::translate;
 
 fn rule(

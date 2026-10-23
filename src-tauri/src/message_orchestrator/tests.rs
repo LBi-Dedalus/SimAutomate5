@@ -5,9 +5,9 @@ use tokio::time::{timeout, Instant};
 
 use super::composer::split_message;
 use super::state::{AckOrigin, MessageQueueState, ACK_TIMEOUT, MAX_BYTES, MAX_ITEMS};
-use super::{MessageQueue, SharedMessageQueue, MAX_USER_PAYLOAD};
+use super::{MessageOrchestrator, SharedMessageOrchestrator, MAX_USER_PAYLOAD};
 use crate::auto_reply::AutoReplyRuleSet;
-use crate::frames::FrameEvent;
+use crate::message_orchestrator::frames::FrameEvent;
 use crate::ids::ConnectionId;
 use crate::models::{MessagePayload, SendRequest, StatusPayload};
 use crate::reporting::NullLogger;
@@ -33,8 +33,8 @@ impl crate::reporting::EventSink for NoSink {
     }
 }
 
-fn queue() -> SharedMessageQueue {
-    MessageQueue::shared(
+fn queue() -> SharedMessageOrchestrator {
+    MessageOrchestrator::shared(
         reporter(Arc::new(NoSink)),
         Arc::new(AutoReplyRuleSet::disabled()),
     )
@@ -64,16 +64,12 @@ impl crate::reporting::EventSink for CaptureSink {
 #[tokio::test]
 async fn split_multibyte_char_is_reassembled_and_raw_is_per_read() {
     let sink = Arc::new(CaptureSink(Default::default()));
-    let q = MessageQueue::shared(
+    let q = MessageOrchestrator::shared(
         reporter(sink.clone()),
         Arc::new(AutoReplyRuleSet::disabled()),
     );
-    let mut dec = translate::ControlTokenDecoder::new();
     for chunk in [&[0x43u8, 0x61, 0x66, 0xC3][..], &[0xA9][..]] {
-        let visible = dec.decode(chunk);
-        q.handle_received_message(visible, chunk.to_vec())
-            .await
-            .unwrap();
+        q.on_received(chunk).await.unwrap();
     }
     let got = sink.0.lock().unwrap().clone();
     assert_eq!(
@@ -241,9 +237,9 @@ impl crate::reporting::EventSink for TypedSink {
 
 const SHORT: Duration = Duration::from_millis(60);
 
-fn short_queue(rules: Arc<AutoReplyRuleSet>) -> (SharedMessageQueue, Arc<TypedSink>) {
+fn short_queue(rules: Arc<AutoReplyRuleSet>) -> (SharedMessageOrchestrator, Arc<TypedSink>) {
     let sink = Arc::new(TypedSink(Default::default()));
-    let q = MessageQueue::with_ack_timeout(reporter(sink.clone()), rules, SHORT);
+    let q = MessageOrchestrator::with_ack_timeout(reporter(sink.clone()), rules, SHORT);
     (q, sink)
 }
 
@@ -257,7 +253,7 @@ fn warnings(sink: &TypedSink) -> Vec<String> {
         .collect()
 }
 
-async fn assert_idle(queue: &SharedMessageQueue) {
+async fn assert_idle(queue: &SharedMessageOrchestrator) {
     let state = queue.state.lock().await;
     assert!(state.ack_wait.is_none());
     assert_eq!((state.queued_items, state.queued_bytes), (0, 0));
@@ -432,7 +428,7 @@ async fn control_reply_keeps_working_after_a_timeout_reset() {
 const AUTO_STX: &[u8] = b"\x021H|X\r\x035D\r\n";
 
 /// Schedules an automatic ENQ / STX / EOT transmission and releases its ENQ.
-async fn start_auto_send(queue: &SharedMessageQueue) {
+async fn start_auto_send(queue: &SharedMessageOrchestrator) {
     queue
         .state
         .lock()
@@ -451,7 +447,7 @@ async fn start_auto_send(queue: &SharedMessageQueue) {
     assert_eq!(s.scheduled.len(), 2);
 }
 
-async fn assert_auto_send_aborted(queue: &SharedMessageQueue, sink: &TypedSink, what: &str) {
+async fn assert_auto_send_aborted(queue: &SharedMessageOrchestrator, sink: &TypedSink, what: &str) {
     // No continuation bytes are released.
     assert!(timeout(Duration::from_millis(200), queue.recv())
         .await
@@ -654,7 +650,7 @@ async fn user_payload_too_large_is_rejected() {
 
 #[tokio::test]
 async fn full_queue_rejects_user_message_and_drops_auto_reply() {
-    let queue = MessageQueue::shared(reporter(Arc::new(NoSink)), ack_rules());
+    let queue = MessageOrchestrator::shared(reporter(Arc::new(NoSink)), ack_rules());
     // Sanity: with room, the ACK reply is scheduled.
     queue.handle_frame(FrameEvent::Enq).await;
     assert_eq!(queue.state.lock().await.scheduled.len(), 1);

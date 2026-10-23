@@ -4,11 +4,9 @@ use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{oneshot, watch};
 use tokio::time::{sleep, Duration};
 
-use crate::frames::FrameBuffer;
-use crate::message_queue::SharedMessageQueue;
+use crate::message_orchestrator::SharedMessageOrchestrator;
 use crate::models::ConnectionStatus;
 use crate::reporting::ConnectionReporter;
-use crate::translate;
 
 /// Any bidirectional byte stream a transport can hand over to `serve` (TCP socket, SSH channel...).
 pub trait AsyncStream: AsyncRead + AsyncWrite + Unpin + Send {}
@@ -18,7 +16,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Send> AsyncStream for T {}
 /// What every transport task needs, whatever the way the stream is obtained.
 pub struct ConnectionContext {
     pub reporter: ConnectionReporter,
-    pub message_queue: SharedMessageQueue,
+    pub message_orchestrator: SharedMessageOrchestrator,
     pub shutdown: oneshot::Receiver<()>,
     pub status: Arc<watch::Sender<ConnectionStatus>>,
 }
@@ -39,11 +37,11 @@ pub async fn serve(
 /// Exchanges data until EOF, an I/O error or a shutdown request.
 async fn run_connected(ctx: &mut ConnectionContext, stream: impl AsyncStream) -> ConnectionStatus {
     let reporter = &ctx.reporter;
-    let message_queue = &ctx.message_queue;
+    let message_orchestrator = &ctx.message_orchestrator;
     let (mut reader, mut writer) = split(stream);
 
     let terminal = tokio::select! {
-        result = read_loop(&mut reader, message_queue.clone()) => {
+        result = read_loop(&mut reader, message_orchestrator.clone()) => {
             match result {
                 Err(err) => {
                     reporter.error(
@@ -56,7 +54,7 @@ async fn run_connected(ctx: &mut ConnectionContext, stream: impl AsyncStream) ->
                 Ok(()) => ConnectionStatus::Disconnected,
             }
         }
-        result = send_loop(&mut writer, message_queue.clone()) => {
+        result = send_loop(&mut writer, message_orchestrator.clone()) => {
             match result {
                 Err(err) => {
                     reporter.error(
@@ -76,48 +74,32 @@ async fn run_connected(ctx: &mut ConnectionContext, stream: impl AsyncStream) ->
     };
 
     // Nothing pending (user messages, delayed automatic replies) may outlive the connection.
-    message_queue.close().await;
+    message_orchestrator.close().await;
     let _ = writer.shutdown().await;
     terminal
 }
 
 async fn read_loop(
     reader: &mut (impl AsyncRead + Unpin),
-    message_queue: SharedMessageQueue,
+    message_orchestrator: SharedMessageOrchestrator,
 ) -> Result<(), String> {
     let mut buffer = vec![0u8; 4096];
-    // Complete messages are extracted here (per connection attempt) while the UI keeps
-    // receiving the raw chunks.
-    let mut frames = FrameBuffer::new();
-    // Reassembles multibyte characters split across reads (per connection attempt).
-    let mut decoder = translate::ControlTokenDecoder::new();
 
     loop {
         let len = reader
             .read(&mut buffer)
             .await
             .map_err(|err| err.to_string())?;
-        if len == 0 {
-            let pending = decoder.pending_len();
-            // The dangling partial character is dropped, not emitted as a new message.
-            let _ = decoder.finish();
-            message_queue.log_incomplete_on_close(pending);
-        }
-        let res = Vec::from_iter(buffer[..len].iter().copied());
-        let visible = decoder.decode(&res);
-        message_queue.handle_received_message(visible, res).await?;
-        for event in frames.feed(&buffer[..len]) {
-            message_queue.handle_frame(event).await;
-        }
+        message_orchestrator.on_received(&buffer[..len]).await?;
     }
 }
 
 async fn send_loop(
     writer: &mut (impl AsyncWrite + Unpin),
-    message_queue: SharedMessageQueue,
+    message_orchestrator: SharedMessageOrchestrator,
 ) -> Result<(), String> {
     loop {
-        let msg = message_queue.recv().await;
+        let msg = message_orchestrator.recv().await;
         let mut pos = 0;
 
         while pos < msg.len() {
@@ -131,7 +113,7 @@ async fn send_loop(
             pos += len;
         }
 
-        message_queue.handle_sent_message(&msg);
+        message_orchestrator.handle_sent_message(&msg);
         sleep(Duration::from_millis(200)).await;
     }
 }

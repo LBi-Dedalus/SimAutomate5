@@ -6,7 +6,7 @@ use tokio::task::AbortHandle;
 use super::ssh;
 use super::streams::ConnectionContext;
 use super::tcp;
-use crate::message_queue::SharedMessageQueue;
+use crate::message_orchestrator::SharedMessageOrchestrator;
 use crate::models::{ConnectionSpec, ConnectionStatus};
 use crate::reporting::ConnectionReporter;
 
@@ -25,7 +25,7 @@ impl Drop for AbortOnDrop {
 pub(super) async fn run_connection(
     reporter: ConnectionReporter,
     spec: ConnectionSpec,
-    message_queue: SharedMessageQueue,
+    message_orchestrator: SharedMessageOrchestrator,
     shutdown: oneshot::Receiver<()>,
     status: Arc<watch::Sender<ConnectionStatus>>,
 ) {
@@ -34,7 +34,7 @@ pub(super) async fn run_connection(
     let inner = tokio::spawn(connection_task(
         reporter.clone(),
         spec,
-        message_queue,
+        message_orchestrator,
         shutdown,
         status.clone(),
     ));
@@ -58,13 +58,13 @@ pub(super) async fn run_connection(
 async fn connection_task(
     reporter: ConnectionReporter,
     spec: ConnectionSpec,
-    message_queue: SharedMessageQueue,
+    message_orchestrator: SharedMessageOrchestrator,
     shutdown: oneshot::Receiver<()>,
     status: Arc<watch::Sender<ConnectionStatus>>,
 ) -> ConnectionStatus {
     let mut ctx = ConnectionContext {
         reporter,
-        message_queue,
+        message_orchestrator,
         shutdown,
         status,
     };

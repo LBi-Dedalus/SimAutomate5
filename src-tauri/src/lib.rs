@@ -3,9 +3,8 @@
 mod auto_build;
 mod auto_reply;
 mod config_store;
-mod frames;
 mod ids;
-mod message_queue;
+mod message_orchestrator;
 mod models;
 mod reporting;
 mod session_commands;
