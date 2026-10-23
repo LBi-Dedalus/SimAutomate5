@@ -4,10 +4,10 @@ use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{oneshot, watch};
 use tokio::time::{sleep, Duration};
 
-use crate::emitter::Emitter;
 use crate::frames::FrameBuffer;
 use crate::message_queue::SharedMessageQueue;
 use crate::models::ConnectionStatus;
+use crate::reporting::ConnectionReporter;
 use crate::translate;
 
 /// Any bidirectional byte stream a transport can hand over to `serve` (TCP socket, SSH channel...).
@@ -17,7 +17,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Send> AsyncStream for T {}
 
 /// What every transport task needs, whatever the way the stream is obtained.
 pub struct ConnectionContext {
-    pub emitter: Emitter,
+    pub reporter: ConnectionReporter,
     pub message_queue: SharedMessageQueue,
     pub shutdown: oneshot::Receiver<()>,
     pub status: Arc<watch::Sender<ConnectionStatus>>,
@@ -30,15 +30,15 @@ pub async fn serve(
     notification: &str,
 ) -> ConnectionStatus {
     ctx.status.send_replace(ConnectionStatus::Connected);
-    ctx.emitter.emit_status(ConnectionStatus::Connected);
-    ctx.emitter.emit_notification("Connected", notification);
+    ctx.reporter.emit_status(ConnectionStatus::Connected);
+    ctx.reporter.emit_notification("Connected", notification);
 
     run_connected(ctx, stream).await
 }
 
 /// Exchanges data until EOF, an I/O error or a shutdown request.
 async fn run_connected(ctx: &mut ConnectionContext, stream: impl AsyncStream) -> ConnectionStatus {
-    let emitter = &ctx.emitter;
+    let reporter = &ctx.reporter;
     let message_queue = &ctx.message_queue;
     let (mut reader, mut writer) = split(stream);
 
@@ -46,7 +46,7 @@ async fn run_connected(ctx: &mut ConnectionContext, stream: impl AsyncStream) ->
         result = read_loop(&mut reader, message_queue.clone()) => {
             match result {
                 Err(err) => {
-                    emitter.error(
+                    reporter.error(
                         file!(),
                         line!(),
                         format!("An error occurred while reading, disconnecting: {err}"),
@@ -59,7 +59,7 @@ async fn run_connected(ctx: &mut ConnectionContext, stream: impl AsyncStream) ->
         result = send_loop(&mut writer, message_queue.clone()) => {
             match result {
                 Err(err) => {
-                    emitter.error(
+                    reporter.error(
                         file!(),
                         line!(),
                         format!("An error occurred while writing, disconnecting: {err}"),
@@ -70,7 +70,7 @@ async fn run_connected(ctx: &mut ConnectionContext, stream: impl AsyncStream) ->
             }
         }
         _ = &mut ctx.shutdown => {
-            emitter.info(file!(), line!(), "Disconnected successfully");
+            reporter.info(file!(), line!(), "Disconnected successfully");
             ConnectionStatus::Disconnected
         }
     };
@@ -90,7 +90,7 @@ async fn read_loop(
     // receiving the raw chunks.
     let mut frames = FrameBuffer::new();
     // Reassembles multibyte characters split across reads (per connection attempt).
-    let mut decoder = translate::Utf8StreamDecoder::new();
+    let mut decoder = translate::ControlTokenDecoder::new();
 
     loop {
         let len = reader

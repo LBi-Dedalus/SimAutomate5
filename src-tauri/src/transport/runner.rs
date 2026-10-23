@@ -6,9 +6,9 @@ use tokio::task::AbortHandle;
 use super::ssh;
 use super::streams::ConnectionContext;
 use super::tcp;
-use crate::emitter::Emitter;
 use crate::message_queue::SharedMessageQueue;
 use crate::models::{ConnectionSpec, ConnectionStatus};
+use crate::reporting::ConnectionReporter;
 
 /// Aborts the wrapped task when dropped (the connection task is isolated in its own task).
 struct AbortOnDrop(AbortHandle);
@@ -23,16 +23,16 @@ impl Drop for AbortOnDrop {
 /// scoped events and the watch channel, and it always ends by publishing a terminal status,
 /// whatever happens (including a panic of the transport code).
 pub(super) async fn run_connection(
-    emitter: Emitter,
+    reporter: ConnectionReporter,
     spec: ConnectionSpec,
     message_queue: SharedMessageQueue,
     shutdown: oneshot::Receiver<()>,
     status: Arc<watch::Sender<ConnectionStatus>>,
 ) {
-    emitter.emit_status(ConnectionStatus::Connecting);
+    reporter.emit_status(ConnectionStatus::Connecting);
 
     let inner = tokio::spawn(connection_task(
-        emitter.clone(),
+        reporter.clone(),
         spec,
         message_queue,
         shutdown,
@@ -42,7 +42,7 @@ pub(super) async fn run_connection(
     let terminal = match inner.await {
         Ok(terminal) => terminal,
         Err(err) => {
-            emitter.error(
+            reporter.error(
                 file!(),
                 line!(),
                 format!("The connection task failed unexpectedly: {err}"),
@@ -52,18 +52,18 @@ pub(super) async fn run_connection(
     };
     // Published first: once the frontend sees the terminal event, a reconnect is accepted.
     status.send_replace(terminal);
-    emitter.emit_status(terminal);
+    reporter.emit_status(terminal);
 }
 
 async fn connection_task(
-    emitter: Emitter,
+    reporter: ConnectionReporter,
     spec: ConnectionSpec,
     message_queue: SharedMessageQueue,
     shutdown: oneshot::Receiver<()>,
     status: Arc<watch::Sender<ConnectionStatus>>,
 ) -> ConnectionStatus {
     let mut ctx = ConnectionContext {
-        emitter,
+        reporter,
         message_queue,
         shutdown,
         status,

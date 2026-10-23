@@ -51,6 +51,35 @@ impl std::fmt::Display for Attempt {
     }
 }
 
+/// One connection attempt of one session: what every event and log line belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConnectionId {
+    pub session_id: SessionId,
+    pub attempt: Attempt,
+}
+
+impl ConnectionId {
+    pub fn new(session_id: SessionId, attempt: Attempt) -> Self {
+        Self {
+            session_id,
+            attempt,
+        }
+    }
+
+    pub fn parse(session_id: &str, attempt: u64) -> Result<Self, String> {
+        Ok(Self::new(
+            SessionId::parse(session_id)?,
+            Attempt::parse(attempt)?,
+        ))
+    }
+}
+
+impl std::fmt::Display for ConnectionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "session={} attempt={}", self.session_id, self.attempt)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

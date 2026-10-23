@@ -2,33 +2,33 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration};
 
 use super::streams::{serve, ConnectionContext};
-use crate::emitter::Emitter;
 use crate::models::{ConnectionStatus, LogLevel};
+use crate::reporting::ConnectionReporter;
 
 pub(super) async fn client_task(ctx: &mut ConnectionContext, addr: String) -> ConnectionStatus {
-    let emitter = ctx.emitter.clone();
-    emitter.info(file!(), line!(), format!("Connecting to {}...", addr));
+    let reporter = ctx.reporter.clone();
+    reporter.info(file!(), line!(), format!("Connecting to {}...", addr));
 
     let stream = tokio::select! {
-        res = loop_till_connect(&emitter, addr.clone()) => {
+        res = loop_till_connect(&reporter, addr.clone()) => {
             match res {
                 Ok(tcp_stream) => tcp_stream,
                 Err(_) => return ConnectionStatus::Error,
             }
         }
         _ = &mut ctx.shutdown => {
-            emitter.info(file!(), line!(), "Connect attempt interrupted !");
+            reporter.info(file!(), line!(), "Connect attempt interrupted !");
             return ConnectionStatus::Disconnected;
         }
     };
 
-    emitter.info(file!(), line!(), format!("Connected to {}...", addr));
+    reporter.info(file!(), line!(), format!("Connected to {}...", addr));
     serve(ctx, stream, &format!("Connected to {}", addr)).await
 }
 
 pub(super) async fn server_task(ctx: &mut ConnectionContext, port: u16) -> ConnectionStatus {
-    let emitter = ctx.emitter.clone();
-    emitter.info(
+    let reporter = ctx.reporter.clone();
+    reporter.info(
         file!(),
         line!(),
         format!("Starting server on port {}...", port),
@@ -40,7 +40,7 @@ pub(super) async fn server_task(ctx: &mut ConnectionContext, port: u16) -> Conne
             match res {
                 Ok(listener) => listener,
                 Err(err) => {
-                    emitter.error(
+                    reporter.error(
                         file!(),
                         line!(),
                         format!("Error while starting server {}", err),
@@ -50,25 +50,25 @@ pub(super) async fn server_task(ctx: &mut ConnectionContext, port: u16) -> Conne
             }
         }
         _ = &mut ctx.shutdown => {
-            emitter.info(file!(), line!(), "Connect attempt interrupted !");
+            reporter.info(file!(), line!(), "Connect attempt interrupted !");
             return ConnectionStatus::Disconnected;
         }
     };
 
     // The port is really bound: only now is the server ready.
-    emitter.info(
+    reporter.info(
         file!(),
         line!(),
         format!("Server listening on {}, waiting for a client...", addr),
     );
     ctx.status.send_replace(ConnectionStatus::Listening);
-    emitter.emit_status(ConnectionStatus::Listening);
+    reporter.emit_status(ConnectionStatus::Listening);
 
     let stream = tokio::select! {
         res = listener.accept() => {
             match res {
                 Ok((tcp_stream, client_addr)) => {
-                    emitter.info(
+                    reporter.info(
                         file!(),
                         line!(),
                         format!("Client connected address={}", client_addr),
@@ -76,7 +76,7 @@ pub(super) async fn server_task(ctx: &mut ConnectionContext, port: u16) -> Conne
                     tcp_stream
                 }
                 Err(err) => {
-                    emitter.error(
+                    reporter.error(
                         file!(),
                         line!(),
                         format!("Error while accepting connection {}", err),
@@ -86,7 +86,7 @@ pub(super) async fn server_task(ctx: &mut ConnectionContext, port: u16) -> Conne
             }
         }
         _ = &mut ctx.shutdown => {
-            emitter.info(
+            reporter.info(
                 file!(),
                 line!(),
                 "Server stopped while waiting for a client",
@@ -101,7 +101,7 @@ pub(super) async fn server_task(ctx: &mut ConnectionContext, port: u16) -> Conne
         .peer_addr()
         .map(|addr| addr.to_string())
         .unwrap_or("unknown".to_string());
-    emitter.info(
+    reporter.info(
         file!(),
         line!(),
         format!(
@@ -117,10 +117,10 @@ pub(super) async fn server_task(ctx: &mut ConnectionContext, port: u16) -> Conne
     .await
 }
 
-async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream, ()> {
+async fn loop_till_connect(reporter: &ConnectionReporter, addr: String) -> Result<TcpStream, ()> {
     let mut attempt = 1;
     loop {
-        emitter.only_log(
+        reporter.only_log(
             LogLevel::Inf,
             file!(),
             line!(),
@@ -131,7 +131,7 @@ async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream,
 
         match result {
             Ok(Ok(tcp_stream)) => {
-                emitter.only_log(
+                reporter.only_log(
                     LogLevel::Inf,
                     file!(),
                     line!(),
@@ -140,7 +140,7 @@ async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream,
                 return Ok(tcp_stream);
             }
             Ok(Err(err)) => {
-                emitter.error(
+                reporter.error(
                     file!(),
                     line!(),
                     format!("Connection to {} failed: {}", addr, err),
@@ -148,7 +148,7 @@ async fn loop_till_connect(emitter: &Emitter, addr: String) -> Result<TcpStream,
                 return Err(());
             }
             Err(_err) => {
-                emitter.warn(
+                reporter.warn(
                     file!(),
                     line!(),
                     format!("Connection to {} timed out: attempt={}", addr, attempt),

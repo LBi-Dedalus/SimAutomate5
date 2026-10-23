@@ -1,15 +1,15 @@
 use anyhow::Result;
 
 use crate::{
-    models::{AutoBuildRequest, BuildResponse},
-    translate::{escape_controls, ControlToken},
+    models::{AstmEndingMode, AutoBuildRequest, BuildResponse},
+    translate::{ControlToken, ControlTokenDecoder},
 };
 
 pub fn auto_build(req: AutoBuildRequest) -> Result<BuildResponse> {
     let trimmed = req.input.trim_start();
     if trimmed.starts_with("H|") {
         return Ok(BuildResponse {
-            output: build_astm(&req.input, req.no_etb),
+            output: build_astm(&req.input, req.astm_ending),
         });
     }
 
@@ -33,9 +33,9 @@ fn build_mllp(input: &str) -> String {
         let mut output = String::new();
 
         output.push_str(line);
-        output.push(ControlToken::CR.into());
+        output.push(ControlToken::CR.char());
 
-        built_lines.push(escape_controls(&output));
+        built_lines.push(ControlTokenDecoder::decode_all(output.as_bytes()));
     }
 
     built_lines.push("<FS><CR>".to_string());
@@ -43,7 +43,7 @@ fn build_mllp(input: &str) -> String {
     built_lines.join("\n")
 }
 
-fn build_astm(input: &str, no_etb: bool) -> String {
+fn build_astm(input: &str, ending: AstmEndingMode) -> String {
     let lines = input.lines().filter(|l| !l.is_empty()).collect::<Vec<_>>();
     let line_count = lines.len();
 
@@ -51,8 +51,8 @@ fn build_astm(input: &str, no_etb: bool) -> String {
     output.push("<ENQ>".to_string());
 
     for (idx, line) in lines.iter().enumerate() {
-        let segment = build_astm_segment(line, no_etb, idx, line_count);
-        output.push(escape_controls(&segment));
+        let segment = build_astm_segment(line, ending, idx, line_count);
+        output.push(ControlTokenDecoder::decode_all(segment.as_bytes()));
     }
 
     output.push("<EOT>".to_string());
@@ -60,51 +60,66 @@ fn build_astm(input: &str, no_etb: bool) -> String {
     output.join("\n")
 }
 
-fn build_astm_segment(line: &str, no_etb: bool, idx: usize, line_count: usize) -> String {
+fn build_astm_segment(line: &str, ending: AstmEndingMode, idx: usize, line_count: usize) -> String {
     let segment_no = (idx + 1) % 8;
     let mut body = format!("{}{}", segment_no, line);
 
-    body.push(ControlToken::CR.into());
-    body.push(if no_etb || idx == line_count - 1 {
-        ControlToken::ETX.into()
-    } else {
-        ControlToken::ETB.into()
+    body.push(ControlToken::CR.char());
+    let is_last = idx == line_count - 1;
+    body.push(match ending {
+        AstmEndingMode::EtxForEveryRecord => ControlToken::ETX.char(),
+        AstmEndingMode::EtbBetweenRecords if is_last => ControlToken::ETX.char(),
+        AstmEndingMode::EtbBetweenRecords => ControlToken::ETB.char(),
     });
 
     // `body.as_bytes()` are the UTF-8 wire bytes, so the checksum matches what is sent.
     let checksum = astm_checksum(body.as_bytes());
 
     let mut output = String::new();
-    output.push(ControlToken::STX.into());
+    output.push(ControlToken::STX.char());
     output.push_str(&body);
     output.push_str(&checksum);
-    output.push(ControlToken::CR.into());
-    output.push(ControlToken::LF.into());
+    output.push(ControlToken::CR.char());
+    output.push(ControlToken::LF.char());
 
     output
 }
 
 fn astm_checksum(body: &[u8]) -> String {
-    let mut sum: u8 = 0;
-    for byte in body {
-        sum = sum.wrapping_add(*byte);
-    }
-    format!("{:02X}", sum)
+    format!("{:02X}", crate::frames::astm_checksum(body))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::AutoBuildRequest;
-    use crate::translate::to_bytes;
+    use crate::models::{AstmEndingMode, AutoBuildRequest};
+    use crate::translate::ControlTokenEncoder;
+    fn to_bytes(s: &str) -> Vec<u8> {
+        ControlTokenEncoder::encode_all(s)
+    }
 
     fn build(input: &str) -> String {
+        build_with(input, AstmEndingMode::EtbBetweenRecords)
+    }
+
+    fn build_with(input: &str, astm_ending: AstmEndingMode) -> String {
         auto_build(AutoBuildRequest {
             input: input.to_string(),
-            no_etb: false,
+            astm_ending,
         })
         .unwrap()
         .output
+    }
+
+    #[test]
+    fn astm_ending_mode_selects_etb_or_etx_between_records() {
+        let input = "H|a\nP|b\nL|c";
+        let etb = build_with(input, AstmEndingMode::EtbBetweenRecords);
+        assert_eq!(etb.matches("<ETB>").count(), 2);
+        assert_eq!(etb.matches("<ETX>").count(), 1);
+        let etx = build_with(input, AstmEndingMode::EtxForEveryRecord);
+        assert_eq!(etx.matches("<ETB>").count(), 0);
+        assert_eq!(etx.matches("<ETX>").count(), 3);
     }
 
     #[test]

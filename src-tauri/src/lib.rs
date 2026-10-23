@@ -1,108 +1,112 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod app_state;
+mod auto_build;
 mod auto_reply;
 mod config_store;
-mod emitter;
 mod frames;
 mod ids;
-mod logger;
-mod message_builder;
 mod message_queue;
 mod models;
+mod reporting;
 mod session_commands;
 mod translate;
 mod transport;
 
-use app_state::AppState;
+use auto_build::auto_build;
 use auto_reply::AutoReplyConfig;
 use config_store::{ConfigStore, RevisionedConfig, Template};
-use logger::AppLogger;
-use message_builder::auto_build;
 use models::{
     AutoBuildRequest, BuildResponse, ConnectRequest, FrontendLogEntry, LogLevel, SendRequest,
 };
+use reporting::{AppLogger, ConnectionReporterFactory, Logger, TauriSink};
+use std::sync::Arc;
 use tauri::{AppHandle, Manager, RunEvent, State};
-use tokio::sync::Mutex;
+use transport::ConnectionManager;
 
-use crate::emitter::Emitter;
+type SharedLogger = Arc<dyn Logger>;
 
 /// Starts connection attempt `attempt` of the session `session_id` (created on first use).
 /// The frontend chooses both, registers them before invoking, and ignores events of older attempts.
 #[tauri::command]
 async fn connect_socket(
-    state: State<'_, Mutex<AppState>>,
+    manager: State<'_, ConnectionManager>,
+    logger: State<'_, SharedLogger>,
     session_id: String,
     attempt: u64,
     req: ConnectRequest,
 ) -> Result<(), String> {
-    log_request(&state, "connect", &session_id).await;
-    session_commands::connect(&state, &session_id, attempt, req).await
+    log_request(&**logger, "connect", &session_id);
+    session_commands::connect(&manager, &session_id, attempt, req).await
 }
 
 /// Stops one session, which stays registered and can be reconnected.
 #[tauri::command]
 async fn disconnect_socket(
-    state: State<'_, Mutex<AppState>>,
+    manager: State<'_, ConnectionManager>,
+    logger: State<'_, SharedLogger>,
     session_id: String,
 ) -> Result<(), String> {
-    log_request(&state, "disconnect", &session_id).await;
-    session_commands::stop(&state, &session_id, false).await
+    log_request(&**logger, "disconnect", &session_id);
+    session_commands::stop(
+        &manager,
+        &session_id,
+        session_commands::StopMode::Disconnect,
+    )
+    .await
 }
 
 /// Stops one session and forgets it.
 #[tauri::command]
 async fn close_session(
-    state: State<'_, Mutex<AppState>>,
+    manager: State<'_, ConnectionManager>,
+    logger: State<'_, SharedLogger>,
     session_id: String,
 ) -> Result<(), String> {
-    log_request(&state, "close", &session_id).await;
-    session_commands::stop(&state, &session_id, true).await
+    log_request(&**logger, "close", &session_id);
+    session_commands::stop(&manager, &session_id, session_commands::StopMode::Close).await
 }
 
 #[tauri::command]
 async fn send_message(
-    state: State<'_, Mutex<AppState>>,
+    manager: State<'_, ConnectionManager>,
+    logger: State<'_, SharedLogger>,
     session_id: String,
     attempt: u64,
     payload: SendRequest,
 ) -> Result<(), String> {
-    log_request(&state, "send_message", &session_id).await;
-    session_commands::send(&state, &session_id, attempt, &payload).await
+    log_request(&**logger, "send_message", &session_id);
+    session_commands::send(&manager, &session_id, attempt, &payload).await
 }
 
-async fn log_request(state: &Mutex<AppState>, what: &str, session_id: &str) {
-    state.lock().await.emitter.only_log(
+fn log_request(logger: &dyn Logger, what: &str, session_id: &str) {
+    logger.log_backend(
         LogLevel::Inf,
         file!(),
         line!(),
-        format!("{what} requested session={session_id}"),
+        &format!("{what} requested session={session_id}"),
     );
 }
 
 #[tauri::command]
 async fn auto_build_message_cmd(
-    state: State<'_, Mutex<AppState>>,
+    logger: State<'_, SharedLogger>,
     req: AutoBuildRequest,
 ) -> Result<BuildResponse, String> {
-    let state_val = state.lock().await;
-    let logger = state_val.emitter.clone();
-
-    logger.only_log(
+    logger.log_backend(
         LogLevel::Inf,
         file!(),
         line!(),
-        format!(
+        &format!(
             "auto_build_message requested chars={}",
             req.input.chars().count()
         ),
     );
     auto_build(req).map_err(|err| {
-        logger.only_log(
+        logger.log_backend(
             LogLevel::Err,
             file!(),
             line!(),
-            format!("auto_build_message failed: {err}"),
+            &format!("auto_build_message failed: {err}"),
         );
         err.to_string()
     })
@@ -110,11 +114,10 @@ async fn auto_build_message_cmd(
 
 #[tauri::command]
 async fn log_frontend(
-    state: State<'_, Mutex<AppState>>,
+    logger: State<'_, SharedLogger>,
     entry: FrontendLogEntry,
 ) -> Result<(), String> {
-    let state_val = state.lock().await;
-    state_val.emitter.log_frontend(&entry);
+    logger.log_frontend(&entry);
     Ok(())
 }
 
@@ -130,29 +133,29 @@ async fn load_config(store: State<'_, ConfigStore>) -> Result<RevisionedConfig, 
 #[tauri::command]
 async fn save_templates(
     store: State<'_, ConfigStore>,
-    state: State<'_, Mutex<AppState>>,
+    manager: State<'_, ConnectionManager>,
     templates: Vec<Template>,
 ) -> Result<RevisionedConfig, String> {
-    session_commands::save_templates(&store, &state, &templates).await
+    session_commands::save_templates(&store, &manager, &templates).await
 }
 
 #[tauri::command]
 async fn save_auto_reply(
     store: State<'_, ConfigStore>,
-    state: State<'_, Mutex<AppState>>,
+    manager: State<'_, ConnectionManager>,
     config: AutoReplyConfig,
 ) -> Result<RevisionedConfig, String> {
-    session_commands::save_auto_reply(&store, &state, &config).await
+    session_commands::save_auto_reply(&store, &manager, &config).await
 }
 
 /// Persists only the master switch (never the rules being edited).
 #[tauri::command]
 async fn set_auto_reply_enabled(
     store: State<'_, ConfigStore>,
-    state: State<'_, Mutex<AppState>>,
+    manager: State<'_, ConnectionManager>,
     enabled: bool,
 ) -> Result<RevisionedConfig, String> {
-    session_commands::set_auto_reply_enabled(&store, &state, enabled).await
+    session_commands::set_auto_reply_enabled(&store, &manager, enabled).await
 }
 
 fn resolve_config_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -170,22 +173,28 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let handle = app.handle().clone();
-            let logger = AppLogger::new(&handle).map_err(|err| err.to_string())?;
+            let logger: SharedLogger =
+                Arc::new(AppLogger::new(&handle).map_err(|err| err.to_string())?);
             logger.log_backend(
                 LogLevel::Inf,
                 file!(),
                 line!(),
                 "backend logger initialized",
             );
-            let emitter = Emitter::new(handle, logger);
-            app.manage(Mutex::new(AppState::new(emitter)));
+            let factory =
+                ConnectionReporterFactory::new(Arc::new(TauriSink::new(handle)), logger.clone());
+            app.manage(ConnectionManager::new(factory));
+            app.manage(logger);
             // Resolved once. As before, a failure aborts startup (setup returns the error).
             let path = resolve_config_path(app.handle())?;
             app.manage(ConfigStore::new(path));
             // The persisted rules and templates are loaded before any command can connect.
-            let state = app.state::<Mutex<AppState>>();
+            let manager = app.state::<ConnectionManager>();
+            let logger = app.state::<SharedLogger>();
             let store = app.state::<ConfigStore>();
-            tauri::async_runtime::block_on(session_commands::init_auto_reply(&store, &state));
+            tauri::async_runtime::block_on(session_commands::init_auto_reply(
+                &store, &manager, &**logger,
+            ));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -204,11 +213,9 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| {
             if let RunEvent::Exit = event {
-                // Best effort and never blocking: a busy lock is released by AppState's Drop.
-                if let Some(state) = app.try_state::<Mutex<AppState>>() {
-                    if let Ok(mut state) = state.try_lock() {
-                        state.connection_manager.shutdown_now();
-                    }
+                // Best effort and never blocking: a busy lock is released by the manager's Drop.
+                if let Some(manager) = app.try_state::<ConnectionManager>() {
+                    manager.shutdown_now();
                 }
             }
         });

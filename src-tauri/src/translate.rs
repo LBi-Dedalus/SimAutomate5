@@ -83,13 +83,53 @@ const MAX_TOKEN_LEN: usize = {
     max
 };
 
-impl Into<char> for ControlToken {
-    fn into(self) -> char {
+impl ControlToken {
+    pub const fn byte(self) -> u8 {
+        self as u8
+    }
+
+    pub const fn char(self) -> char {
         self as u8 as char
     }
 }
 
-pub fn to_bytes(input: &str) -> Vec<u8> {
+/// Incremental encoder from text containing `<TOKEN>` control tokens to wire bytes
+/// (UTF-8). A token split across chunks is reassembled: a trailing `<...` that could
+/// still become a token is held back until more text arrives or [`finish`](Self::finish).
+#[derive(Debug, Default)]
+pub struct ControlTokenEncoder {
+    pending: String,
+}
+
+impl ControlTokenEncoder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// One-shot encoding of a complete text.
+    pub fn encode_all(text: &str) -> Vec<u8> {
+        encode_prefix(text, true).0
+    }
+
+    pub fn encode(&mut self, chunk: &str) -> Vec<u8> {
+        let mut data = std::mem::take(&mut self.pending);
+        data.push_str(chunk);
+        let (out, held) = encode_prefix(&data, false);
+        self.pending = data[data.len() - held..].to_string();
+        out
+    }
+
+    /// Flushes at end of stream: a dangling partial token is emitted literally.
+    pub fn finish(&mut self) -> Vec<u8> {
+        let data = std::mem::take(&mut self.pending);
+        encode_prefix(&data, true).0
+    }
+}
+
+/// Encodes `input`; returns the bytes and the number of trailing bytes of `input` held
+/// back (with `final_input == false`, a trailing `<...` shorter than any full token
+/// and without `>` may still become a token).
+fn encode_prefix(input: &str, final_input: bool) -> (Vec<u8>, usize) {
     // Text is UTF-8 on the wire; `<` and `>` are ASCII so slicing is safe.
     let mut out = Vec::with_capacity(input.len());
     let mut rest = input;
@@ -98,26 +138,25 @@ pub fn to_bytes(input: &str) -> Vec<u8> {
         let tail = &rest[start..];
         // A token is at most MAX_TOKEN_LEN bytes, so only look that far for `>`.
         let window = &tail.as_bytes()[..tail.len().min(MAX_TOKEN_LEN)];
-        if let Some(end) = window.iter().position(|&b| b == b'>') {
-            // `>` is ASCII, so `end + 1` is a char boundary.
-            if let Some(b) = token_to_byte(&tail[..=end]) {
-                out.push(b);
-                rest = &tail[end + 1..];
-                continue;
+        match window.iter().position(|&b| b == b'>') {
+            Some(end) => {
+                // `>` is ASCII, so `end + 1` is a char boundary.
+                if let Some(b) = token_to_byte(&tail[..=end]) {
+                    out.push(b);
+                    rest = &tail[end + 1..];
+                    continue;
+                }
             }
+            None if !final_input && tail.len() < MAX_TOKEN_LEN => {
+                return (out, tail.len());
+            }
+            None => {}
         }
         out.push(b'<');
         rest = &tail[1..];
     }
     out.extend_from_slice(rest.as_bytes());
-    out
-}
-
-/// Decodes wire bytes as UTF-8 and shows control bytes as tokens.
-/// Invalid sequences are shown as U+FFFD (the Hex inspector shows exact bytes).
-pub fn to_human_readable(bytes: &[u8]) -> String {
-    let (text, _) = decode_prefix(bytes, true);
-    text
+    (out, 0)
 }
 
 /// Decodes `bytes`; returns the text and the number of trailing bytes held back.
@@ -160,15 +199,21 @@ fn is_incomplete_prefix(invalid: &[u8]) -> bool {
 
 /// Incremental UTF-8 decoder for a byte stream read in arbitrary chunks. A multibyte
 /// character split across chunks is reassembled; genuinely invalid bytes become U+FFFD
-/// immediately. Output is escaped exactly like [`to_human_readable`].
+/// immediately. Control bytes are shown as `<TOKEN>`; invalid sequences as U+FFFD
+/// (the Hex inspector shows exact bytes).
 #[derive(Debug, Default)]
-pub struct Utf8StreamDecoder {
+pub struct ControlTokenDecoder {
     pending: Vec<u8>,
 }
 
-impl Utf8StreamDecoder {
+impl ControlTokenDecoder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// One-shot decoding of a complete byte buffer.
+    pub fn decode_all(bytes: &[u8]) -> String {
+        decode_prefix(bytes, true).0
     }
 
     pub fn decode(&mut self, chunk: &[u8]) -> String {
@@ -196,7 +241,7 @@ impl Utf8StreamDecoder {
 }
 
 /// Replaces control characters 0x00-0x1F with their `<TOKEN>` form.
-pub fn escape_controls(text: &str) -> String {
+fn escape_controls(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     for ch in text.chars() {
         match u8::try_from(ch).ok().and_then(byte_to_token) {
@@ -211,19 +256,58 @@ fn token_to_byte(token: &str) -> Option<u8> {
     CONTROL_TOKENS
         .iter()
         .find(|(t, _)| *t == token)
-        .map(|(_, b)| *b as u8)
+        .map(|(_, b)| b.byte())
 }
 
 fn byte_to_token(byte: u8) -> Option<&'static str> {
     CONTROL_TOKENS
         .iter()
-        .find(|(_, b)| (*b as u8) == byte)
+        .find(|(_, b)| b.byte() == byte)
         .map(|(t, _)| *t)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn to_bytes(s: &str) -> Vec<u8> {
+        ControlTokenEncoder::encode_all(s)
+    }
+
+    fn to_human_readable(b: &[u8]) -> String {
+        ControlTokenDecoder::decode_all(b)
+    }
+
+    #[test]
+    fn encoder_stream_split_at_every_boundary() {
+        for text in [
+            "A<STX>é<ETX>€B",
+            "<<STX>",
+            "a<b",
+            "<NUL",
+            "x<NUL>>",
+            "<😀>",
+            "<",
+        ] {
+            let expected = to_bytes(text);
+            for at in (0..=text.len()).filter(|&i| text.is_char_boundary(i)) {
+                let mut e = ControlTokenEncoder::new();
+                let mut out = e.encode(&text[..at]);
+                out.extend(e.encode(&text[at..]));
+                out.extend(e.finish());
+                assert_eq!(out, expected, "{text:?} split {at}");
+            }
+        }
+    }
+
+    #[test]
+    fn encoder_holds_partial_token() {
+        let mut e = ControlTokenEncoder::new();
+        assert_eq!(e.encode("a<ST"), b"a");
+        assert_eq!(e.encode("X>b"), b"\x02b");
+        assert_eq!(e.encode("<ST"), b"");
+        assert_eq!(e.finish(), b"<ST");
+    }
 
     #[test]
     fn ascii_and_tokens() {
@@ -286,7 +370,7 @@ mod tests {
     }
 
     fn split_decode(data: &[u8], at: usize) -> String {
-        let mut d = Utf8StreamDecoder::new();
+        let mut d = ControlTokenDecoder::new();
         let mut out = d.decode(&data[..at]);
         out.push_str(&d.decode(&data[at..]));
         out.push_str(&d.finish());
@@ -309,7 +393,7 @@ mod tests {
     #[test]
     fn stream_byte_by_byte() {
         let data = to_bytes("<STX>Café €😀\u{FF}<ETX>");
-        let mut d = Utf8StreamDecoder::new();
+        let mut d = ControlTokenDecoder::new();
         let mut out = String::new();
         for b in &data {
             out.push_str(&d.decode(&[*b]));
@@ -320,7 +404,7 @@ mod tests {
 
     #[test]
     fn stream_invalid_bytes() {
-        let mut d = Utf8StreamDecoder::new();
+        let mut d = ControlTokenDecoder::new();
         assert_eq!(d.decode(&[0x41, 0xFF, 0x42]), "A\u{FFFD}B");
         assert_eq!(d.pending_len(), 0);
         assert_eq!(d.decode(&[0xC3]), "");

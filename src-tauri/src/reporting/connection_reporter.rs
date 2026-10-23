@@ -4,12 +4,12 @@ use chrono::Utc;
 use tauri::{AppHandle, Emitter as _};
 use tauri_plugin_notification::NotificationExt;
 
+use super::Logger;
 use crate::{
-    ids::{Attempt, SessionId},
-    logger::AppLogger,
+    ids::ConnectionId,
     models::{
-        ConnectionStatus, FrontendLogEntry, LogLevel, MessagePayload, MessageType, StatusPayload,
-        MESSAGE_EVENT, STATUS_EVENT,
+        ConnectionStatus, LogLevel, MessagePayload, MessageType, StatusPayload, MESSAGE_EVENT,
+        STATUS_EVENT,
     },
 };
 
@@ -55,68 +55,44 @@ impl EventSink for TauriSink {
     }
 }
 
-/// Identifies who produced an event: a session and one of its connection attempts.
-#[derive(Clone, Debug)]
-struct Scope {
-    session_id: SessionId,
-    attempt: Attempt,
-}
-
-/// Root emitters (no scope) only write logs: events always belong to a session,
-/// so a global log can never pollute whichever conversation happens to be selected.
+/// Builds the reporter of each connection from the shared sink and logger.
 #[derive(Clone)]
-pub struct Emitter {
+pub struct ConnectionReporterFactory {
     sink: Arc<dyn EventSink>,
-    logger: Option<AppLogger>,
-    scope: Option<Scope>,
+    logger: Arc<dyn Logger>,
 }
 
-impl Emitter {
-    pub fn new(app: AppHandle, logger: AppLogger) -> Self {
-        Self {
-            sink: Arc::new(TauriSink::new(app)),
-            logger: Some(logger),
-            scope: None,
-        }
+impl ConnectionReporterFactory {
+    pub fn new(sink: Arc<dyn EventSink>, logger: Arc<dyn Logger>) -> Self {
+        Self { sink, logger }
     }
 
-    /// Root emitter writing to an arbitrary sink, without a file logger.
-    #[cfg(test)]
-    pub fn with_sink(sink: Arc<dyn EventSink>) -> Self {
-        Self {
-            sink,
-            logger: None,
-            scope: None,
-        }
-    }
-
-    /// Emitter whose events carry `session_id` and `attempt`.
-    pub fn scoped(&self, session_id: &SessionId, attempt: Attempt) -> Self {
-        Self {
+    pub fn create(&self, connection: &ConnectionId) -> ConnectionReporter {
+        ConnectionReporter {
             sink: self.sink.clone(),
             logger: self.logger.clone(),
-            scope: Some(Scope {
-                session_id: session_id.clone(),
-                attempt,
-            }),
+            connection: connection.clone(),
         }
     }
+}
 
+/// Logs and emits events on behalf of one connection: events always belong to a session,
+/// so a global log can never pollute whichever conversation happens to be selected.
+#[derive(Clone)]
+pub struct ConnectionReporter {
+    sink: Arc<dyn EventSink>,
+    logger: Arc<dyn Logger>,
+    connection: ConnectionId,
+}
+
+impl ConnectionReporter {
     fn log(&self, level: LogLevel, file: &str, line: u32, message: String) {
-        if let Some(logger) = &self.logger {
-            match &self.scope {
-                Some(scope) => logger.log_backend(
-                    level,
-                    file,
-                    line,
-                    format!(
-                        "[session={} attempt={}] {}",
-                        scope.session_id, scope.attempt, message
-                    ),
-                ),
-                None => logger.log_backend(level, file, line, message),
-            }
-        }
+        self.logger.log_backend(
+            level,
+            file,
+            line,
+            &format!("[{}] {message}", self.connection),
+        );
     }
 
     pub fn info(&self, file: &str, line: u32, message: impl ToString) {
@@ -138,19 +114,11 @@ impl Emitter {
         self.log(level, file, line, message.to_string());
     }
 
-    pub fn log_frontend(&self, entry: &FrontendLogEntry) {
-        if let Some(logger) = &self.logger {
-            logger.log_frontend(entry);
-        }
-    }
-
     pub fn emit_status(&self, status: ConnectionStatus) {
-        let Some(scope) = &self.scope else {
-            return;
-        };
+        let connection = &self.connection;
         let payload = StatusPayload {
-            session_id: scope.session_id.to_string(),
-            attempt: scope.attempt.get(),
+            session_id: connection.session_id.to_string(),
+            attempt: connection.attempt.get(),
             status,
         };
 
@@ -174,12 +142,10 @@ impl Emitter {
     }
 
     fn emit_payload(&self, msg_type: MessageType, content: String, raw: Option<Vec<u8>>) {
-        let Some(scope) = &self.scope else {
-            return;
-        };
+        let connection = &self.connection;
         let payload = MessagePayload {
-            session_id: scope.session_id.to_string(),
-            attempt: scope.attempt.get(),
+            session_id: connection.session_id.to_string(),
+            attempt: connection.attempt.get(),
             content,
             msg_type,
             timestamp: now_ts(),

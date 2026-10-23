@@ -3,7 +3,7 @@
 export const RECENT_BUILDS_KEY = "simautomate:recent-autobuilds";
 export const MAX_RECENT_BUILDS = 20;
 
-/** Mirrors the backend detection (message_builder.rs): `H|` is ASTM, `MSH|` is HL7. */
+/** Mirrors the backend detection (auto_build.rs): `H|` is ASTM, `MSH|` is HL7. */
 export function detectKind(input) {
   const text = String(input ?? "").trimStart();
   if (text.startsWith("H|")) return "ASTM";

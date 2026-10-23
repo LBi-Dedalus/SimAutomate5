@@ -5,8 +5,7 @@
 //!
 //! * HL7 / MLLP: `VT` ... `FS` `CR`. The event carries the bytes between `VT` and `FS`.
 //! * ASTM frame: `STX` ... (`ETX` | `ETB`) two hex checksum digits `CR` `LF`. The event carries
-//!   the whole frame. The checksum value itself is not verified (this is a simulator that must
-//!   cope with sloppy peers), only the structure is.
+//!   the whole frame. A frame whose checksum does not match is reported as malformed.
 //! * A standalone `ENQ` outside of any frame.
 //! * A standalone `ACK` outside of any frame (used by the send queue, not by the rules).
 //!
@@ -19,17 +18,37 @@
 
 pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
 
-const STX: u8 = 0x02;
-const ETX: u8 = 0x03;
-const ENQ: u8 = 0x05;
-const EOT: u8 = 0x04;
-const ACK: u8 = 0x06;
-const NAK: u8 = 0x15;
-const VT: u8 = 0x0b;
-const LF: u8 = 0x0a;
-const CR: u8 = 0x0d;
-const ETB: u8 = 0x17;
-const FS: u8 = 0x1c;
+use crate::translate::ControlToken;
+
+const STX: u8 = ControlToken::STX.byte();
+const ETX: u8 = ControlToken::ETX.byte();
+const ENQ: u8 = ControlToken::ENQ.byte();
+const EOT: u8 = ControlToken::EOT.byte();
+const ACK: u8 = ControlToken::ACK.byte();
+const NAK: u8 = ControlToken::NAK.byte();
+const VT: u8 = ControlToken::VT.byte();
+const LF: u8 = ControlToken::LF.byte();
+const CR: u8 = ControlToken::CR.byte();
+const ETB: u8 = ControlToken::ETB.byte();
+const FS: u8 = ControlToken::FS.byte();
+
+/// ASTM checksum: sum modulo 256 of the bytes following `STX`, up to and including `ETX` / `ETB`.
+pub fn astm_checksum(content: &[u8]) -> u8 {
+    content.iter().fold(0u8, |sum, b| sum.wrapping_add(*b))
+}
+
+/// Verifies a whole frame `STX ... (ETX|ETB) C1 C2 CR LF` against its two hex checksum digits.
+fn astm_checksum_is_valid(frame: &[u8]) -> bool {
+    // STX + end byte + 2 digits + CR + LF
+    if frame.len() < 6 {
+        return false;
+    }
+    let digits_at = frame.len() - 4;
+    let expected = std::str::from_utf8(&frame[digits_at..digits_at + 2])
+        .ok()
+        .and_then(|s| u8::from_str_radix(s, 16).ok());
+    expected == Some(astm_checksum(&frame[1..digits_at]))
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameEvent {
@@ -126,6 +145,11 @@ impl FrameBuffer {
             State::Discarding => {
                 self.state = State::Discarding;
                 match byte {
+                    // A new ASTM communication starts: resync.
+                    ENQ => {
+                        out.push(FrameEvent::Enq);
+                        self.state = State::Idle;
+                    }
                     VT => self.state = State::Hl7(Vec::new()),
                     STX => self.state = State::Astm(vec![STX]),
                     _ => {}
@@ -190,7 +214,11 @@ impl FrameBuffer {
                 } else {
                     body.push(byte);
                     if accepted == 3 {
-                        out.push(FrameEvent::AstmFrame(body));
+                        if astm_checksum_is_valid(&body) {
+                            out.push(FrameEvent::AstmFrame(body));
+                        } else {
+                            out.push(FrameEvent::Malformed("an ASTM frame has a wrong checksum"));
+                        }
                     } else {
                         self.state = State::AstmTail(body, accepted + 1);
                     }
@@ -229,9 +257,39 @@ mod tests {
         assert!(matches!(events[2], FrameEvent::Hl7(_)));
     }
 
+    /// Builds a valid frame `STX body ETX checksum CR LF` (`body` includes its trailing CR).
+    fn astm(body: &[u8]) -> Vec<u8> {
+        let mut content = body.to_vec();
+        content.push(ETX);
+        let mut frame = vec![STX];
+        frame.extend_from_slice(&content);
+        frame.extend_from_slice(format!("{:02X}\r\n", astm_checksum(&content)).as_bytes());
+        frame
+    }
+
+    #[test]
+    fn wrong_checksum_is_malformed() {
+        let events = FrameBuffer::new().feed(b"\x021H|x\r\x0300\r\n");
+        assert_eq!(
+            events,
+            vec![FrameEvent::Malformed("an ASTM frame has a wrong checksum")]
+        );
+    }
+
+    #[test]
+    fn enq_ends_discarding_state() {
+        let mut buffer = FrameBuffer::with_limit(8);
+        let mut data = vec![VT];
+        data.extend_from_slice(&[b'a'; 20]);
+        data.push(ENQ);
+        let events = buffer.feed(&data);
+        assert_eq!(events, vec![FrameEvent::Overflow, FrameEvent::Enq]);
+        assert_eq!(buffer.feed(&[ENQ]), vec![FrameEvent::Enq]);
+    }
+
     #[test]
     fn astm_frame_is_reported_only_once_checksum_and_terminator_arrived() {
-        let frame = b"\x021H|\\^&|||x\r\x0342\r\n";
+        let frame = &astm(b"1H|\\^&|||x\r")[..];
         let mut buffer = FrameBuffer::new();
         assert!(buffer.feed(&frame[..frame.len() - 3]).is_empty());
         assert!(buffer
@@ -268,8 +326,9 @@ mod tests {
             events[..],
             [FrameEvent::Ack, FrameEvent::Hl7(_), FrameEvent::Ack]
         ));
-        let astm = b"\x06\x021H|x\r\x0342\r\n";
-        let events = FrameBuffer::new().feed(astm);
+        let mut astm_data = vec![ACK];
+        astm_data.extend(astm(b"1H|x\r"));
+        let events = FrameBuffer::new().feed(&astm_data);
         assert!(matches!(
             events[..],
             [FrameEvent::Ack, FrameEvent::AstmFrame(_)]
@@ -284,7 +343,7 @@ mod tests {
         );
         let events = FrameBuffer::new().feed(b"\x0bMSH|a\x15b\x04\x1c\r");
         assert!(matches!(events[..], [FrameEvent::Hl7(_)]));
-        let events = FrameBuffer::new().feed(b"\x021H|\x15\x04\r\x0342\r\n");
+        let events = FrameBuffer::new().feed(&astm(b"1H|\x15\x04\r"));
         assert!(matches!(events[..], [FrameEvent::AstmFrame(_)]));
     }
 
@@ -292,7 +351,7 @@ mod tests {
     fn ack_bytes_inside_a_frame_are_payload() {
         let events = FrameBuffer::new().feed(b"\x0bMSH|a\x06b\x1c\r");
         assert!(matches!(events[..], [FrameEvent::Hl7(_)]));
-        let events = FrameBuffer::new().feed(b"\x021H|\x06\r\x0342\r\n");
+        let events = FrameBuffer::new().feed(&astm(b"1H|\x06\r"));
         assert!(matches!(events[..], [FrameEvent::AstmFrame(_)]));
     }
 
@@ -320,7 +379,7 @@ mod tests {
         data.extend_from_slice(&[b'a'; 20]);
         data.push(ENQ);
         let events = buffer.feed(&data);
-        assert_eq!(events, vec![FrameEvent::Overflow]);
+        assert_eq!(events, vec![FrameEvent::Overflow, FrameEvent::Enq]);
         let events = buffer.feed(HL7);
         // The HL7 frame itself is also larger than 8 bytes: it overflows too, nothing partial.
         assert_eq!(events, vec![FrameEvent::Overflow]);

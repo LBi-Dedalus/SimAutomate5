@@ -19,7 +19,6 @@ pub struct AppLogger {
 
 struct LoggerState {
     write_lock: Mutex<()>,
-    log_dir: PathBuf,
     backend_path: PathBuf,
     frontend_path: PathBuf,
 }
@@ -27,6 +26,42 @@ struct LoggerState {
 enum LogTarget {
     Backend,
     Frontend,
+}
+
+/// Where backend and frontend log lines go. The application writes files; tests discard them.
+pub trait Logger: Send + Sync {
+    fn log_backend(&self, level: LogLevel, file: &str, line: u32, message: &str);
+    fn log_frontend(&self, entry: &FrontendLogEntry);
+}
+
+impl Logger for AppLogger {
+    fn log_backend(&self, level: LogLevel, file: &str, line: u32, message: &str) {
+        let location = format!("{file}:{line}");
+        self.write(LogTarget::Backend, level, &location, message);
+    }
+
+    fn log_frontend(&self, entry: &FrontendLogEntry) {
+        let location = if entry.location.trim().is_empty() {
+            "unknown:0"
+        } else {
+            entry.location.trim()
+        };
+        self.write(
+            LogTarget::Frontend,
+            entry.level.clone(),
+            location,
+            &entry.message,
+        );
+    }
+}
+
+#[cfg(test)]
+pub struct NullLogger;
+
+#[cfg(test)]
+impl Logger for NullLogger {
+    fn log_backend(&self, _: LogLevel, _: &str, _: u32, _: &str) {}
+    fn log_frontend(&self, _: &FrontendLogEntry) {}
 }
 
 impl AppLogger {
@@ -45,34 +80,10 @@ impl AppLogger {
         Ok(Self {
             state: Arc::new(LoggerState {
                 write_lock: Mutex::new(()),
-                log_dir,
                 backend_path,
                 frontend_path,
             }),
         })
-    }
-
-    pub fn log_directory(&self) -> PathBuf {
-        self.state.log_dir.clone()
-    }
-
-    pub fn log_backend(&self, level: LogLevel, file: &str, line: u32, message: impl AsRef<str>) {
-        let location = format!("{file}:{line}");
-        self.write(LogTarget::Backend, level, &location, message.as_ref());
-    }
-
-    pub fn log_frontend(&self, entry: &FrontendLogEntry) {
-        let location = if entry.location.trim().is_empty() {
-            "unknown:0"
-        } else {
-            entry.location.trim()
-        };
-        self.write(
-            LogTarget::Frontend,
-            entry.level.clone(),
-            location,
-            &entry.message,
-        );
     }
 
     fn write(&self, target: LogTarget, level: LogLevel, location: &str, message: &str) {
