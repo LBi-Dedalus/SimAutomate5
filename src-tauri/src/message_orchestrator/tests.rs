@@ -8,8 +8,8 @@ use super::state::{AckOrigin, MessageQueueState, ACK_TIMEOUT, MAX_BYTES, MAX_ITE
 use super::{MessageOrchestrator, SharedMessageOrchestrator, MAX_USER_PAYLOAD};
 use crate::auto_reply::AutoReplyRuleSet;
 use crate::ids::ConnectionId;
-use crate::message_orchestrator::frames::FrameEvent;
 use crate::models::{MessagePayload, SendRequest, StatusPayload};
+use crate::protocol::frames::FrameEvent;
 use crate::reporting::NullLogger;
 use crate::reporting::{ConnectionReporter, ConnectionReporterFactory};
 use crate::translate;

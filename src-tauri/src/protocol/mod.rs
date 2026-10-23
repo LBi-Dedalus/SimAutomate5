@@ -1,6 +1,7 @@
-//! Wire protocol helpers: classification of frames, ASTM checksums and HL7 parsing.
+//! Wire protocol helpers: classification of frames, ASTM checksums, HL7 parsing and frame extraction.
 
 pub(crate) mod astm;
+pub(crate) mod frames;
 pub(crate) mod hl7;
 
 use crate::translate::ControlToken;
