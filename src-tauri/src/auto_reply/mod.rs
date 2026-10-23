@@ -12,11 +12,10 @@
 //!
 //! Layout: `config` (persisted types + validation), `template` (placeholder compilation),
 //! `engine` (compiled `AutoReplyRuleSet` + evaluation), `matching` (glob / trigger / condition matching)
-//! and `hl7` (message parsing).
+//! (HL7 parsing lives in `crate::protocol::hl7`).
 
 mod config;
 mod engine;
-mod hl7;
 mod matching;
 mod template;
 

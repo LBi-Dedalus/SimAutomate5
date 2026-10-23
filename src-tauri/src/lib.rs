@@ -6,6 +6,7 @@ mod config_store;
 mod ids;
 mod message_orchestrator;
 mod models;
+mod protocol;
 mod reporting;
 mod session_commands;
 mod translate;

@@ -1,7 +1,7 @@
 //! Glob and trigger / condition matching.
 
 use super::config::{AutoReplyCondition, AutoReplyOperator};
-use super::hl7::Hl7Message;
+use crate::protocol::hl7::Hl7Message;
 
 /// Fully anchored, case-sensitive match where `*` matches any run of characters (even empty).
 pub(super) fn glob_match(pattern: &str, text: &str) -> bool {

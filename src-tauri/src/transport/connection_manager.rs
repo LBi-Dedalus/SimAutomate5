@@ -164,7 +164,8 @@ impl ConnectionManager {
         }
 
         let reporter = self.reporter_factory.create(connection);
-        let message_orchestrator = MessageOrchestrator::shared(reporter.clone(), registry.rules.clone());
+        let message_orchestrator =
+            MessageOrchestrator::shared(reporter.clone(), registry.rules.clone());
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let (status_tx, status_rx) = watch::channel(ConnectionStatus::Connecting);
         let join = tokio::spawn(run_connection(

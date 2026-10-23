@@ -1,6 +1,6 @@
 //! Minimal HL7 parsing and field access for trigger / condition matching and replies.
 
-pub(super) struct Hl7Message {
+pub(crate) struct Hl7Message {
     field_sep: char,
     component_sep: char,
     segments: Vec<String>,
@@ -19,7 +19,7 @@ fn raw_control_id(msh: &[u8], field_sep: u8) -> Option<Vec<u8>> {
     Some(id.to_vec())
 }
 
-pub(super) fn parse_hl7(body: &[u8]) -> Option<Hl7Message> {
+pub(crate) fn parse_hl7(body: &[u8]) -> Option<Hl7Message> {
     let text = String::from_utf8_lossy(body);
     let segments: Vec<String> = text
         .split(['\r', '\n'])
@@ -55,7 +55,7 @@ pub(super) fn parse_hl7(body: &[u8]) -> Option<Hl7Message> {
 impl Hl7Message {
     /// Field `n` of the first segment named `segment`. MSH-1 is the field separator itself,
     /// so MSH-n is the n-th separated item (MSH-2 are the encoding characters).
-    pub(super) fn field(&self, segment: &str, n: u32) -> Option<String> {
+    pub(crate) fn field(&self, segment: &str, n: u32) -> Option<String> {
         let n = n as usize;
         for line in &self.segments {
             let mut parts = line.split(self.field_sep);
@@ -76,7 +76,7 @@ impl Hl7Message {
     }
 
     /// First two MSH-9 components joined with `^` (`ORU^R01^ORU_R01` gives `ORU^R01`).
-    pub(super) fn message_type(&self) -> String {
+    pub(crate) fn message_type(&self) -> String {
         let value = self.field("MSH", 9).unwrap_or_default();
         value
             .split(self.component_sep)
@@ -86,7 +86,7 @@ impl Hl7Message {
     }
 
     /// MSH-10 as received (raw bytes), only when non empty and free of control bytes.
-    pub(super) fn control_id(&self) -> Option<&[u8]> {
+    pub(crate) fn control_id(&self) -> Option<&[u8]> {
         self.raw_control_id.as_deref()
     }
 }

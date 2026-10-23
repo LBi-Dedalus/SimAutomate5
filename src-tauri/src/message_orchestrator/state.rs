@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
-use super::protocol::{is_control_reply, requires_ack};
 use crate::auto_reply::AutoReplyRuleSet;
+use crate::protocol::{is_control_reply, requires_ack};
 
 pub(super) struct ScheduledReply {
     pub(super) due: Instant,

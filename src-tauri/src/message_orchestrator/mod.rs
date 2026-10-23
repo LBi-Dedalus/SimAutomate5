@@ -1,6 +1,5 @@
 mod composer;
 pub(crate) mod frames;
-mod protocol;
 mod state;
 #[cfg(test)]
 mod tests;
@@ -12,10 +11,10 @@ use tokio::sync::{Mutex, Notify};
 use tokio::time::{sleep_until, Instant};
 
 use crate::auto_reply::{AutoReplyOutcome, AutoReplyRuleSet};
-use frames::{FrameBuffer, FrameEvent};
 use crate::models::{LogLevel, MessageType, SendRequest};
 use crate::reporting::ConnectionReporter;
 use crate::translate;
+use frames::{FrameBuffer, FrameEvent};
 
 use composer::split_message;
 use state::{AckOrigin, Discarded, MessageQueueState, ACK_TIMEOUT};
