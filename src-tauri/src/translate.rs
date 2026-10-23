@@ -93,36 +93,12 @@ impl ControlToken {
     }
 }
 
-/// Incremental encoder from text containing `<TOKEN>` control tokens to wire bytes
-/// (UTF-8). A token split across chunks is reassembled: a trailing `<...` that could
-/// still become a token is held back until more text arrives or [`finish`](Self::finish).
-#[derive(Debug, Default)]
-pub struct ControlTokenEncoder {
-    pending: String,
-}
+/// Encoder from text containing `<TOKEN>` control tokens to wire bytes (UTF-8).
+pub struct ControlTokenEncoder;
 
 impl ControlTokenEncoder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// One-shot encoding of a complete text.
     pub fn encode_all(text: &str) -> Vec<u8> {
         encode_prefix(text, true).0
-    }
-
-    pub fn encode(&mut self, chunk: &str) -> Vec<u8> {
-        let mut data = std::mem::take(&mut self.pending);
-        data.push_str(chunk);
-        let (out, held) = encode_prefix(&data, false);
-        self.pending = data[data.len() - held..].to_string();
-        out
-    }
-
-    /// Flushes at end of stream: a dangling partial token is emitted literally.
-    pub fn finish(&mut self) -> Vec<u8> {
-        let data = std::mem::take(&mut self.pending);
-        encode_prefix(&data, true).0
     }
 }
 
@@ -276,37 +252,6 @@ mod tests {
 
     fn to_human_readable(b: &[u8]) -> String {
         ControlTokenDecoder::decode_all(b)
-    }
-
-    #[test]
-    fn encoder_stream_split_at_every_boundary() {
-        for text in [
-            "A<STX>é<ETX>€B",
-            "<<STX>",
-            "a<b",
-            "<NUL",
-            "x<NUL>>",
-            "<😀>",
-            "<",
-        ] {
-            let expected = to_bytes(text);
-            for at in (0..=text.len()).filter(|&i| text.is_char_boundary(i)) {
-                let mut e = ControlTokenEncoder::new();
-                let mut out = e.encode(&text[..at]);
-                out.extend(e.encode(&text[at..]));
-                out.extend(e.finish());
-                assert_eq!(out, expected, "{text:?} split {at}");
-            }
-        }
-    }
-
-    #[test]
-    fn encoder_holds_partial_token() {
-        let mut e = ControlTokenEncoder::new();
-        assert_eq!(e.encode("a<ST"), b"a");
-        assert_eq!(e.encode("X>b"), b"\x02b");
-        assert_eq!(e.encode("<ST"), b"");
-        assert_eq!(e.finish(), b"<ST");
     }
 
     #[test]
