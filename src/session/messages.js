@@ -4,7 +4,9 @@ import {
   clearInspector,
   activateInspector,
   forgetInspector,
+  refreshInspector,
 } from "./inspector.js";
+import { buildFrameRows, replySummary, transferBadges } from "./astm-view.js";
 import { renderTokens, el } from "../render.js";
 import { cloneTemplate } from "../include.js";
 import { sessions, store, subscribeSendEligibility } from "./sessions.js";
@@ -122,6 +124,9 @@ function onStoreEvent(event) {
     case "message":
       onMessage(event);
       break;
+    case "record-updated":
+      rebuildNode(event.session, event.record);
+      break;
     case "cleared":
       views.get(event.id)?.container.replaceChildren();
       views.get(event.id)?.nodes.clear();
@@ -220,14 +225,41 @@ function onMessage({ session, record, evicted }) {
 }
 
 function addNode(session, view, record) {
+  const node = buildNode(session, record);
+  view.container.appendChild(node);
+  view.nodes.set(record.id, node);
+}
+
+function buildNode(session, record) {
   const info = describeMessage(record);
-  const node =
-    info.kind === "system" ? buildSystemNode(record) : buildBubbleNode(record, info);
+  let node;
+  if (info.kind === "system") node = buildSystemNode(record);
+  else if (info.transfer) node = buildTransferNode(record, info);
+  else node = buildBubbleNode(record, info);
 
   node.tabIndex = 0;
   recordOf.set(node, { sessionId: session.id, recordId: record.id });
-  view.container.appendChild(node);
+  if (session.selectedRecordId === record.id) node.classList.add("sel");
+  return node;
+}
+
+/** Redraws a message that changed in place (an ASTM transfer receiving frames or replies). */
+function rebuildNode(session, record) {
+  const view = views.get(session.id);
+  const old = view?.nodes.get(record.id);
+  if (!old) return;
+  const hadFocus = old.contains(document.activeElement);
+  const node = buildNode(session, record);
+  old.replaceWith(node);
   view.nodes.set(record.id, node);
+  if (hadFocus) node.focus();
+  if (session.id === store.activeId) {
+    const messagesEl = document.getElementById("messages");
+    const nearBottom =
+      messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120;
+    if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+  refreshInspector(record);
 }
 
 function buildSystemNode(record) {
@@ -236,25 +268,40 @@ function buildSystemNode(record) {
   return node;
 }
 
-function buildBubbleNode(record, info) {
-  const outgoing = record.msg_type === "sent";
-  const ack = hl7Ack(info.hl7);
-  const node = cloneTemplate(MESSAGE_BUBBLE, {
-    title: info.title,
-    time: formatTime(record.timestamp),
-    ...(ack && { ack: `${ack.ok ? "✓" : "✕"} ${ack.code}` }),
-  });
-  const part = (cls) => node.querySelector(`.${cls}`);
-  node.classList.add(outgoing ? "out" : "in", record.msg_type);
-  part("msg-title").classList.toggle("in", record.msg_type === "received");
-  const ackNode = part("msg-ack");
-  if (ack) {
-    ackNode.classList.add("ack");
-    ackNode.classList.toggle("ok", ack.ok);
-    ackNode.classList.toggle("error", !ack.ok);
-  } else ackNode.remove();
+function buildTransferNode(record, info) {
+  const { transfer } = record;
+  const node = messageShell(record, info.title, replySummary(transfer));
+  node.querySelector(".msg-title").parentElement.append(...transferBadges(transfer));
+  const bubble = node.querySelector(".bub");
+  bubble.classList.add("vstack", "gap-1");
+  bubble.append(buildFrameRows(transfer));
+  return node;
+}
 
-  const bubble = part("bub");
+/** The message template with its header filled; `ack` is { text, tone } or null (slot removed). */
+function messageShell(record, title, ack) {
+  const node = cloneTemplate(MESSAGE_BUBBLE, {
+    title,
+    time: formatTime(record.timestamp),
+    ...(ack && { ack: ack.text }),
+  });
+  const received = record.msg_type === "received";
+  node.classList.add(received ? "in" : "out", record.msg_type);
+  node.querySelector(".msg-title").classList.toggle("in", received);
+  const ackNode = node.querySelector(".msg-ack");
+  if (ack) ackNode.classList.add("ack", ack.tone);
+  else ackNode.remove();
+  return node;
+}
+
+function buildBubbleNode(record, info) {
+  const ack = hl7Ack(info.hl7);
+  const node = messageShell(
+    record,
+    info.title,
+    ack && { text: `${ack.ok ? "✓" : "✕"} ${ack.code}`, tone: ack.ok ? "ok" : "error" },
+  );
+  const bubble = node.querySelector(".bub");
   // ASTM frames stay on one line (as before); other content breaks after <CR>.
   renderTokens(bubble, record.content, {
     breakAfterCr: !record.content.startsWith("<STX>"),

@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::protocol::astm::AstmUnit;
+
 pub const STATUS_EVENT: &str = "connection://status";
 pub const MESSAGE_EVENT: &str = "message://stream";
 
@@ -44,6 +46,10 @@ pub struct MessagePayload {
     /// Exact wire bytes of a Sent/Received event, when known. Absent for system events.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw: Option<Vec<u8>>,
+    /// Set when the event is exactly one ASTM unit (ENQ, ACK, NAK, EOT or a frame): the
+    /// frontend groups the units of one transfer into a single message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub astm: Option<AstmUnit>,
 }
 
 #[derive(Debug, Clone, Serialize)]

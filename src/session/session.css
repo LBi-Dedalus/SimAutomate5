@@ -5,6 +5,7 @@
   flex-direction: column;
   gap: 10px;
   padding: 16px 24px;
+  overflow-x: hidden; /* bubbles are width-capped: never a horizontal scrollbar */
 }
 
 .msgs {
@@ -109,6 +110,25 @@
       0 0 0 2px var(--paper),
       0 0 0 4px var(--c);
   }
+}
+
+/* ASTM transfer bubble: one row per entry (raw content, then its reply hint). */
+.af {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 2px 0 2px 8px;
+  border-left: 2px solid var(--teal);
+  font-family: var(--mono);
+
+  &.warn {
+    border-left-color: var(--amber);
+  }
+}
+
+.af-text {
+  word-break: break-all;
 }
 
 #message-form {

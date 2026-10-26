@@ -446,6 +446,8 @@ ul[role="alert"] {
   color: var(--teal);
   font: var(--font-bold) 9.5px/15px var(--font-mono);
   vertical-align: 1px;
+  /* A chip is atomic: the bubble's break-all must not split "CR" into "C" / "R". */
+  white-space: nowrap;
 }
 
 .sg {

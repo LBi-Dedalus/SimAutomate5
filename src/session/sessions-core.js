@@ -2,6 +2,16 @@
 // status, history, composer draft and inspected message, so nothing can leak from one
 // session into another. Sessions are never persisted nor restored.
 
+import {
+  applyAstmUnit,
+  ASTM_IDLE_TIMEOUT_MS,
+  closeAstm,
+  createAstmState,
+  expireAstm,
+  forgetAstmRecord,
+  isAstmUnit,
+} from "./astm-group.js";
+
 export const MAX_MESSAGES = 2000;
 
 const BUSY = ["connecting", "listening", "connected"];
@@ -37,19 +47,60 @@ function defaultNewId(counter) {
   return `s-${Date.now().toString(36)}-${counter.toString(36)}-${random}`;
 }
 
+function defaultSetTimer(fn, ms) {
+  const handle = setTimeout(fn, ms);
+  handle?.unref?.(); // a pending idle timer must never keep a Node process (tests) alive
+  return handle;
+}
+
 /**
- * @param {{ newId?: (counter: number) => string, now?: () => string, onListenerError?: (err: unknown) => void }} [options]
+ * @param {{ newId?: (counter: number) => string, now?: () => string, onListenerError?: (err: unknown) => void, setTimer?: (fn: () => void, ms: number) => unknown, clearTimer?: (handle: unknown) => void }} [options]
  */
 export function createSessionStore(options = {}) {
   const newId = options.newId ?? defaultNewId;
   const now = options.now ?? (() => new Date().toISOString());
   const onListenerError = options.onListenerError ?? ((err) => console.error(err));
+  const setTimer = options.setTimer ?? defaultSetTimer;
+  const clearTimer = options.clearTimer ?? clearTimeout;
 
   /** @type {Map<string, object>} insertion ordered = sidebar order */
   const sessions = new Map();
   const listeners = new Set();
+  /** Idle timer of each open ASTM transfer: session -> { sent, received } = { record, lastAt, handle }. */
+  const idleTimers = new Map();
   let activeId = null;
   let counter = 0;
+
+  /**
+   * Keeps one idle timer per open ASTM transfer (session and direction): armed when the
+   * transfer opens, re-armed each time an event touches it (its `lastAt` changed), cleared as
+   * soon as it is closed, evicted, cleared or its session removed. Called after every change
+   * of the ASTM state, so no timer can outlive its transfer.
+   */
+  function syncIdleTimers(session) {
+    let timers = idleTimers.get(session.id);
+    for (const direction of ["sent", "received"]) {
+      const record = session.astm.open[direction];
+      const armed = timers?.[direction] ?? null;
+      if (armed && armed.record === record && armed.lastAt === record.transfer.lastAt) continue;
+      if (armed) clearTimer(armed.handle);
+      if (timers) timers[direction] = null;
+      if (!record) continue;
+      timers ??= { sent: null, received: null };
+      idleTimers.set(session.id, timers);
+      timers[direction] = {
+        record,
+        lastAt: record.transfer.lastAt,
+        handle: setTimer(() => {
+          timers[direction] = null;
+          if (sessions.get(session.id) !== session) return;
+          emitUpdated(session, expireAstm(session.astm, direction));
+          syncIdleTimers(session);
+        }, ASTM_IDLE_TIMEOUT_MS),
+      };
+    }
+    if (timers && !timers.sent && !timers.received) idleTimers.delete(session.id);
+  }
 
   function emit(type, session, extra = {}) {
     for (const listener of [...listeners]) {
@@ -81,6 +132,8 @@ export function createSessionStore(options = {}) {
       recorded: false,
       draft,
       records: [],
+      /** ASTM transfers being grouped (see astm-group.js). */
+      astm: createAstmState(),
       sent: 0,
       received: 0,
       nextRecordId: 0,
@@ -108,6 +161,8 @@ export function createSessionStore(options = {}) {
   function beginAttempt(id) {
     const session = sessions.get(id);
     if (!session) return null;
+    emitUpdated(session, closeAstm(session.astm));
+    syncIdleTimers(session);
     session.attempt += 1;
     session.status = "connecting";
     emit("status", session);
@@ -120,6 +175,7 @@ export function createSessionStore(options = {}) {
     if (!session) return { accepted: false, reason: "unknown" };
     if (payload.attempt !== session.attempt) return { accepted: false, reason: "stale" };
     session.status = payload.status;
+    if (isTerminalStatus(payload.status)) closeTransfers(session);
     emit("status", session);
     return { accepted: true, session };
   }
@@ -130,6 +186,7 @@ export function createSessionStore(options = {}) {
     if (!session || session.attempt !== attempt) return false;
     if (session.status === status) return true;
     session.status = status;
+    if (isTerminalStatus(status)) closeTransfers(session);
     emit("status", session);
     return true;
   }
@@ -146,11 +203,20 @@ export function createSessionStore(options = {}) {
       if (removed.msg_type === "sent") session.sent -= 1;
       else if (removed.msg_type === "received") session.received -= 1;
       if (removed.id === session.selectedRecordId) session.selectedRecordId = null;
+      forgetAstmRecord(session.astm, removed);
       evicted.push(removed);
     }
+    if (evicted.length) syncIdleTimers(session);
     if (record.msg_type === "received" && session.id !== activeId) session.unread += 1;
     emit("message", session, { record, evicted });
     return record;
+  }
+
+  /** Tells the views that records already displayed changed (ASTM transfers). */
+  function emitUpdated(session, records) {
+    for (const record of records) {
+      if (session.records.includes(record)) emit("record-updated", session, { record });
+    }
   }
 
   /** Applies a backend message event; unknown sessions and stale attempts are dropped. */
@@ -158,7 +224,21 @@ export function createSessionStore(options = {}) {
     const session = sessions.get(payload?.session_id);
     if (!session) return null;
     if (payload.attempt !== session.attempt) return null;
+    if (isAstmUnit(payload)) {
+      const { created, updated } = applyAstmUnit(session.astm, payload, (fields) =>
+        appendRecord(session, fields),
+      );
+      emitUpdated(session, updated);
+      syncIdleTimers(session);
+      return created ?? updated[0] ?? null;
+    }
     return appendRecord(session, { ...payload });
+  }
+
+  /** Ends the open ASTM transfers of a session (end of the attempt). */
+  function closeTransfers(session) {
+    emitUpdated(session, closeAstm(session.astm));
+    syncIdleTimers(session);
   }
 
   /** Adds a locally produced system line (rejected command, failure...) to one session. */
@@ -195,6 +275,8 @@ export function createSessionStore(options = {}) {
     const session = sessions.get(id);
     if (!session) return false;
     session.records = [];
+    session.astm = createAstmState();
+    syncIdleTimers(session);
     session.sent = 0;
     session.received = 0;
     session.selectedRecordId = null;
@@ -227,6 +309,8 @@ export function createSessionStore(options = {}) {
     const ids = [...sessions.keys()];
     const index = ids.indexOf(id);
     sessions.delete(id);
+    session.astm = createAstmState();
+    syncIdleTimers(session);
     emit("removed", session);
     if (activeId === id) {
       const next = ids[index + 1] ?? ids[index - 1] ?? null;

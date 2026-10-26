@@ -4,8 +4,12 @@ import {
   toHexDump,
   hasRawBytes,
   hl7Ack,
+  parseAstmTransfer,
   HL7_SEGMENT_NAMES,
+  ASTM_RECORD_NAMES,
 } from "./inspector-core.js";
+import { partitionFrames } from "./astm-group.js";
+import { badge, replySummary, transferBadges } from "./astm-view.js";
 import { renderTokens, el } from "../render.js";
 import { logError } from "../log.js";
 import { cloneTemplate } from "../include.js";
@@ -45,7 +49,7 @@ function sync() {
 function available(rec) {
   const info = describeMessage(rec);
   const tabs = [];
-  if (info.kind === "hl7") tabs.push(["parsed", "Parsed"]);
+  if (info.kind === "hl7" || info.transfer) tabs.push(["parsed", "Parsed"]);
   tabs.push(["raw", "Raw"]);
   if (hasRawBytes(rec)) tabs.push(["hex", "Hex"]);
   return { info, tabs };
@@ -63,6 +67,19 @@ export function activateInspector(sessionId) {
 export function showInspector(rec) {
   const state = stateFor(rec.session_id);
   state.record = rec;
+  const { tabs } = available(rec);
+  if (!tabs.some(([id]) => id === state.tab)) state.tab = tabs[0][0];
+  if (rec.session_id === currentKey) {
+    view = state;
+    sync();
+    render();
+  }
+}
+
+/** Redraws the inspector if it shows this (updated in place) message. */
+export function refreshInspector(rec) {
+  const state = states.get(rec.session_id);
+  if (!state || state.record !== rec) return;
   const { tabs } = available(rec);
   if (!tabs.some(([id]) => id === state.tab)) state.tab = tabs[0][0];
   if (rec.session_id === currentKey) {
@@ -130,6 +147,14 @@ function render() {
     if (info.hl7.controlId) meta.appendChild(el("span", "", `#${info.hl7.controlId}`));
   } else if (info.kind === "astm") {
     meta.appendChild(el("span", "", "ASTM"));
+    if (info.transfer) {
+      const frames = info.transfer.entries.filter((entry) => entry.kind === "frame").length;
+      meta.appendChild(el("span", "", `${frames} frame${frames === 1 ? "" : "s"}`));
+      const summary = replySummary(info.transfer);
+      if (summary) meta.appendChild(badge(summary.text, summary.tone));
+      for (const node of transferBadges(info.transfer)) meta.appendChild(node);
+      if (info.transfer.status === "open") meta.appendChild(badge("in progress", "mute"));
+    }
   }
 
   for (const [id, label] of tabs) {
@@ -140,7 +165,8 @@ function render() {
     tabsEl.appendChild(button);
   }
 
-  if (tab === "parsed") renderParsed(body, info.hl7);
+  if (tab === "parsed" && info.transfer) renderParsedAstm(body, info.transfer);
+  else if (tab === "parsed") renderParsed(body, info.hl7);
   else if (tab === "hex") renderHex(body);
   else renderRaw(body);
 
@@ -161,8 +187,39 @@ function renderHex(body) {
 function renderParsed(body, hl7) {
   const ack = hl7Ack(hl7);
   const flagged = new Set(ack && !ack.ok ? ["MSA-1", "MSA-3"] : []);
+  renderSegments(body, hl7.segments, HL7_SEGMENT_NAMES, flagged);
 
-  for (const segment of hl7.segments) {
+  body.appendChild(el("small", "", "Raw"));
+  const raw = el("div", "raw");
+  renderTokens(raw, record.content, { breakAfterCr: true, segments: true });
+  body.appendChild(raw);
+}
+
+/** ASTM message: records of the acknowledged frames, then the frames kept apart. */
+function renderParsedAstm(body, transfer) {
+  const partition = partitionFrames(transfer);
+  const { merged, apart } = parseAstmTransfer(partition);
+  if (merged) renderSegments(body, merged.segments, ASTM_RECORD_NAMES, new Set());
+  else body.appendChild(el("p", "", "No frame to display yet."));
+
+  if (merged) {
+    body.appendChild(el("small", "", "Message"));
+    body.appendChild(el("div", "raw", merged.segments.map((segment) => segment.raw).join("\n")));
+  }
+
+  if (apart.length > 0) {
+    body.appendChild(el("small", "", "Not acknowledged"));
+    for (const { entry, parsed } of apart) {
+      const label = entry.frame.number === null ? "Frame" : `Frame #${entry.frame.number}`;
+      const reply = entry.reply ? entry.reply.kind.toUpperCase() : "no reply";
+      body.appendChild(el("small", "", `${label} · ${reply}`));
+      if (parsed) renderSegments(body, parsed.segments, ASTM_RECORD_NAMES, new Set());
+    }
+  }
+}
+
+function renderSegments(body, segments, names, flagged) {
+  for (const segment of segments) {
     if (segment.name === null) {
       const row = el("div", "sgh bad");
       row.appendChild(el("span", "ar", "·"));
@@ -170,7 +227,7 @@ function renderParsed(body, hl7) {
       body.appendChild(row);
       continue;
     }
-    const description = HL7_SEGMENT_NAMES[segment.name];
+    const description = names[segment.name];
     const isCollapsed = collapsed.has(segment.name);
     const block = cloneTemplate(SEGMENT_BLOCK, {
       arrow: isCollapsed ? "▸" : "▾",
@@ -191,11 +248,6 @@ function renderParsed(body, hl7) {
     }
     body.appendChild(block);
   }
-
-  body.appendChild(el("small", "", "Raw"));
-  const raw = el("div", "raw");
-  renderTokens(raw, record.content, { breakAfterCr: true, segments: true });
-  body.appendChild(raw);
 }
 
 function init() {

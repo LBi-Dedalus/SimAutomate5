@@ -11,9 +11,10 @@ use tokio::time::{sleep_until, Instant};
 
 use crate::auto_reply::{AutoReplyOutcome, AutoReplyRuleSet};
 use crate::models::{LogLevel, MessageType, SendRequest};
+use crate::protocol::astm::astm_unit;
 use crate::protocol::frames::{FrameBuffer, FrameEvent};
 use crate::reporting::ConnectionReporter;
-use crate::translate;
+use crate::translate::{self, ControlToken};
 
 use composer::split_message;
 use state::{AckOrigin, Discarded, MessageQueueState, ACK_TIMEOUT};
@@ -208,16 +209,33 @@ impl MessageOrchestrator {
             format!("received message bytes={}", bytes.len()),
         );
 
-        let (visible, events) = {
+        let (visible, feed_result) = {
             let mut receive = self.receive.lock().await;
             (receive.decoder.decode(bytes), receive.frames.feed(bytes))
         };
-        self.reporter
-            .emit_message_with_raw(MessageType::Received, visible, bytes.to_vec());
-        for event in events {
+        // Reads made only of ASTM units are reported unit by unit (the frontend merges them);
+        // anything else keeps being reported as the raw chunk, as it arrived.
+        if feed_result.should_report_received_as_astm_units() {
+            self.report_astm_units(MessageType::Received, &feed_result.events);
+        } else {
+            self.reporter
+                .emit_complete_message(MessageType::Received, visible, bytes.to_vec());
+        }
+        for event in feed_result.events {
             self.handle_frame(event).await;
         }
         Ok(())
+    }
+
+    fn report_astm_units(&self, msg_type: MessageType, events: &[FrameEvent]) {
+        for (unit, raw) in events.iter().filter_map(astm_unit) {
+            self.reporter.emit_astm_unit(
+                msg_type.clone(),
+                translate::ControlTokenDecoder::decode_all(&raw),
+                raw,
+                unit,
+            );
+        }
     }
 
     /// The peer closed: the dangling partial character is dropped (not emitted as a message)
@@ -316,7 +334,14 @@ impl MessageOrchestrator {
     }
 
     pub(crate) fn handle_sent_message(&self, msg: &[u8]) {
-        self.reporter.emit_message_with_raw(
+        // Each item written to the socket is stateless: it is an ASTM unit only when it holds
+        // complete units and nothing else.
+        let feed_result = FrameBuffer::new().feed(msg);
+        if feed_result.should_report_sent_as_astm_units() {
+            self.report_astm_units(MessageType::Sent, &feed_result.events);
+            return;
+        }
+        self.reporter.emit_complete_message(
             MessageType::Sent,
             translate::ControlTokenDecoder::decode_all(msg),
             msg.to_vec(),
@@ -349,6 +374,33 @@ impl MessageOrchestrator {
                     line!(),
                     format!("Auto reply: {reason}; no reply was sent"),
                 );
+                return;
+            }
+            // Never evaluated by the rules (a bad frame must not trigger a user rule): the
+            // refusal is built in. Same gate as the ACK of a valid frame (auto reply enabled),
+            // same path (scheduled reply, due immediately, a pure control reply so it also
+            // goes out while our own ACK is awaited).
+            FrameEvent::AstmBadChecksum(_) => {
+                let nak = vec![vec![ControlToken::NAK.byte()]];
+                let pushed = state.push_replies(Instant::now(), nak);
+                drop(state);
+                match pushed {
+                    Ok(()) => {
+                        self.reporter.warn(
+                            file!(),
+                            line!(),
+                            "Auto reply: an ASTM frame has a wrong checksum; <NAK> sent",
+                        );
+                        self.ready.notify_one();
+                    }
+                    Err(e) => self.reporter.warn(
+                        file!(),
+                        line!(),
+                        format!(
+                            "Auto reply: an ASTM frame has a wrong checksum; <NAK> dropped: {e}"
+                        ),
+                    ),
+                }
                 return;
             }
             FrameEvent::Overflow => {

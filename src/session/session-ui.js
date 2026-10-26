@@ -40,7 +40,11 @@ function init() {
     closeItem: (_ev, button) => void requestClose(button.closest("[data-session-id]").dataset.sessionId),
   };
   store.subscribe((event) => {
-    if (event.type === "draft" || event.type === "record-selected") {
+    if (
+      event.type === "draft" ||
+      event.type === "record-selected" ||
+      event.type === "record-updated"
+    ) {
       // Only the close impact depends on these; nothing visible changes.
       return;
     }

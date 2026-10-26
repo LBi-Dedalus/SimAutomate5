@@ -739,3 +739,207 @@ async fn close_and_update_rules_reset_counters() {
     assert_eq!((s.queued_items, s.queued_bytes), (0, 0));
     assert!(s.closed && s.pending_messages.is_empty() && s.scheduled.is_empty());
 }
+
+struct AstmSink(std::sync::Mutex<Vec<MessagePayload>>);
+
+impl crate::reporting::EventSink for AstmSink {
+    fn status(&self, _: StatusPayload) -> Result<(), String> {
+        Ok(())
+    }
+    fn message(&self, p: MessagePayload) -> Result<(), String> {
+        self.0.lock().unwrap().push(p);
+        Ok(())
+    }
+    fn notify(&self, _: &str, _: &str) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+fn astm_queue() -> (SharedMessageOrchestrator, Arc<AstmSink>) {
+    let sink = Arc::new(AstmSink(Default::default()));
+    let q = MessageOrchestrator::shared(
+        reporter(sink.clone()),
+        Arc::new(AutoReplyRuleSet::disabled()),
+    );
+    (q, sink)
+}
+
+fn astm_frame(number: u8, text: &str, end: u8) -> Vec<u8> {
+    let mut content = vec![b'0' + number];
+    content.extend_from_slice(text.as_bytes());
+    content.push(end);
+    let mut frame = vec![0x02];
+    frame.extend_from_slice(&content);
+    frame.extend_from_slice(
+        format!("{:02X}\r\n", crate::protocol::astm::astm_checksum(&content)).as_bytes(),
+    );
+    frame
+}
+
+fn kinds(sink: &AstmSink) -> Vec<String> {
+    sink.0
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|p| match &p.astm {
+            Some(unit) => serde_json::to_value(unit).unwrap()["kind"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+            None => "raw".to_string(),
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn coalesced_astm_read_is_reported_unit_by_unit() {
+    let (q, sink) = astm_queue();
+    let mut read = vec![0x05];
+    read.extend_from_slice(&astm_frame(1, "H|\\^&\r", 0x17));
+    read.extend_from_slice(&astm_frame(2, "L|1|N\r", 0x03));
+    read.push(0x04);
+    q.on_received(&read).await.unwrap();
+    assert_eq!(kinds(&sink), ["enq", "frame", "frame", "eot"]);
+
+    let got = sink.0.lock().unwrap();
+    let json = serde_json::to_value(&got[1]).unwrap();
+    assert_eq!(json["astm"]["number"], 1);
+    assert_eq!(json["astm"]["text"], "H|\\^&\r");
+    assert_eq!(json["astm"]["terminator"], "ETB");
+    assert_eq!(json["astm"]["checksum_ok"], true);
+    assert_eq!(
+        got[2].raw.as_deref(),
+        Some(&astm_frame(2, "L|1|N\r", 0x03)[..])
+    );
+    assert!(got[2].content.starts_with("<STX>2L|1|N<CR><ETX>"));
+}
+
+#[tokio::test]
+async fn astm_frame_split_over_reads_is_reported_once_complete() {
+    let (q, sink) = astm_queue();
+    let frame = astm_frame(1, "H|\\^&\r", 0x03);
+    q.on_received(&frame[..7]).await.unwrap();
+    assert!(kinds(&sink).is_empty());
+    q.on_received(&frame[7..]).await.unwrap();
+    assert_eq!(kinds(&sink), ["frame"]);
+}
+
+#[tokio::test]
+async fn bad_checksum_frame_is_reported_and_flagged() {
+    let (q, sink) = astm_queue();
+    q.on_received(b"\x021H|x\r\x0300\r\n").await.unwrap();
+    assert_eq!(kinds(&sink), ["frame"]);
+    let json = serde_json::to_value(&sink.0.lock().unwrap()[0]).unwrap();
+    assert_eq!(json["astm"]["checksum_ok"], false);
+    assert_eq!(json["astm"]["computed_checksum"], "7D");
+}
+
+#[tokio::test]
+async fn non_astm_reads_keep_being_reported_as_raw_chunks() {
+    let (q, sink) = astm_queue();
+    q.on_received(AUTOBUILD_BYTES).await.unwrap();
+    q.on_received(b"hello").await.unwrap();
+    q.on_received(b"\r\n").await.unwrap();
+    assert_eq!(kinds(&sink), ["raw", "raw", "raw"]);
+}
+
+#[test]
+fn sent_astm_items_are_reported_as_units() {
+    let (q, sink) = astm_queue();
+    q.handle_sent_message(&[0x05]);
+    q.handle_sent_message(&astm_frame(1, "H|\\^&\r", 0x03));
+    q.handle_sent_message(b"\x021H|no end");
+    q.handle_sent_message(&[0x04]);
+    assert_eq!(kinds(&sink), ["enq", "frame", "raw", "eot"]);
+}
+
+fn frame_rules(reply: &str) -> Arc<AutoReplyRuleSet> {
+    use crate::auto_reply::{
+        AutoReplyAction, AutoReplyTrigger, RawAutoReplyConfig, RawAutoReplyRule,
+    };
+    Arc::new(
+        AutoReplyRuleSet::compile(
+            &RawAutoReplyConfig {
+                enabled: true,
+                rules: vec![RawAutoReplyRule {
+                    id: "f".into(),
+                    name: "frame".into(),
+                    enabled: true,
+                    trigger: AutoReplyTrigger::AstmFrame,
+                    condition: None,
+                    action: AutoReplyAction::Literal { text: reply.into() },
+                    delay_ms: 0,
+                }],
+            }
+            .parse()
+            .unwrap(),
+            &[],
+        )
+        .unwrap(),
+    )
+}
+
+const BAD_FRAME: &[u8] = b"\x021H|x\r\x0300\r\n";
+
+#[tokio::test]
+async fn bad_checksum_frame_is_answered_with_a_nak_and_a_warning() {
+    // Even with no rule matching frames at all.
+    let (queue, sink) = short_queue(ack_rules());
+    queue.on_received(BAD_FRAME).await.unwrap();
+    assert_eq!(queue.recv().await, vec![0x15]);
+    let warned = warnings(&sink);
+    assert_eq!(warned.len(), 1);
+    assert!(warned[0].contains("wrong checksum") && warned[0].contains("NAK"));
+    assert_idle(&queue).await;
+}
+
+#[tokio::test]
+async fn bad_checksum_frame_never_triggers_a_user_rule() {
+    let (queue, _sink) = short_queue(frame_rules("REPLY"));
+    queue.on_received(BAD_FRAME).await.unwrap();
+    assert_eq!(queue.recv().await, vec![0x15]);
+    assert!(timeout(Duration::from_millis(150), queue.recv())
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+async fn valid_frame_is_still_answered_by_its_rule_only() {
+    let (queue, sink) = short_queue(frame_rules("<ACK>"));
+    queue
+        .on_received(&astm_frame(1, "H|\\^&\r", 0x03))
+        .await
+        .unwrap();
+    assert_eq!(queue.recv().await, vec![0x06]);
+    assert!(timeout(Duration::from_millis(150), queue.recv())
+        .await
+        .is_err());
+    assert!(warnings(&sink).is_empty());
+}
+
+#[tokio::test]
+async fn bad_checksum_nak_goes_out_while_waiting_for_our_ack() {
+    let (queue, _sink) = short_queue(ack_rules());
+    queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
+    assert_eq!(queue.recv().await, vec![0x05]);
+    queue.on_received(BAD_FRAME).await.unwrap();
+    assert_eq!(queue.recv().await, vec![0x15]);
+    assert!(queue.state.lock().await.ack_wait.is_some());
+}
+
+#[tokio::test]
+async fn bad_checksum_frame_gets_no_nak_when_auto_reply_is_disabled() {
+    let (queue, sink) = short_queue(Arc::new(AutoReplyRuleSet::disabled()));
+    queue.on_received(BAD_FRAME).await.unwrap();
+    assert!(timeout(Duration::from_millis(150), queue.recv())
+        .await
+        .is_err());
+    assert!(warnings(&sink).is_empty());
+}
+
+#[tokio::test]
+async fn sent_nak_is_reported_as_an_astm_unit() {
+    let (q, sink) = astm_queue();
+    q.handle_sent_message(&[0x15]);
+    assert_eq!(kinds(&sink), ["nak"]);
+}

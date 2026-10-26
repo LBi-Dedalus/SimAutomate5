@@ -139,6 +139,7 @@ fn message_payload_omits_absent_raw_and_keeps_present_raw() {
         content: "hi".to_string(),
         timestamp: "t".to_string(),
         raw: None,
+        astm: None,
     };
     let json = serde_json::to_string(&payload).unwrap();
     assert!(!json.contains("raw"));

@@ -11,6 +11,7 @@ use crate::{
         ConnectionStatus, LogLevel, MessagePayload, MessageType, StatusPayload, MESSAGE_EVENT,
         STATUS_EVENT,
     },
+    protocol::astm::AstmUnit,
 };
 
 /// Destination of the events produced by the connections.
@@ -97,17 +98,17 @@ impl ConnectionReporter {
 
     pub fn info(&self, file: &str, line: u32, message: impl ToString) {
         self.log(LogLevel::Inf, file, line, message.to_string());
-        self.emit_message(MessageType::SystemInfo, message.to_string())
+        self.emit_payload(MessageType::SystemInfo, message.to_string(), None, None)
     }
 
     pub fn warn(&self, file: &str, line: u32, message: impl ToString) {
         self.log(LogLevel::Wrn, file, line, message.to_string());
-        self.emit_message(MessageType::SystemWarn, message.to_string())
+        self.emit_payload(MessageType::SystemWarn, message.to_string(), None, None)
     }
 
     pub fn error(&self, file: &str, line: u32, message: impl ToString) {
         self.log(LogLevel::Err, file, line, message.to_string());
-        self.emit_message(MessageType::SystemError, message.to_string())
+        self.emit_payload(MessageType::SystemError, message.to_string(), None, None)
     }
 
     pub fn only_log(&self, level: LogLevel, file: &str, line: u32, message: impl ToString) {
@@ -132,16 +133,29 @@ impl ConnectionReporter {
         }
     }
 
-    pub fn emit_message(&self, msg_type: MessageType, content: String) {
-        self.emit_payload(msg_type, content, None);
-    }
-
     /// Emits a Sent/Received event that also carries the exact wire bytes.
-    pub fn emit_message_with_raw(&self, msg_type: MessageType, content: String, raw: Vec<u8>) {
-        self.emit_payload(msg_type, content, Some(raw));
+    pub fn emit_complete_message(&self, msg_type: MessageType, content: String, raw: Vec<u8>) {
+        self.emit_payload(msg_type, content, Some(raw), None);
     }
 
-    fn emit_payload(&self, msg_type: MessageType, content: String, raw: Option<Vec<u8>>) {
+    /// Emits a Sent/Received event standing for exactly one ASTM unit.
+    pub fn emit_astm_unit(
+        &self,
+        msg_type: MessageType,
+        content: String,
+        raw: Vec<u8>,
+        unit: AstmUnit,
+    ) {
+        self.emit_payload(msg_type, content, Some(raw), Some(unit));
+    }
+
+    fn emit_payload(
+        &self,
+        msg_type: MessageType,
+        content: String,
+        raw: Option<Vec<u8>>,
+        astm: Option<AstmUnit>,
+    ) {
         let connection = &self.connection;
         let payload = MessagePayload {
             session_id: connection.session_id.to_string(),
@@ -150,6 +164,7 @@ impl ConnectionReporter {
             msg_type,
             timestamp: now_ts(),
             raw,
+            astm,
         };
         if let Err(err) = self.sink.message(payload) {
             self.log(
