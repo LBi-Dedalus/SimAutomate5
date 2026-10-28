@@ -10,6 +10,8 @@ import { buildFrameRows, replySummary, transferBadges } from "./astm-view.js";
 import { renderTokens, el } from "../render.js";
 import { cloneTemplate } from "../include.js";
 import { sessions, store, subscribeSendEligibility } from "./sessions.js";
+import { createComposerAutobuild } from "../autobuild/autobuild-core.js";
+import { logError } from "../log.js";
 
 const SYSTEM_MESSAGE = "session/system-message.html";
 const MESSAGE_BUBBLE = "session/message-bubble.html";
@@ -65,6 +67,21 @@ export function setComposerText(text, sessionId = store.activeId) {
   return store.setDraft(sessionId, text);
 }
 
+const { invoke } = window.__TAURI__.core;
+const composerAutobuild = createComposerAutobuild({
+  invoke,
+  activeId: () => store.activeId,
+  hasSession: (id) => !!store.get(id),
+  setDraft: (id, text) => setComposerText(text, id),
+  getDraft: (id) => store.get(id)?.draft ?? "",
+  readComposer: () => composerField().value,
+  // Shown in the session it concerns, like the other composer failures.
+  reportError: (id, message) => {
+    store.addLocal(id, "systemerror", message);
+    logError(message, "messages.js:autobuild");
+  },
+});
+
 function composerField() {
   return document.getElementById("message-form").message;
 }
@@ -92,6 +109,10 @@ function initComposer() {
     clear() {
       const active = store.activeId;
       if (active) store.clearMessages(active);
+    },
+    // Replaces the composer text by its autobuilt version (No ETB off); never sends.
+    async autobuild() {
+      await composerAutobuild.run();
     },
     choose(_ev, node) {
       const target = recordOf.get(node);

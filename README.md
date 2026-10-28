@@ -50,7 +50,7 @@ SimAutomate5 is a Tauri desktop app for exchanging ASTM and HL7-style messages o
    - SSH Client / SSH Server: same as above, plus the SSH host, SSH port (22 by default) and optionally the SSH user.
 3. If needed, open **Auto reply**, add rules (when receiving → reply with), save them and turn **Enabled** on.
 4. Type a message in the Session composer (or load a template).
-5. Use **Autobuild** (sidebar or composer button) if you want the backend to format ASTM or HL7/MLLP content; pick one of the recent autobuilds to reuse it.
+5. Use **Autobuild** (sidebar) if you want the backend to format ASTM or HL7/MLLP content; pick one of the recent autobuilds to reuse it. The composer's **Autobuild** button builds the message being typed (No ETB off) and replaces it in place, without sending.
 6. Click **Send** to transmit the message. An HL7/MLLP message (starting with `<VT>`, ending with `<FS><CR>`) is sent as a single write; the line breaks between its segments are only composer formatting and are not transmitted. Other text (e.g. ASTM) is sent line by line.
 7. Use **Clear** in the Session header to clear the selected conversation, or **Clear** in the composer to reset its draft.
 8. Go back to Home (or the `＋` in the sidebar) to open more sessions; switch with the Sessions list. **Disconnect** keeps a session (use **Reconnect**), **Close** removes it.

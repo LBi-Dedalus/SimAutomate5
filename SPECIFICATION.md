@@ -109,7 +109,7 @@ Auto reply is configured entirely in ordered **Rules** (Auto reply tab). There i
 
 ### Overview
 
-The application includes an Autobuild helper for constructing ASTM and MLLP messages from plain text input. It is a dedicated view (sidebar entry "Autobuild"; the composer's Autobuild button navigates to it), laid out like Templates: the left column lists the recent autobuilds under a header with a **Clear** action (it empties the list) and the right column is the always-docked builder. Below 960 px the list stacks above the builder and the view scrolls.
+The application includes an Autobuild helper for constructing ASTM and MLLP messages from plain text input. It is a dedicated view (sidebar entry "Autobuild"; the composer's Autobuild button does not navigate: it builds the composer text with `auto_build_message_cmd` `{ input, no_etb: false }` regardless of the view's persisted No ETB setting and replaces the draft of the session selected at click time, without sending. An empty message, a backend failure, or a draft edited during the build leaves the draft untouched and shows a system error in that session; one build per session runs at a time), laid out like Templates: the left column lists the recent autobuilds under a header with a **Clear** action (it empties the list) and the right column is the always-docked builder. Below 960 px the list stacks above the builder and the view scrolls.
 
 ### Recent Autobuilds
 

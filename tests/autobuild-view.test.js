@@ -356,12 +356,12 @@ test("delete moves focus to the next card, else previous, else the input; clear 
   assert.equal(c.doc.activeElement, c.$("ab-input"));
 });
 
-test("markup: dedicated nav view, no dialog, composer navigates to the view", () => {
+test("markup: dedicated nav view, no dialog, composer builds in place", () => {
   const html = readMarkup();
   assert.ok(html.includes('data-view="autobuild"'));
   assert.ok(html.includes('id="view-autobuild"'));
   assert.ok(html.includes('data-view-panel="autobuild"'));
-  assert.ok(html.includes('data-nav="autobuild"'));
+  assert.ok(html.includes('data-action="click:msg.autobuild"'));
   assert.equal(html.includes('<dialog id="autobuild"'), false);
   assert.equal(html.includes('commandfor="autobuild"'), false);
   for (const id of ["ab-input", "ab-output", "ab-no-etb", "ab-list", "ab-clear", "ab-note", "build-message", "autobuild-error"]) {

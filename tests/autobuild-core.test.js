@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildForTarget, deliverToTarget, applyTemplateAutobuild } from "../src/autobuild/autobuild-core.js";
+import { buildForTarget, deliverToTarget, applyTemplateAutobuild, createComposerAutobuild } from "../src/autobuild/autobuild-core.js";
 
 test("applyTemplateAutobuild: off returns the text and never invokes", async () => {
   const calls = [];
@@ -88,4 +88,78 @@ test("buildForTarget without deliver does not touch drafts", async () => {
   const r = await buildForTarget(deps, "x", false, { deliver: false });
   assert.deepEqual(r, { output: "built:x", target: "s1", delivered: false, error: null });
   assert.deepEqual(deps.state.drafts, {});
+});
+
+function composerHarness({ text = "H|a", sessions = ["s1", "s2"], invoke } = {}) {
+  const s = { active: "s1", field: text, drafts: { s1: text, s2: "other" }, alive: new Set(sessions), errors: [], calls: [] };
+  const deps = {
+    invoke: invoke ?? (async (cmd, args) => (s.calls.push({ cmd, args }), { output: `<STX>${args.req.input}<ETX>` })),
+    activeId: () => s.active,
+    hasSession: (id) => s.alive.has(id),
+    setDraft: (id, t) => (s.alive.has(id) ? ((s.drafts[id] = t), true) : false),
+    getDraft: (id) => s.drafts[id],
+    readComposer: () => s.field,
+    reportError: (id, m) => s.errors.push([id, m]),
+  };
+  return { s, deps, ab: createComposerAutobuild(deps) };
+}
+
+test("composer autobuild replaces the draft with no_etb false and reports nothing", async () => {
+  const { s, ab } = composerHarness();
+  assert.equal(await ab.run(), true);
+  assert.deepEqual(s.calls, [{ cmd: "auto_build_message_cmd", args: { req: { input: "H|a", no_etb: false } } }]);
+  assert.equal(s.drafts.s1, "<STX>H|a<ETX>");
+  assert.equal(s.drafts.s2, "other");
+  assert.deepEqual(s.errors, []);
+});
+
+test("composer autobuild: empty text and backend failure keep the draft and report", async () => {
+  const empty = composerHarness({ text: "  " });
+  assert.equal(await empty.ab.run(), false);
+  assert.equal(empty.s.calls.length, 0);
+  assert.match(empty.s.errors[0][1], /empty/);
+
+  const bad = composerHarness({ invoke: async () => { throw "boom"; } });
+  assert.equal(await bad.ab.run(), false);
+  assert.equal(bad.s.drafts.s1, "H|a");
+  assert.deepEqual(bad.s.errors, [["s1", "Autobuild failed: boom"]]);
+  assert.equal(bad.ab.isPending("s1"), false);
+});
+
+test("composer autobuild: switching session never misdirects the output", async () => {
+  const { s, ab } = composerHarness();
+  const run = ab.run();
+  s.active = "s2";
+  s.field = "other";
+  assert.equal(await run, true);
+  assert.equal(s.drafts.s1, "<STX>H|a<ETX>");
+  assert.equal(s.drafts.s2, "other");
+});
+
+test("composer autobuild: closed session drops the output silently", async () => {
+  const { s, ab } = composerHarness();
+  const run = ab.run();
+  s.alive.delete("s1");
+  assert.equal(await run, false);
+  assert.deepEqual(s.errors, []);
+});
+
+test("composer autobuild: double click builds once; edits made meanwhile are kept", async () => {
+  const { s, ab } = composerHarness();
+  const first = ab.run();
+  assert.equal(ab.isPending("s1"), true);
+  assert.equal(await ab.run(), false);
+  s.drafts.s1 = "H|a edited";
+  assert.equal(await first, false);
+  assert.equal(s.calls.length, 1);
+  assert.equal(s.drafts.s1, "H|a edited");
+  assert.match(s.errors[0][1], /edited/);
+});
+
+test("session.html wires the composer button to msg.autobuild, not navigation", async () => {
+  const { readFileSync } = await import("node:fs");
+  const html = readFileSync(new URL("../src/session/session.html", import.meta.url), "utf8");
+  const button = html.match(/<button[^>]*>[^<]*Autobuild<\/button>/)[0];
+  assert.match(button, /data-action="click:msg\.autobuild"/);
+  assert.doesNotMatch(button, /data-nav|nav\.go/);
 });
