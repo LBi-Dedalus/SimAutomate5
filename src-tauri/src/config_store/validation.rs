@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use super::model::{Template, TemplateId};
+use crate::templates::{Template, TemplateId};
 use crate::auto_reply::{AutoReplyAction, AutoReplyConfig, AutoReplyRuleSet};
 
 fn is_valid_variable_name(name: &str) -> bool {

@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config_store::TemplateId;
+use crate::templates::TemplateId;
 
 pub const MAX_RULES: usize = 200;
 pub const MAX_DELAY_MS: u32 = 60_000;

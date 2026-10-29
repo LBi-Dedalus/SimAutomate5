@@ -1,6 +1,6 @@
 //! Built-in defaults: the template library and the auto reply rules used until first saved.
 
-use super::model::{AutobuildMode, Template, TemplateVariable};
+use crate::templates::{AutobuildMode, Template, TemplateVariable};
 use crate::auto_reply::{
     AutoReplyAction, AutoReplyCondition, AutoReplyConfig, AutoReplyOperator, AutoReplyRuleSet,
     AutoReplyTrigger, RawAutoReplyConfig, RawAutoReplyRule,

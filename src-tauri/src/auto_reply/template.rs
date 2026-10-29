@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::config_store::{Template, TemplateVariable};
+use crate::templates::{Template, TemplateVariable};
 use crate::translate;
 
 /// One fragment of a reply frame (one template line): either fixed bytes known at compile time,

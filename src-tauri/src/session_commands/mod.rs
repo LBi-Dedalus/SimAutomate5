@@ -7,10 +7,11 @@
 //! runs. Nothing is applied when a step fails, so a failed save keeps the previous behaviour.
 
 use crate::auto_reply::AutoReplyConfig;
-use crate::config_store::{ConfigStore, RevisionedConfig, Template};
+use crate::config_store::{ConfigStore, RevisionedConfig};
 use crate::ids::{ConnectionId, SessionId};
 use crate::models::{ConnectRequest, ConnectionSpec, LogLevel, SendRequest};
 use crate::reporting::Logger;
+use crate::templates::Template;
 use crate::transport::ConnectionManager;
 
 #[cfg(test)]

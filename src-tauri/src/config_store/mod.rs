@@ -37,8 +37,8 @@ pub(crate) use defaults::builtin_templates;
 pub(crate) use document::config_path;
 // `AutobuildMode` is part of `Template`; only tests name it outside this module.
 #[allow(unused_imports)]
-pub use model::AutobuildMode;
-pub use model::{RevisionedConfig, Template, TemplateId, TemplateVariable};
+use crate::templates::{AutobuildMode, Template, TemplateId, TemplateVariable};
+pub use model::{RevisionedConfig};
 
 use defaults::default_auto_reply_for;
 use document::{read_config, write_root, ConfigDocument, AUTO_REPLY_KEY, TEMPLATES_KEY};

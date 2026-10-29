@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde_json::{Map, Value};
 
 use super::defaults::{builtin_templates, default_auto_reply_for};
-use super::model::Template;
+use crate::templates::Template;
 use super::validation::validate_templates;
 use crate::auto_reply::{AutoReplyConfig, RawAutoReplyConfig};
 

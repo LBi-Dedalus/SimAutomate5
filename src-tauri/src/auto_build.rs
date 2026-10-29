@@ -1,8 +1,9 @@
 use anyhow::Result;
 
 use crate::{
-    models::{AstmEndingMode, AutoBuildRequest, BuildResponse},
+    models::{AutoBuildRequest, BuildResponse},
     translate::{ControlToken, ControlTokenDecoder},
+    protocol::astm::AstmEndingMode,
 };
 
 pub fn auto_build(req: AutoBuildRequest) -> Result<BuildResponse> {

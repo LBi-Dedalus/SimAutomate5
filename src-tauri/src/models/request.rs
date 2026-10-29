@@ -1,6 +1,7 @@
 //! Request DTOs sent by the frontend (wire shapes, not yet validated) and their responses.
 
 use serde::{Deserialize, Serialize};
+use crate::protocol::astm::AstmEndingMode;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -33,31 +34,6 @@ pub enum ConnectRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendRequest {
     pub message: String,
-}
-
-/// How intermediate ASTM records end. The last record always ends with ETX.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AstmEndingMode {
-    /// Every record but the last ends with ETB (the standard behaviour).
-    EtbBetweenRecords,
-    /// Every record ends with ETX ("No ETB").
-    EtxForEveryRecord,
-}
-
-impl AstmEndingMode {
-    /// From the wire `no_etb` boolean.
-    pub fn from_no_etb(no_etb: bool) -> Self {
-        if no_etb {
-            Self::EtxForEveryRecord
-        } else {
-            Self::EtbBetweenRecords
-        }
-    }
-
-    /// To the wire `no_etb` boolean.
-    pub fn no_etb(self) -> bool {
-        self == Self::EtxForEveryRecord
-    }
 }
 
 /// (De)serializes an `AstmEndingMode` as the boolean `no_etb`.

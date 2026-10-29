@@ -10,7 +10,7 @@ use super::config::{
 };
 use super::matching::{condition_matches, type_matches};
 use super::template::{CompiledTemplate, FramePart};
-use crate::config_store::Template;
+use crate::templates::Template;
 use crate::protocol::frames::FrameEvent;
 use crate::protocol::hl7::{parse_hl7, Hl7Message};
 use crate::translate::{ControlToken, ControlTokenEncoder};

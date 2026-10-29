@@ -1,7 +1,5 @@
 //! ASTM checksum computation and verification, and the description of ASTM units for the UI.
-
 use serde::Serialize;
-
 use crate::protocol::frames::FrameEvent;
 use crate::translate::ControlToken;
 
@@ -88,6 +86,31 @@ pub(crate) fn astm_checksum_is_valid(frame: &[u8]) -> bool {
         .ok()
         .and_then(|s| u8::from_str_radix(s, 16).ok());
     expected == Some(astm_checksum(&frame[1..digits_at]))
+}
+
+/// How intermediate ASTM records end. The last record always ends with ETX.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AstmEndingMode {
+    /// Every record but the last ends with ETB (the standard behaviour).
+    EtbBetweenRecords,
+    /// Every record ends with ETX ("No ETB").
+    EtxForEveryRecord,
+}
+
+impl AstmEndingMode {
+    /// From the wire `no_etb` boolean.
+    pub fn from_no_etb(no_etb: bool) -> Self {
+        if no_etb {
+            Self::EtxForEveryRecord
+        } else {
+            Self::EtbBetweenRecords
+        }
+    }
+
+    /// To the wire `no_etb` boolean.
+    pub fn no_etb(self) -> bool {
+        self == Self::EtxForEveryRecord
+    }
 }
 
 #[cfg(test)]

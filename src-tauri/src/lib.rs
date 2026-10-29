@@ -9,18 +9,20 @@ mod models;
 mod protocol;
 mod reporting;
 mod session_commands;
+mod templates;
 mod translate;
 mod transport;
 
 use auto_build::auto_build;
 use auto_reply::AutoReplyConfig;
-use config_store::{ConfigStore, RevisionedConfig, Template};
+use config_store::{ConfigStore, RevisionedConfig};
 use models::{
     AutoBuildRequest, BuildResponse, ConnectRequest, FrontendLogEntry, LogLevel, SendRequest,
 };
 use reporting::{AppLogger, ConnectionReporterFactory, Logger, TauriSink};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, RunEvent, State};
+use templates::Template;
 use transport::ConnectionManager;
 
 type SharedLogger = Arc<dyn Logger>;
