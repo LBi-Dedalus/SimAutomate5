@@ -93,7 +93,8 @@ fn astm_checksum(body: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{AstmEndingMode, AutoBuildRequest};
+    use crate::models::AutoBuildRequest;
+    use crate::protocol::astm::AstmEndingMode;
     use crate::translate::ControlTokenEncoder;
     fn to_bytes(s: &str) -> Vec<u8> {
         ControlTokenEncoder::encode_all(s)

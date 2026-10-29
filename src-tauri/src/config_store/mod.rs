@@ -28,17 +28,15 @@ mod document;
 mod model;
 mod validation;
 
-use std::path::{Path, PathBuf};
+use std::{path::{Path, PathBuf}, sync::Arc};
 
 use crate::auto_reply::{AutoReplyConfig, AutoReplyRuleSet};
 
 #[cfg(test)]
 pub(crate) use defaults::builtin_templates;
 pub(crate) use document::config_path;
-// `AutobuildMode` is part of `Template`; only tests name it outside this module.
-#[allow(unused_imports)]
-use crate::templates::{AutobuildMode, Template, TemplateId, TemplateVariable};
-pub use model::{RevisionedConfig};
+use crate::templates::Template;
+pub use model::RevisionedConfig;
 
 use defaults::default_auto_reply_for;
 use document::{read_config, write_root, ConfigDocument, AUTO_REPLY_KEY, TEMPLATES_KEY};
@@ -50,7 +48,7 @@ pub struct ConfigStore {
     path: PathBuf,
     /// `None` until the first successful load or save. Loads are served from it; saves always
     /// read the file (so a manual edit is taken into account) and replace it.
-    current: tokio::sync::Mutex<Option<RevisionedConfig>>,
+    current: tokio::sync::Mutex<Option<Arc<RevisionedConfig>>>,
 }
 
 impl ConfigStore {
@@ -63,18 +61,19 @@ impl ConfigStore {
 
     /// The current configuration. The first call reads and validates the file (revision 0);
     /// loads never bump the revision.
-    pub async fn load(&self) -> Result<RevisionedConfig, String> {
+    pub async fn load(&self) -> Result<Arc<RevisionedConfig>, String> {
         let mut current = self.current.lock().await;
         if let Some(config) = current.as_ref() {
             return Ok(config.clone());
         }
         let config = load_from(&self.path, 0)?;
-        *current = Some(config.clone());
-        Ok(config)
+        let rc_config = Arc::new(config);
+        *current = Some(rc_config.clone());
+        Ok(rc_config)
     }
 
     /// Saves the templates (refused when a rule would break).
-    pub async fn save_templates(&self, templates: &[Template]) -> Result<RevisionedConfig, String> {
+    pub async fn save_templates(&self, templates: &[Template]) -> Result<Arc<RevisionedConfig>, String> {
         self.save_with(|path, revision| save_templates_to(path, revision, templates))
             .await
     }
@@ -82,13 +81,13 @@ impl ConfigStore {
     pub async fn save_auto_reply(
         &self,
         config: &AutoReplyConfig,
-    ) -> Result<RevisionedConfig, String> {
+    ) -> Result<Arc<RevisionedConfig>, String> {
         self.save_with(|path, revision| save_auto_reply_to(path, revision, config))
             .await
     }
 
     /// Persists the master switch only; the saved rules are not touched.
-    pub async fn set_auto_reply_enabled(&self, enabled: bool) -> Result<RevisionedConfig, String> {
+    pub async fn set_auto_reply_enabled(&self, enabled: bool) -> Result<Arc<RevisionedConfig>, String> {
         self.save_with(|path, revision| set_auto_reply_enabled_in(path, revision, enabled))
             .await
     }
@@ -98,12 +97,13 @@ impl ConfigStore {
     async fn save_with(
         &self,
         op: impl FnOnce(&Path, u64) -> Result<RevisionedConfig, String>,
-    ) -> Result<RevisionedConfig, String> {
+    ) -> Result<Arc<RevisionedConfig>, String> {
         let mut current = self.current.lock().await;
         let revision = current.as_ref().map_or(0, |config| config.revision) + 1;
         let next = op(&self.path, revision)?;
-        *current = Some(next.clone());
-        Ok(next)
+        let rc_config = Arc::new(next);
+        *current = Some(rc_config.clone());
+        Ok(rc_config)
     }
 }
 

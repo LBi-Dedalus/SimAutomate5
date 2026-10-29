@@ -126,7 +126,7 @@ async fn log_frontend(
 /// The effective templates and auto reply rules; auto reply rules are global (every current
 /// and future session) and persisted in config.json.
 #[tauri::command]
-async fn load_config(store: State<'_, ConfigStore>) -> Result<RevisionedConfig, String> {
+async fn load_config(store: State<'_, ConfigStore>) -> Result<Arc<RevisionedConfig>, String> {
     session_commands::load_config(&store).await
 }
 
@@ -137,7 +137,7 @@ async fn save_templates(
     store: State<'_, ConfigStore>,
     manager: State<'_, ConnectionManager>,
     templates: Vec<Template>,
-) -> Result<RevisionedConfig, String> {
+) -> Result<Arc<RevisionedConfig>, String> {
     session_commands::save_templates(&store, &manager, &templates).await
 }
 
@@ -146,7 +146,7 @@ async fn save_auto_reply(
     store: State<'_, ConfigStore>,
     manager: State<'_, ConnectionManager>,
     config: AutoReplyConfig,
-) -> Result<RevisionedConfig, String> {
+) -> Result<Arc<RevisionedConfig>, String> {
     session_commands::save_auto_reply(&store, &manager, &config).await
 }
 
@@ -156,7 +156,7 @@ async fn set_auto_reply_enabled(
     store: State<'_, ConfigStore>,
     manager: State<'_, ConnectionManager>,
     enabled: bool,
-) -> Result<RevisionedConfig, String> {
+) -> Result<Arc<RevisionedConfig>, String> {
     session_commands::set_auto_reply_enabled(&store, &manager, enabled).await
 }
 

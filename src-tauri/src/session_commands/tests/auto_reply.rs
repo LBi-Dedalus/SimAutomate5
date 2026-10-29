@@ -2,7 +2,7 @@ use tokio::io::AsyncWriteExt;
 
 use super::*;
 use crate::auto_reply::{AutoReplyCondition, AutoReplyOperator};
-use crate::config_store::{AutobuildMode, TemplateVariable};
+use crate::templates::{AutobuildMode, TemplateVariable};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn saved_rules_apply_to_current_and_future_sessions_and_off_stops_them() {

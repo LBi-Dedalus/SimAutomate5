@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+mod tests;
+
 /// Identifier of a saved template. Serialized as the bare string.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(transparent)]

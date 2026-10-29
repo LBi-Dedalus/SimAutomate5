@@ -6,6 +6,8 @@
 //! is applied to the `ConnectionManager`, which ignores a configuration older than the one it
 //! runs. Nothing is applied when a step fails, so a failed save keeps the previous behaviour.
 
+use std::sync::Arc;
+
 use crate::auto_reply::AutoReplyConfig;
 use crate::config_store::{ConfigStore, RevisionedConfig};
 use crate::ids::{ConnectionId, SessionId};
@@ -59,7 +61,10 @@ pub async fn stop(
     manager.stop(&session_id, mode == StopMode::Close).await
 }
 
-async fn apply_rules(manager: &ConnectionManager, config: RevisionedConfig) -> RevisionedConfig {
+async fn apply_rules(
+    manager: &ConnectionManager,
+    config: Arc<RevisionedConfig>,
+) -> Arc<RevisionedConfig> {
     manager.apply_rules(&config).await;
     config
 }
@@ -87,7 +92,7 @@ pub async fn init_auto_reply(
 
 /// The effective templates and auto reply rules (defaults for missing keys), stamped with the
 /// current configuration revision (loads do not change it).
-pub async fn load_config(store: &ConfigStore) -> Result<RevisionedConfig, String> {
+pub async fn load_config(store: &ConfigStore) -> Result<Arc<RevisionedConfig>, String> {
     store.load().await
 }
 
@@ -98,7 +103,7 @@ pub async fn save_templates(
     store: &ConfigStore,
     manager: &ConnectionManager,
     templates: &[Template],
-) -> Result<RevisionedConfig, String> {
+) -> Result<Arc<RevisionedConfig>, String> {
     let config = store.save_templates(templates).await?;
     Ok(apply_rules(manager, config).await)
 }
@@ -107,7 +112,7 @@ pub async fn save_auto_reply(
     store: &ConfigStore,
     manager: &ConnectionManager,
     config: &AutoReplyConfig,
-) -> Result<RevisionedConfig, String> {
+) -> Result<Arc<RevisionedConfig>, String> {
     let config = store.save_auto_reply(config).await?;
     Ok(apply_rules(manager, config).await)
 }
@@ -117,7 +122,7 @@ pub async fn set_auto_reply_enabled(
     store: &ConfigStore,
     manager: &ConnectionManager,
     enabled: bool,
-) -> Result<RevisionedConfig, String> {
+) -> Result<Arc<RevisionedConfig>, String> {
     let config = store.set_auto_reply_enabled(enabled).await?;
     Ok(apply_rules(manager, config).await)
 }

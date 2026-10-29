@@ -56,6 +56,7 @@ async fn saving_unchanged_templates_keeps_default_auto_reply_running() {
     assert!(saved.auto_reply.enabled());
     let loaded = load_config(&cfg.store).await.unwrap();
     assert_eq!(saved, loaded);
+    assert!(Arc::ptr_eq(&saved, &loaded));
     assert_eq!(saved, cfg.store.load().await.unwrap());
     peer.write_all(&[0x05]).await.unwrap();
     assert_eq!(collect(&mut peer, 500).await, before);
@@ -69,19 +70,32 @@ async fn revisions_increase_with_every_save_and_loads_report_the_latest() {
     let first = load_config(&cfg.store).await.unwrap();
     let again = load_config(&cfg.store).await.unwrap();
     assert_eq!(again.revision, first.revision);
+    assert!(Arc::ptr_eq(&first, &again));
 
     let a = save_templates(&cfg.store, &state, &templates)
         .await
         .unwrap();
+    assert!(Arc::ptr_eq(&a, &cfg.store.load().await.unwrap()));
     let b = set_auto_reply_enabled(&cfg.store, &state, false)
         .await
         .unwrap();
+    assert!(Arc::ptr_eq(&b, &cfg.store.load().await.unwrap()));
     let c = save_auto_reply(&cfg.store, &state, &b.auto_reply)
         .await
         .unwrap();
     assert!(first.revision < a.revision && a.revision < b.revision && b.revision < c.revision);
     let loaded = load_config(&cfg.store).await.unwrap();
     assert_eq!(loaded, c);
+    assert!(Arc::ptr_eq(&loaded, &c));
+    assert!(first.auto_reply.enabled());
+    assert_eq!(
+        serde_json::to_value(&loaded).unwrap(),
+        serde_json::json!({
+            "revision": loaded.revision,
+            "templates": &loaded.templates,
+            "auto_reply": &loaded.auto_reply,
+        })
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

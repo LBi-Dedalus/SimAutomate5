@@ -20,7 +20,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net", "sync", "io-util"] }
 anyhow = "1"
@@ -28,4 +28,3 @@ chrono = { version = "0.4", features = ["serde"] }
 tauri-plugin-notification = "2"
 russh = { version = "0.64", default-features = false, features = ["ring", "flate2", "rsa"] }
 russh-config = "0.58"
-

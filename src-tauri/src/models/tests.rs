@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use super::*;
+use crate::protocol::astm::AstmEndingMode;
 
 fn spec(json: &str) -> Result<ConnectionSpec, String> {
     let req: ConnectRequest = serde_json::from_str(json).unwrap();

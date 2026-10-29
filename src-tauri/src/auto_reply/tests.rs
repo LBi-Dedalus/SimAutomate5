@@ -1,10 +1,9 @@
 use super::config::{FieldNumber, SegmentId, MAX_DELAY_MS, MAX_RULES};
 use super::matching::glob_match;
 use super::*;
-use crate::config_store::{
-    builtin_templates, AutobuildMode, Template, TemplateId, TemplateVariable,
-};
+use crate::config_store::builtin_templates;
 use crate::protocol::frames::FrameEvent;
+use crate::templates::{AutobuildMode, Template, TemplateVariable};
 use crate::translate;
 
 fn rule(
@@ -790,10 +789,6 @@ fn newtypes_keep_the_wire_format_of_plain_strings_and_numbers() {
         action
     );
 
-    assert_eq!(
-        serde_json::to_string(&TemplateId::from("a")).unwrap(),
-        "\"a\""
-    );
     assert_eq!(
         serde_json::to_string(&SegmentId::from("PID")).unwrap(),
         "\"PID\""
