@@ -28,14 +28,17 @@ mod document;
 mod model;
 mod validation;
 
-use std::{path::{Path, PathBuf}, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
-use crate::auto_reply::{AutoReplyConfig, AutoReplyRuleSet};
+use crate::auto_reply::AutoReplyConfig;
 
+use crate::templates::Template;
 #[cfg(test)]
 pub(crate) use defaults::builtin_templates;
 pub(crate) use document::config_path;
-use crate::templates::Template;
 pub use model::RevisionedConfig;
 
 use defaults::default_auto_reply_for;
@@ -73,7 +76,10 @@ impl ConfigStore {
     }
 
     /// Saves the templates (refused when a rule would break).
-    pub async fn save_templates(&self, templates: &[Template]) -> Result<Arc<RevisionedConfig>, String> {
+    pub async fn save_templates(
+        &self,
+        templates: &[Template],
+    ) -> Result<Arc<RevisionedConfig>, String> {
         self.save_with(|path, revision| save_templates_to(path, revision, templates))
             .await
     }
@@ -87,7 +93,10 @@ impl ConfigStore {
     }
 
     /// Persists the master switch only; the saved rules are not touched.
-    pub async fn set_auto_reply_enabled(&self, enabled: bool) -> Result<Arc<RevisionedConfig>, String> {
+    pub async fn set_auto_reply_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<Arc<RevisionedConfig>, String> {
         self.save_with(|path, revision| set_auto_reply_enabled_in(path, revision, enabled))
             .await
     }
@@ -111,6 +120,7 @@ impl ConfigStore {
 fn load_from(path: &Path, revision: u64) -> Result<RevisionedConfig, String> {
     let doc = read_config(path)?;
     let rules = compile_at(path, &doc.auto_reply, &doc.templates)?;
+
     Ok(RevisionedConfig {
         revision,
         templates: doc.templates,
@@ -178,14 +188,16 @@ fn save_templates_to(
             "Refused: the template \"{template_id}\" is used by the auto reply rule \"{rule_name}\""
         ));
     }
-    AutoReplyRuleSet::compile(&doc.auto_reply, templates)
-        .map_err(|err| format!("Refused: the auto reply rules would no longer work: {err}"))?;
-    doc.templates = templates.to_vec();
-    if key_missing {
+    let (auto_reply, ruleset) = if key_missing {
         // Same as a reload would give for the new library.
-        doc.auto_reply = default_auto_reply_for(templates);
-    }
-    let rules = compile_at(path, &doc.auto_reply, templates)?;
+        default_auto_reply_for(templates)
+    } else {
+        let rules = compile_at(path, &doc.auto_reply, templates)
+            .map_err(|err| format!("Refused: the auto reply rules would no longer work: {err}"))?;
+        (doc.auto_reply, rules)
+    };
+    doc.auto_reply = auto_reply;
+    doc.templates = templates.to_vec();
     doc.root.insert(
         TEMPLATES_KEY.to_string(),
         serde_json::to_value(templates).map_err(|err| err.to_string())?,
@@ -195,7 +207,7 @@ fn save_templates_to(
         revision,
         templates: doc.templates,
         auto_reply: doc.auto_reply,
-        rules,
+        rules: ruleset,
     })
 }
 

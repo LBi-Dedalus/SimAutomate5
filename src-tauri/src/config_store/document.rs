@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Map, Value};
 
-use super::defaults::{builtin_templates, default_auto_reply_for};
+use super::defaults::{builtin_templates, default_auto_reply};
 use crate::templates::Template;
 use super::validation::validate_templates;
 use crate::auto_reply::{AutoReplyConfig, RawAutoReplyConfig};
@@ -73,7 +73,7 @@ pub(super) fn read_config(path: &Path) -> Result<ConfigDocument, String> {
             .map_err(|err| format!("Invalid \"{TEMPLATES_KEY}\" in {}: {err}", path.display()))?,
     };
     let auto_reply = match root.get(AUTO_REPLY_KEY) {
-        None => default_auto_reply_for(&templates),
+        None => default_auto_reply(),
         Some(value) => parse_auto_reply(value)
             .map_err(|err| format!("Invalid \"{AUTO_REPLY_KEY}\" in {}: {err}", path.display()))?,
     };

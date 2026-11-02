@@ -1,5 +1,7 @@
 //! Built-in defaults: the template library and the auto reply rules used until first saved.
 
+use std::sync::Arc;
+
 use crate::templates::{AutobuildMode, Template, TemplateVariable};
 use crate::auto_reply::{
     AutoReplyAction, AutoReplyCondition, AutoReplyConfig, AutoReplyOperator, AutoReplyRuleSet,
@@ -127,11 +129,12 @@ pub(super) fn default_auto_reply() -> AutoReplyConfig {
 
 /// The default rules, or the empty configuration when a template they use is missing (only
 /// reachable with a hand-edited file).
-pub(super) fn default_auto_reply_for(templates: &[Template]) -> AutoReplyConfig {
+pub(super) fn default_auto_reply_for(templates: &[Template]) -> (AutoReplyConfig, Arc<AutoReplyRuleSet>) {
     let defaults = default_auto_reply();
-    if AutoReplyRuleSet::compile(&defaults, templates).is_ok() {
-        defaults
-    } else {
-        AutoReplyConfig::default()
+    let rules = AutoReplyRuleSet::compile(&defaults, templates);
+
+    match rules {
+        Ok(rules) => (defaults, Arc::new(rules)),
+        Err(_) => (AutoReplyConfig::default(), Arc::new(AutoReplyRuleSet::disabled()))
     }
 }

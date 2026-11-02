@@ -10,9 +10,9 @@ use super::config::{
 };
 use super::matching::{condition_matches, type_matches};
 use super::template::{CompiledTemplate, FramePart};
-use crate::templates::Template;
 use crate::protocol::frames::FrameEvent;
 use crate::protocol::hl7::{parse_hl7, Hl7Message};
+use crate::templates::Template;
 use crate::translate::{ControlToken, ControlTokenEncoder};
 
 #[derive(Debug)]
@@ -140,42 +140,7 @@ impl AutoReplyRuleSet {
 
 impl CompiledAutoReplyRule {
     fn compile(rule: &AutoReplyRule, templates: &[Template]) -> Result<Self, String> {
-        let label = format!("rule \"{}\"", rule.name().trim());
-        let action = match rule.action() {
-            AutoReplyAction::Template { template_id } => {
-                let template = templates
-                    .iter()
-                    .find(|template| &template.id == template_id)
-                    .ok_or_else(|| {
-                        format!("{label} uses the template \"{template_id}\", which does not exist")
-                    })?;
-                let request_available = matches!(rule.trigger(), AutoReplyTrigger::Hl7 { .. });
-                CompiledAutoReplyAction::Template(
-                    CompiledTemplate::compile(template, request_available).map_err(|err| {
-                        format!(
-                            "{label} uses the template \"{}\", which cannot be used: {err}",
-                            template.name
-                        )
-                    })?,
-                )
-            }
-            AutoReplyAction::None => CompiledAutoReplyAction::None,
-            AutoReplyAction::Literal { text } => {
-                let frames: Vec<Vec<u8>> = text
-                    .lines()
-                    .map(ControlTokenEncoder::encode_all)
-                    .filter(|frame| !frame.is_empty())
-                    .collect();
-                if frames.is_empty() {
-                    return Err(format!("{label}: the literal response is empty"));
-                }
-                CompiledAutoReplyAction::Literal(frames)
-            }
-            AutoReplyAction::Hl7Ack { message_type, code } => CompiledAutoReplyAction::Hl7Ack {
-                message_type: message_type.clone(),
-                code: code.clone(),
-            },
-        };
+        let action = compile_auto_reply_action(rule, templates)?;
         Ok(Self {
             name: rule.name().trim().to_string(),
             enabled: rule.enabled(),
@@ -243,6 +208,49 @@ impl CompiledAutoReplyRule {
                 Ok(vec![frame])
             }
         }
+    }
+}
+
+fn compile_auto_reply_action(
+    rule: &AutoReplyRule,
+    templates: &[Template],
+) -> Result<CompiledAutoReplyAction, String> {
+    let label = format!("rule \"{}\"", rule.name().trim());
+
+    match rule.action() {
+        AutoReplyAction::Template { template_id } => {
+            let template = templates
+                .iter()
+                .find(|template| &template.id == template_id)
+                .ok_or_else(|| {
+                    format!("{label} uses the template \"{template_id}\", which does not exist")
+                })?;
+            let request_available = matches!(rule.trigger(), AutoReplyTrigger::Hl7 { .. });
+            Ok(CompiledAutoReplyAction::Template(
+                CompiledTemplate::compile(template, request_available).map_err(|err| {
+                    format!(
+                        "{label} uses the template \"{}\", which cannot be used: {err}",
+                        template.name
+                    )
+                })?,
+            ))
+        }
+        AutoReplyAction::None => Ok(CompiledAutoReplyAction::None),
+        AutoReplyAction::Literal { text } => {
+            let frames: Vec<Vec<u8>> = text
+                .lines()
+                .map(ControlTokenEncoder::encode_all)
+                .filter(|frame| !frame.is_empty())
+                .collect();
+            if frames.is_empty() {
+                return Err(format!("{label}: the literal response is empty"));
+            }
+            Ok(CompiledAutoReplyAction::Literal(frames))
+        }
+        AutoReplyAction::Hl7Ack { message_type, code } => Ok(CompiledAutoReplyAction::Hl7Ack {
+            message_type: message_type.clone(),
+            code: code.clone(),
+        }),
     }
 }
 
