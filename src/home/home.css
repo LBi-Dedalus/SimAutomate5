@@ -129,6 +129,27 @@
     align-items: center;
   }
 
+  /* The copy button sits beside the card (a button cannot nest another), so the wrapper is a plain block. */
+  & .card-wrap {
+    display: block;
+    position: relative;
+  }
+
+  & .card-wrap > .card {
+    width: 100%;
+  }
+
+  /* Keeps the header's arrow clear of the copy button. */
+  & .card-wrap > .card > div:first-child {
+    padding-right: 64px;
+  }
+
+  & .card-copy {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+  }
+
   & small {
     color: var(--mute);
     font-size: var(--text-7);

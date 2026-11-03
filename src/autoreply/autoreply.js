@@ -460,7 +460,11 @@ function renderToolbar() {
   $("ar-guard-discard").disabled = saving || togglingMaster;
   $("ar-guard-cancel").disabled = saving;
   // The badge shows what the backend applies, never the draft or an unconfirmed toggle.
-  $("autoreply-badge").classList.toggle("hidden", !(loaded && enabled));
+  const badge = $("autoreply-badge");
+  badge.classList.toggle("hidden", !loaded);
+  badge.textContent = enabled ? "ON" : "OFF";
+  badge.classList.toggle("ok", loaded && enabled);
+  badge.classList.toggle("mute", loaded && !enabled);
   renderStatus();
 }
 

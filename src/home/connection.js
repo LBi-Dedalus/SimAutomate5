@@ -239,7 +239,9 @@ function renderRecent() {
       endpoint: endpointText(entry),
     });
     card.querySelector(".badge").classList.toggle("mute", !client);
-    Object.assign(card.dataset, entryData(entry));
+    // Each action node reads the endpoint from its own dataset (the card and the copy button).
+    for (const node of card.querySelectorAll("[data-action]")) Object.assign(node.dataset, entryData(entry));
+    card.querySelector(".card-copy").setAttribute("aria-label", `Copy ${endpointText(entry)} to the connection form`);
     list.appendChild(card);
   }
 
@@ -276,6 +278,24 @@ function useRecent(entry) {
   });
 }
 
+/** Fills the connection form with a recent endpoint's configuration, without starting a session. */
+function copyRecent(entry) {
+  showConnectError(null);
+  setMode(entry.mode);
+  if (isServerMode(entry.mode)) {
+    setField("server-port", entry.port);
+  } else {
+    setField("host", entry.host);
+    setField("port", entry.port);
+  }
+  if (isSshMode(entry.mode)) {
+    setField("ssh-host", entry.sshHost);
+    setField("ssh-port", entry.sshPort);
+    setField("ssh-user", entry.sshUser ?? "");
+  }
+  document.getElementById("connect-form").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
 window.actions ??= {};
 window.actions.home = {
   setClient: () => setMode("client"),
@@ -292,6 +312,7 @@ window.actions.home = {
     renderRecent();
   },
   useRecent: (ev, el) => useRecent(el.dataset),
+  copyRecent: (ev, el) => copyRecent(el.dataset),
 };
 
 init();

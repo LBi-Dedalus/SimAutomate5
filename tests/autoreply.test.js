@@ -431,7 +431,8 @@ test("a failed switch change is reported and the control returns to the applied 
   await tick();
   assert.match(bannerText(), /Could not enable automatic replies: disk full/);
   assert.equal(getNode("ar-enabled").checked, false);
-  assert.equal(getNode("autoreply-badge").hidden, true);
+  assert.equal(getNode("autoreply-badge").hidden, false);
+  assert.equal(getNode("autoreply-badge").textContent, "OFF");
 });
 
 test("a pending switch change refuses every rules save, then later saves carry the confirmed flag", async () => {
@@ -446,7 +447,8 @@ test("a pending switch change refuses every rules save, then later saves carry t
       assert.equal(getNode("ar-enabled").disabled, true);
       assert.equal(getNode("ar-save").disabled, true, "Save disabled while the switch is pending");
       assert.equal(getNode("ar-discard").disabled, true);
-      assert.equal(getNode("autoreply-badge").hidden, !initial, "badge shows only the confirmed state");
+      assert.equal(getNode("autoreply-badge").hidden, false, "badge shown once loaded");
+      assert.equal(getNode("autoreply-badge").textContent, initial ? "ON" : "OFF", "badge shows only the confirmed state");
 
       if (via === "save") {
         getNode("ar-save").fire("click");
@@ -502,7 +504,8 @@ test("a failed pending switch change restores the confirmed state and allows a s
   await tick();
   assert.match(bannerText(), /Could not enable automatic replies: disk full/);
   assert.equal(getNode("ar-enabled").checked, false);
-  assert.equal(getNode("autoreply-badge").hidden, true);
+  assert.equal(getNode("autoreply-badge").hidden, false);
+  assert.equal(getNode("autoreply-badge").textContent, "OFF");
   assert.equal(getNode("ar-dirty").hidden, false);
   backend.toggleGate = null;
   backend.failToggle = null;
@@ -649,12 +652,14 @@ test("the status strip shows paused, unavailable and loading states", async () =
 
 test("a templates save refreshes the confirmed switch and badge without clobbering the draft", async () => {
   await fresh({ enabled: false, rules: [PERSISTED_RULE] });
-  assert.equal(getNode("autoreply-badge").hidden, true);
+  assert.equal(getNode("autoreply-badge").hidden, false);
+  assert.equal(getNode("autoreply-badge").textContent, "OFF");
   assert.equal(getNode("ar-enabled").checked, false);
 
   // Clean draft: the effective config returned by the templates save is simply shown.
   publish({ enabled: true, rules: [PERSISTED_RULE] });
   assert.equal(getNode("autoreply-badge").hidden, false);
+  assert.equal(getNode("autoreply-badge").textContent, "ON");
   assert.equal(getNode("ar-enabled").checked, true);
   assert.equal(getNode("ar-dirty").hidden, true);
   assert.equal(calls("save_auto_reply").length, 0);
@@ -665,7 +670,8 @@ test("a templates save refreshes the confirmed switch and badge without clobberi
   publish({ enabled: false, rules: [PERSISTED_RULE] });
   assert.equal(rows().length, 2, "draft kept");
   assert.equal(getNode("ar-dirty").hidden, false);
-  assert.equal(getNode("autoreply-badge").hidden, true);
+  assert.equal(getNode("autoreply-badge").hidden, false);
+  assert.equal(getNode("autoreply-badge").textContent, "OFF");
   assert.equal(getNode("ar-enabled").checked, false);
   getNode("ar-save").fire("click");
   await tick();

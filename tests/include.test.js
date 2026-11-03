@@ -336,7 +336,8 @@ test("real template files: whitespace between tags is dropped and slots resolve"
   await installTemplates(["home/recent-card.html"]);
   const { cloneTemplate } = await import("../src/include.js");
   const card = cloneTemplate("home/recent-card.html", { kind: "Client", verb: "Connect ", endpoint: "h:1" });
-  assert.equal(card.tag, "button");
+  assert.equal(card.tag, "div");
+  assert.equal(card.children[0].tag, "button");
   assert.equal(card.querySelector('[data-slot="endpoint"]').textContent, "h:1");
   assert.equal(card.querySelector('[data-slot="verb"]').textContent, "Connect ");
 });

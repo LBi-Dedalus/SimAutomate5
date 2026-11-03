@@ -1,11 +1,14 @@
-<!-- One recent endpoint on Home. Slots: kind (also the badge handle), verb, endpoint. -->
-<button type="button" class="card" data-action="click:home.useRecent">
-  <div>
-    <span class="badge" data-slot="kind"></span>
-    <small class="go">
-      <span class="verb" data-slot="verb"></span>
-      <span>↗</span>
-    </small>
-  </div>
-  <b data-slot="endpoint"></b>
-</button>
+<!-- One recent endpoint on Home. Slots: kind (also the badge handle), verb, endpoint. The copy button is a sibling of the card because a button cannot nest another. -->
+<div class="card-wrap">
+  <button type="button" class="card" data-action="click:home.useRecent">
+    <div>
+      <span class="badge" data-slot="kind"></span>
+      <small class="go">
+        <span class="verb" data-slot="verb"></span>
+        <span>↗</span>
+      </small>
+    </div>
+    <b data-slot="endpoint"></b>
+  </button>
+  <button type="button" class="small ghost card-copy" data-action="click:home.copyRecent" title="Copy this configuration to the connection form">Copy</button>
+</div>
