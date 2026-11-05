@@ -1,7 +1,7 @@
 //! Request DTOs sent by the frontend (wire shapes, not yet validated) and their responses.
 
-use serde::{Deserialize, Serialize};
 use crate::protocol::astm::AstmEndingMode;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -56,9 +56,4 @@ pub struct AutoBuildRequest {
     pub input: String,
     #[serde(rename = "no_etb", with = "no_etb_flag")]
     pub astm_ending: AstmEndingMode,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct BuildResponse {
-    pub output: String,
 }

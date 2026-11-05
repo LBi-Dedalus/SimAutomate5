@@ -16,9 +16,7 @@ mod transport;
 use auto_build::auto_build;
 use auto_reply::AutoReplyConfig;
 use config_store::{ConfigStore, RevisionedConfig};
-use models::{
-    AutoBuildRequest, BuildResponse, ConnectRequest, FrontendLogEntry, LogLevel, SendRequest,
-};
+use models::{AutoBuildRequest, ConnectRequest, FrontendLogEntry, LogLevel, SendRequest};
 use reporting::{AppLogger, ConnectionReporterFactory, Logger, TauriSink};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, RunEvent, State};
@@ -93,7 +91,7 @@ fn log_request(logger: &dyn Logger, what: &str, session_id: &str) {
 async fn auto_build_message_cmd(
     logger: State<'_, SharedLogger>,
     req: AutoBuildRequest,
-) -> Result<BuildResponse, String> {
+) -> Result<String, String> {
     logger.log_backend(
         LogLevel::Inf,
         file!(),
@@ -103,15 +101,7 @@ async fn auto_build_message_cmd(
             req.input.chars().count()
         ),
     );
-    auto_build(req).map_err(|err| {
-        logger.log_backend(
-            LogLevel::Err,
-            file!(),
-            line!(),
-            &format!("auto_build_message failed: {err}"),
-        );
-        err.to_string()
-    })
+    Ok(auto_build(req.input, req.astm_ending))
 }
 
 #[tauri::command]

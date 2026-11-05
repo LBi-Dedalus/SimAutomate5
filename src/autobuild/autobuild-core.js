@@ -7,7 +7,7 @@
  */
 export async function buildForTarget(deps, input, noEtb, { deliver }) {
   const target = deps.activeId();
-  const { output } = await deps.invoke("auto_build_message_cmd", {
+  const output = await deps.invoke("auto_build_message_cmd", {
     req: { input, no_etb: noEtb },
   });
   if (!deliver) return { output, target, delivered: false, error: null };
@@ -89,7 +89,7 @@ export function createComposerAutobuild(deps) {
  */
 export async function applyTemplateAutobuild(deps, text, { autobuild, noEtb }) {
   if (!autobuild) return text;
-  const { output } = await deps.invoke("auto_build_message_cmd", {
+  const output = await deps.invoke("auto_build_message_cmd", {
     req: { input: text, no_etb: Boolean(noEtb) },
   });
   return output;

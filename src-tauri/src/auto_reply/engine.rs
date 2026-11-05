@@ -10,8 +10,11 @@ use super::config::{
 };
 use super::matching::{condition_matches, type_matches};
 use super::template::{CompiledTemplate, FramePart};
+use crate::auto_build::auto_build_from_raw;
+use crate::protocol::astm::AstmEndingMode;
 use crate::protocol::frames::FrameEvent;
 use crate::protocol::hl7::{parse_hl7, Hl7Message};
+use crate::templates::AutobuildMode;
 use crate::templates::Template;
 use crate::translate::{ControlToken, ControlTokenEncoder};
 
@@ -184,7 +187,19 @@ impl CompiledAutoReplyRule {
                     }
                     frames.push(frame);
                 }
-                Ok(frames)
+                let frames_result: Vec<Vec<u8>> =
+                    if let AutobuildMode::Enabled { no_etb } = template.autobuild {
+                        auto_build_from_raw(
+                            frames,
+                            match no_etb {
+                                true => AstmEndingMode::EtxForEveryRecord,
+                                false => AstmEndingMode::EtbBetweenRecords,
+                            },
+                        )
+                    } else {
+                        frames
+                    };
+                Ok(frames_result)
             }
             CompiledAutoReplyAction::Hl7Ack { message_type, code } => {
                 let request_id = hl7.and_then(Hl7Message::control_id).ok_or_else(|| {

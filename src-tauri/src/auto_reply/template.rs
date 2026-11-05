@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::templates::{Template, TemplateVariable};
+use crate::templates::{AutobuildMode, Template, TemplateVariable};
 use crate::translate;
 
 /// One fragment of a reply frame (one template line): either fixed bytes known at compile time,
@@ -22,6 +22,7 @@ pub(super) enum FramePart {
 /// One entry of `frames` per template line; the reply frame is the concatenation of its parts.
 #[derive(Debug)]
 pub(super) struct CompiledTemplate {
+    pub(super) autobuild: AutobuildMode,
     pub(super) frames: Vec<Vec<FramePart>>,
 }
 
@@ -133,6 +134,9 @@ impl CompiledTemplate {
         if frames.is_empty() {
             return Err("the template payload is empty".into());
         }
-        Ok(Self { frames })
+        Ok(Self {
+            autobuild: template.autobuild,
+            frames,
+        })
     }
 }

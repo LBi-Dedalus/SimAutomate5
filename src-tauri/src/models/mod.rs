@@ -12,7 +12,7 @@ pub use events::{
     ConnectionStatus, FrontendLogEntry, LogLevel, MessagePayload, MessageType, StatusPayload,
     MESSAGE_EVENT, STATUS_EVENT,
 };
-pub use request::{AutoBuildRequest, BuildResponse, ConnectRequest, SendRequest};
+pub use request::{AutoBuildRequest, ConnectRequest, SendRequest};
 
 #[cfg(test)]
 mod tests;

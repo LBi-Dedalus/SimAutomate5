@@ -1,26 +1,44 @@
-use anyhow::Result;
-
 use crate::{
-    models::{AutoBuildRequest, BuildResponse},
-    translate::{ControlToken, ControlTokenDecoder},
     protocol::astm::AstmEndingMode,
+    translate::{
+        ControlToken::{self, ENQ, EOT},
+        ControlTokenDecoder,
+    },
 };
 
-pub fn auto_build(req: AutoBuildRequest) -> Result<BuildResponse> {
-    let trimmed = req.input.trim_start();
+pub fn auto_build(input: String, astm_ending: AstmEndingMode) -> String {
+    let trimmed = input.trim_start_matches(|c| char::is_ascii_whitespace(&c));
     if trimmed.starts_with("H|") {
-        return Ok(BuildResponse {
-            output: build_astm(&req.input, req.astm_ending),
-        });
+        return build_astm(&input, astm_ending);
     }
 
     if trimmed.starts_with("MSH|") {
-        return Ok(BuildResponse {
-            output: build_mllp(&req.input),
-        });
+        return build_mllp(&input);
     }
 
-    Ok(BuildResponse { output: req.input })
+    return input;
+}
+
+pub fn auto_build_from_raw(frames: Vec<Vec<u8>>, astm_ending: AstmEndingMode) -> Vec<Vec<u8>> {
+    let Some(first_line) = frames.first() else {
+        return frames;
+    };
+
+    let decoded_first_line = String::from_utf8_lossy(first_line);
+    let trimmed_first_line =
+        decoded_first_line.trim_start_matches(|c| char::is_ascii_whitespace(&c));
+
+    if trimmed_first_line.starts_with("H|") {
+        let autobuilt = build_astm_raw(&frames, astm_ending);
+        return autobuilt;
+    }
+
+    if trimmed_first_line.starts_with("MSH|") {
+        let autobuilt = build_mllp_raw(&frames);
+        return vec![autobuilt.concat()];
+    }
+
+    return frames;
 }
 
 fn build_mllp(input: &str) -> String {
@@ -44,6 +62,27 @@ fn build_mllp(input: &str) -> String {
     built_lines.join("\n")
 }
 
+fn build_mllp_raw(input: &Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+    let mut built_lines = Vec::with_capacity(input.len() + 2);
+    built_lines.push(vec![ControlToken::VT.byte()]);
+
+    for line in input {
+        let line = line.trim_ascii();
+        if line.is_empty() {
+            continue;
+        }
+        let mut output = vec![];
+
+        output.extend(line);
+        output.push(ControlToken::CR.byte());
+
+        built_lines.push(output);
+    }
+
+    built_lines.push(vec![ControlToken::FS.byte(), ControlToken::CR.byte()]);
+    built_lines
+}
+
 fn build_astm(input: &str, ending: AstmEndingMode) -> String {
     let lines = input.lines().filter(|l| !l.is_empty()).collect::<Vec<_>>();
     let line_count = lines.len();
@@ -52,8 +91,8 @@ fn build_astm(input: &str, ending: AstmEndingMode) -> String {
     output.push("<ENQ>".to_string());
 
     for (idx, line) in lines.iter().enumerate() {
-        let segment = build_astm_segment(line, ending, idx, line_count);
-        output.push(ControlTokenDecoder::decode_all(segment.as_bytes()));
+        let segment = build_astm_segment(line.as_bytes(), ending, idx, line_count);
+        output.push(ControlTokenDecoder::decode_all(&segment));
     }
 
     output.push("<EOT>".to_string());
@@ -61,27 +100,53 @@ fn build_astm(input: &str, ending: AstmEndingMode) -> String {
     output.join("\n")
 }
 
-fn build_astm_segment(line: &str, ending: AstmEndingMode, idx: usize, line_count: usize) -> String {
-    let segment_no = (idx + 1) % 8;
-    let mut body = format!("{}{}", segment_no, line);
+fn build_astm_raw(frames: &Vec<Vec<u8>>, astm_ending: AstmEndingMode) -> Vec<Vec<u8>> {
+    let lines = frames
+        .iter()
+        .map(|f| f.trim_ascii())
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>();
+    let line_count = lines.len();
 
-    body.push(ControlToken::CR.char());
+    let mut output = Vec::with_capacity(line_count + 2);
+    output.push(vec![ENQ.byte()]);
+
+    for (idx, frame) in lines.iter().enumerate() {
+        let segment = build_astm_segment(frame, astm_ending, idx, line_count);
+        output.push(segment);
+    }
+
+    output.push(vec![EOT.byte()]);
+    output
+}
+
+fn build_astm_segment(
+    line: &[u8],
+    ending: AstmEndingMode,
+    idx: usize,
+    line_count: usize,
+) -> Vec<u8> {
+    let segment_no = (idx + 1) % 8;
+    let mut body: Vec<u8> = vec![(('0' as u8) + (segment_no as u8))];
+    body.extend(line);
+
+    body.push(ControlToken::CR.byte());
     let is_last = idx == line_count - 1;
     body.push(match ending {
-        AstmEndingMode::EtxForEveryRecord => ControlToken::ETX.char(),
-        AstmEndingMode::EtbBetweenRecords if is_last => ControlToken::ETX.char(),
-        AstmEndingMode::EtbBetweenRecords => ControlToken::ETB.char(),
+        AstmEndingMode::EtxForEveryRecord => ControlToken::ETX.byte(),
+        AstmEndingMode::EtbBetweenRecords if is_last => ControlToken::ETX.byte(),
+        AstmEndingMode::EtbBetweenRecords => ControlToken::ETB.byte(),
     });
 
     // `body.as_bytes()` are the UTF-8 wire bytes, so the checksum matches what is sent.
-    let checksum = astm_checksum(body.as_bytes());
+    let checksum = astm_checksum(&body);
 
-    let mut output = String::new();
-    output.push(ControlToken::STX.char());
-    output.push_str(&body);
-    output.push_str(&checksum);
-    output.push(ControlToken::CR.char());
-    output.push(ControlToken::LF.char());
+    let mut output = Vec::new();
+    output.push(ControlToken::STX.byte());
+    output.extend(&body);
+    output.extend(checksum.as_bytes());
+    output.push(ControlToken::CR.byte());
+    output.push(ControlToken::LF.byte());
 
     output
 }
