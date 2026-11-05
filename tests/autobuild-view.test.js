@@ -96,7 +96,7 @@ function setup({ stored, active = "s1", sessions = ["s1"], invoke, storage } = {
       invoke ??
       (async (cmd, args) => {
         log.calls.push({ cmd, args });
-        return { output: `built:${args.req.input}:${args.req.no_etb}` };
+        return `built:${args.req.input}:${args.req.no_etb}`;
       }),
     activeId: () => active,
     hasSession: (id) => sessions.includes(id),
@@ -286,7 +286,7 @@ test("a build finishing after another card was loaded does not overwrite the bui
   let release;
   const t = setup({
     stored: STORED,
-    invoke: () => new Promise((r) => (release = () => r({ output: "LATE" }))),
+    invoke: () => new Promise((r) => (release = () => r("LATE"))),
   });
   t.type("slow");
   t.$("ab-form").fire("submit");
@@ -301,7 +301,7 @@ test("a build finishing after another card was loaded does not overwrite the bui
 
 test("a build finishing after the input was edited does not overwrite the output", async () => {
   let release;
-  const t = setup({ invoke: () => new Promise((r) => (release = () => r({ output: "LATE" }))) });
+  const t = setup({ invoke: () => new Promise((r) => (release = () => r("LATE"))) });
   t.type("a");
   t.$("build-message").fire("click");
   t.type("ab");

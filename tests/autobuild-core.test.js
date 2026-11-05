@@ -4,14 +4,14 @@ import { buildForTarget, deliverToTarget, applyTemplateAutobuild, createComposer
 
 test("applyTemplateAutobuild: off returns the text and never invokes", async () => {
   const calls = [];
-  const deps = { invoke: async (...a) => (calls.push(a), { output: "X" }) };
+  const deps = { invoke: async (...a) => (calls.push(a), "X") };
   assert.equal(await applyTemplateAutobuild(deps, "H|abc", { autobuild: false, noEtb: true }), "H|abc");
   assert.equal(calls.length, 0);
 });
 
 test("applyTemplateAutobuild: on invokes with {input, no_etb} and returns the output", async () => {
   const calls = [];
-  const deps = { invoke: async (...a) => (calls.push(a), { output: "<VT>built" }) };
+  const deps = { invoke: async (...a) => (calls.push(a), "<VT>built") };
   assert.equal(await applyTemplateAutobuild(deps, "MSH|x", { autobuild: true, noEtb: true }), "<VT>built");
   assert.equal(await applyTemplateAutobuild(deps, "H|x", { autobuild: true, noEtb: false }), "<VT>built");
   assert.deepEqual(calls[0], ["auto_build_message_cmd", { req: { input: "MSH|x", no_etb: true } }]);
@@ -29,7 +29,7 @@ function makeDeps({ active = "s1", sessions = ["s1", "s2"], accept = true } = {}
     state,
     invoke: async (cmd, args) => {
       state.calls.push({ cmd, args });
-      return { output: `built:${args.req.input}` };
+      return `built:${args.req.input}`;
     },
     activeId: () => state.active,
     hasSession: (id) => sessions.includes(id),
@@ -93,7 +93,7 @@ test("buildForTarget without deliver does not touch drafts", async () => {
 function composerHarness({ text = "H|a", sessions = ["s1", "s2"], invoke } = {}) {
   const s = { active: "s1", field: text, drafts: { s1: text, s2: "other" }, alive: new Set(sessions), errors: [], calls: [] };
   const deps = {
-    invoke: invoke ?? (async (cmd, args) => (s.calls.push({ cmd, args }), { output: `<STX>${args.req.input}<ETX>` })),
+    invoke: invoke ?? (async (cmd, args) => (s.calls.push({ cmd, args }), `<STX>${args.req.input}<ETX>`)),
     activeId: () => s.active,
     hasSession: (id) => s.alive.has(id),
     setDraft: (id, t) => (s.alive.has(id) ? ((s.drafts[id] = t), true) : false),

@@ -545,7 +545,7 @@ test("autobuild flags: dirty tracking, save payload, badge and legacy defaults",
   assert.equal(getNode("tpl-dirty").hidden, true);
   assert.equal(cardNamed("Alpha").text.includes("Autobuild"), false);
 
-  useBackend(SEED, async () => ({ output: "B" }));
+  useBackend(SEED, async () => "B");
   check("tpl-autobuild", true);
   assert.equal(getNode("tpl-dirty").hidden, false, "toggling Autobuild makes the draft dirty");
   assert.equal(getNode("tpl-autobuild-noetb").disabled, false);
@@ -589,7 +589,7 @@ test("Send builds first and keeps the target captured before the await; double c
   getNode("tpl-load").fire("click"); // also guarded
   assert.equal(getNode("tpl-send").disabled, true);
   store.select(s2); // the user switches session while the build is pending
-  gate.resolve({ output: "<VT>BUILT<FS><CR>" });
+  gate.resolve("<VT>BUILT<FS><CR>");
   await tick();
   await tick();
   assert.equal(sends().length, 1, "one send only");
@@ -622,7 +622,7 @@ test("Load in composer delivers the built text to the session captured before th
   check("tpl-autobuild", true);
   getNode("tpl-load").fire("click");
   store.select(s2);
-  gate.resolve({ output: "LOADED" });
+  gate.resolve("LOADED");
   await tick();
   await tick();
   assert.equal(store.get(s1).draft, "LOADED");
@@ -636,7 +636,7 @@ test("Load in composer delivers the built text to the session captured before th
   getNode("tpl-load").fire("click");
   store.remove?.(s1);
   store.select(s2);
-  gate2.resolve({ output: "ORPHAN" });
+  gate2.resolve("ORPHAN");
   await tick();
   await tick();
   assert.notEqual(store.get(s2).draft, "ORPHAN");
@@ -689,10 +689,10 @@ test("single preview box: plain when off, built when on, no late overwrite", asy
   assert.match(getNode("tpl-preview").text, /ALPHA 1/, "plain text while pending");
   getNode("tpl-payload").type("ALPHA second");
   assert.equal(gates.length, 2);
-  gates[1].gate.resolve({ output: "NEW RESULT" });
+  gates[1].gate.resolve("NEW RESULT");
   await tick();
   assert.equal(getNode("tpl-preview").classes.has("pending"), false);
-  gates[0].gate.resolve({ output: "OLD RESULT" });
+  gates[0].gate.resolve("OLD RESULT");
   await tick();
   assert.match(getNode("tpl-preview").text, /NEW RESULT/);
   assert.doesNotMatch(getNode("tpl-preview").text, /OLD/);
@@ -702,7 +702,7 @@ test("single preview box: plain when off, built when on, no late overwrite", asy
   const pending = gates.at(-1);
   check("tpl-autobuild", false);
   assert.match(getNode("tpl-preview").text, /ALPHA third/);
-  pending.gate.resolve({ output: "LATE BUILT" });
+  pending.gate.resolve("LATE BUILT");
   await tick();
   assert.match(getNode("tpl-preview").text, /ALPHA third/);
   assert.doesNotMatch(getNode("tpl-preview").text, /LATE BUILT/);
@@ -713,7 +713,7 @@ test("single preview box: plain when off, built when on, no late overwrite", asy
   showView("templates");
   getNode("tpl-guard-discard").fire("click");
   open("Beta");
-  inflight.gate.resolve({ output: "FROM ALPHA" });
+  inflight.gate.resolve("FROM ALPHA");
   await tick();
   assert.doesNotMatch(getNode("tpl-preview").text, /FROM ALPHA/);
 });
@@ -735,7 +735,7 @@ test("late Load result does not navigate away from another view nor bypass its l
   });
   showView("autoreply", { force: true });
   store.select(s2);
-  gate.resolve({ output: "LATE" });
+  gate.resolve("LATE");
   await tick();
   await tick();
   assert.equal(currentView(), "autoreply", "no forced navigation");
@@ -751,7 +751,7 @@ test("late Load result does not navigate away from another view nor bypass its l
   const gate2 = deferred();
   useBackend(SEED, () => gate2.promise);
   getNode("tpl-load").fire("click");
-  gate2.resolve({ output: "NORMAL" });
+  gate2.resolve("NORMAL");
   await tick();
   await tick();
   assert.equal(store.get(s1).draft, "NORMAL");
@@ -767,7 +767,7 @@ const typeVar = (node, value) => {
 
 test("save, delete and send show no confirmation banner and clear a previous error", async () => {
   await boot();
-  useBackend(SEED, () => ({ output: "x" }));
+  useBackend(SEED, () => "x");
   open("Alpha");
   getNode("tpl-payload").type("ALPHA z");
   getNode("tpl-banner").className = "banner error";
@@ -827,6 +827,7 @@ test("beforeunload is prevented while a background variable write is in flight",
 test("variable writes never persist unsaved template edits; discard keeps the value", async () => {
   await boot();
   open("Alpha");
+  useBackend(SEED, async () => "B");
   getNode("tpl-name").type("Renamed");
   getNode("tpl-payload").type("ALPHA {{X}} more");
   getNode("tpl-autobuild").checked = true;

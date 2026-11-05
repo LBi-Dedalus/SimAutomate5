@@ -92,5 +92,6 @@ export async function applyTemplateAutobuild(deps, text, { autobuild, noEtb }) {
   const output = await deps.invoke("auto_build_message_cmd", {
     req: { input: text, no_etb: Boolean(noEtb) },
   });
+  if (typeof output !== "string") throw new Error("the backend returned no output");
   return output;
 }

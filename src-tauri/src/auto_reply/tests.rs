@@ -429,23 +429,87 @@ fn template_variables_come_from_context_defaults_and_request() {
     assert!(now.chars().all(|c| c.is_ascii_digit()));
 }
 
+fn template_reply_frames(template: Template, request: &FrameEvent) -> Vec<Vec<u8>> {
+    let set = compile(
+        vec![rule("1", hl7("*"), None, use_template("t"))],
+        &[template],
+    )
+    .unwrap();
+    match set.evaluate(request) {
+        AutoReplyOutcome::Reply(reply) => reply.frames,
+        other => panic!("{other:?}"),
+    }
+}
+
+fn with_autobuild(mut template: Template, no_etb: bool) -> Template {
+    template.autobuild = AutobuildMode::Enabled { no_etb };
+    template
+}
+
 #[test]
-fn autobuild_template_options_do_not_affect_auto_replies() {
+fn autobuild_leaves_already_framed_or_unrecognised_templates_unchanged() {
     let plain = tpl("t", "<VT>A{{REQ_CONTROL_ID}}B<FS><CR>", &[]);
-    let mut built = plain.clone();
-    built.autobuild = AutobuildMode::Enabled { no_etb: true };
-    let frames = |template: Template| {
-        let set = compile(
-            vec![rule("1", hl7("*"), None, use_template("t"))],
-            &[template],
-        )
-        .unwrap();
-        match set.evaluate(&msg("ADT^A01", "R1", "")) {
-            AutoReplyOutcome::Reply(reply) => reply.frames,
-            other => panic!("{other:?}"),
-        }
-    };
-    assert_eq!(frames(plain), frames(built));
+    let request = msg("ADT^A01", "R1", "");
+    assert_eq!(
+        template_reply_frames(plain.clone(), &request),
+        template_reply_frames(with_autobuild(plain, true), &request)
+    );
+}
+
+#[test]
+fn autobuild_template_builds_a_single_mllp_frame_with_the_request_id() {
+    let payload = "MSH|^~\\&|X||ADR^A19|C1\nMSA|AA|{{REQ_CONTROL_ID}}\n";
+    let request = msg("ADT^A01", "R1", "");
+    let frames = template_reply_frames(with_autobuild(tpl("t", payload, &[]), false), &request);
+    assert_eq!(
+        frames,
+        vec![translate::ControlTokenEncoder::encode_all(
+            "<VT>MSH|^~\\&|X||ADR^A19|C1<CR>MSA|AA|R1<CR><FS><CR>"
+        )]
+    );
+}
+
+#[test]
+fn autobuild_off_keeps_the_template_lines_as_separate_raw_frames() {
+    let payload = "MSH|^~\\&|X||ADR^A19|C1\nMSA|AA|{{REQ_CONTROL_ID}}";
+    let frames = template_reply_frames(tpl("t", payload, &[]), &msg("ADT^A01", "R1", ""));
+    assert_eq!(frames.len(), 2);
+    assert_eq!(frames[1], b"MSA|AA|R1".to_vec());
+}
+
+#[test]
+fn autobuild_template_builds_astm_frames_and_honours_no_etb() {
+    let payload = "H|\\^&\nP|1|{{REQ_CONTROL_ID}}\nL|1";
+    let request = msg("ADT^A01", "R1", "");
+    let etb = template_reply_frames(with_autobuild(tpl("t", payload, &[]), false), &request);
+    assert_eq!(etb.len(), 5);
+    assert_eq!(etb[0], vec![0x05]);
+    assert_eq!(etb[4], vec![0x04]);
+    assert!(etb[1].contains(&0x17) && etb[2].contains(&0x17) && etb[3].contains(&0x03));
+    assert!(
+        etb[2].windows(2).any(|w| w == b"R1"),
+        "request id is substituted"
+    );
+
+    let etx = template_reply_frames(with_autobuild(tpl("t", payload, &[]), true), &request);
+    assert_eq!(etx.len(), 5);
+    assert!(etx[1..4]
+        .iter()
+        .all(|f| f.contains(&0x03) && !f.contains(&0x17)));
+}
+
+#[test]
+fn autobuild_template_echoes_a_non_utf8_request_id_byte_for_byte() {
+    let mut bytes = b"MSH|^~\\&|S|F|R|F|20260101||ADT^A01|ID-".to_vec();
+    bytes.push(0xE9);
+    bytes.extend(b"|P|2.4\r");
+    let payload = "MSH|^~\\&|X||ADR^A19|C1\nMSA|AA|{{REQ_CONTROL_ID}}";
+    let frames = template_reply_frames(
+        with_autobuild(tpl("t", payload, &[]), false),
+        &FrameEvent::Hl7(bytes),
+    );
+    assert_eq!(frames.len(), 1);
+    assert!(frames[0].windows(4).any(|w| w == [b'I', b'D', b'-', 0xE9]));
 }
 
 #[test]

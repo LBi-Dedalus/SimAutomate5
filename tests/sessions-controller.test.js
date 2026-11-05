@@ -217,7 +217,7 @@ test("autobuild delivers to the session captured before the await", async () => 
   const deps = {
     invoke: async () => {
       await gate;
-      return { output: "BUILT" };
+      return "BUILT";
     },
     activeId: () => active,
     hasSession: (id) => id in { A: 1, B: 1 },
@@ -235,7 +235,7 @@ test("autobuild delivers to the session captured before the await", async () => 
 });
 
 test("autobuild reports a closed or missing target instead of dropping output", async () => {
-  const base = { invoke: async () => ({ output: "O" }), setDraft: () => true };
+  const base = { invoke: async () => "O", setDraft: () => true };
   const none = await buildForTarget({ ...base, activeId: () => null, hasSession: () => false }, "i", false, { deliver: true });
   assert.equal(none.delivered, false);
   assert.equal(none.output, "O");

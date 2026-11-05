@@ -158,8 +158,6 @@ fn astm_checksum(body: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::AutoBuildRequest;
-    use crate::protocol::astm::AstmEndingMode;
     use crate::translate::ControlTokenEncoder;
     fn to_bytes(s: &str) -> Vec<u8> {
         ControlTokenEncoder::encode_all(s)
@@ -170,12 +168,93 @@ mod tests {
     }
 
     fn build_with(input: &str, astm_ending: AstmEndingMode) -> String {
-        auto_build(AutoBuildRequest {
-            input: input.to_string(),
-            astm_ending,
-        })
-        .unwrap()
-        .output
+        auto_build(input.to_string(), astm_ending)
+    }
+
+    fn raw(lines: &[&[u8]]) -> Vec<Vec<u8>> {
+        lines.iter().map(|l| l.to_vec()).collect()
+    }
+
+    fn checksum_ok(segment: &[u8]) -> bool {
+        let end = segment
+            .iter()
+            .position(|b| *b == 0x03 || *b == 0x17)
+            .unwrap();
+        let sum = segment[1..=end].iter().fold(0u8, |a, b| a.wrapping_add(*b));
+        segment[end + 1..end + 3] == *format!("{:02X}", sum).as_bytes()
+    }
+
+    #[test]
+    fn raw_mllp_is_a_single_frame_with_vt_cr_and_fs_cr() {
+        let frames = raw(&[
+            b"MSH|^~\\&|S|F|R|F|2026||ADT^A01|1|P|2.4",
+            b"PID|1||Caf\xC3\xA9",
+        ]);
+        let out = auto_build_from_raw(frames, AstmEndingMode::EtbBetweenRecords);
+        assert_eq!(
+            out,
+            vec![to_bytes(
+                "<VT>MSH|^~\\&|S|F|R|F|2026||ADT^A01|1|P|2.4<CR>PID|1||Café<CR><FS><CR>"
+            )]
+        );
+    }
+
+    #[test]
+    fn raw_mllp_trims_lines_skips_empty_ones_and_keeps_non_utf8_bytes() {
+        let frames = raw(&[
+            b"  MSH|^~\\&|S|F||F|2026||ACK|1|P|2.4 ",
+            b"",
+            b"MSA|AA|ID-\xE9",
+        ]);
+        let out = auto_build_from_raw(frames, AstmEndingMode::EtbBetweenRecords);
+        let mut expected = to_bytes("<VT>MSH|^~\\&|S|F||F|2026||ACK|1|P|2.4<CR>MSA|AA|ID-");
+        expected.extend([0xE9]);
+        expected.extend(to_bytes("<CR><FS><CR>"));
+        assert_eq!(out, vec![expected]);
+    }
+
+    #[test]
+    fn raw_astm_keeps_one_frame_per_record_between_enq_and_eot() {
+        let frames = raw(&[b"H|\\^&", b"P|1", b"L|1"]);
+        let out = auto_build_from_raw(frames, AstmEndingMode::EtbBetweenRecords);
+        assert_eq!(out.len(), 5);
+        assert_eq!(out[0], vec![0x05]);
+        assert_eq!(out[4], vec![0x04]);
+        for (i, segment) in out[1..4].iter().enumerate() {
+            assert_eq!(segment[0], 0x02);
+            assert_eq!(segment[1], b'1' + i as u8);
+            assert!(segment.ends_with(&[0x0D, 0x0A]));
+            assert!(checksum_ok(segment));
+        }
+        assert!(out[1].contains(&0x17) && out[2].contains(&0x17));
+        assert!(out[3].contains(&0x03) && !out[3].contains(&0x17));
+    }
+
+    #[test]
+    fn raw_astm_no_etb_ends_every_record_with_etx_and_covers_raw_bytes() {
+        let frames = raw(&[b"H|\\^&", b"", b"  C|1|\xE9  ", b"L|1"]);
+        let out = auto_build_from_raw(frames, AstmEndingMode::EtxForEveryRecord);
+        assert_eq!(
+            out.len(),
+            5,
+            "empty frames are dropped and numbering is contiguous"
+        );
+        assert_eq!(out[2][1], b'2');
+        assert!(out[2].contains(&0xE9), "non UTF-8 byte is not replaced");
+        for segment in &out[1..4] {
+            assert!(segment.contains(&0x03) && !segment.contains(&0x17));
+            assert!(checksum_ok(segment));
+        }
+    }
+
+    #[test]
+    fn raw_unrecognised_or_empty_input_is_returned_unchanged() {
+        let frames = raw(&[b"<VT>MSH|x", b"hello"]);
+        assert_eq!(
+            auto_build_from_raw(frames.clone(), AstmEndingMode::EtbBetweenRecords),
+            frames
+        );
+        assert!(auto_build_from_raw(Vec::new(), AstmEndingMode::EtbBetweenRecords).is_empty());
     }
 
     #[test]
