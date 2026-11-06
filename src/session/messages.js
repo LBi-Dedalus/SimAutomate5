@@ -37,6 +37,11 @@ export function activeSendTarget() {
   return sessions.sendTarget();
 }
 
+/** What a send to the given session would target right now (same rule as the selected one), or null. */
+export function sendTargetFor(id) {
+  return sessions.sendTarget(id);
+}
+
 /** Id of the selected session, or null. */
 export function activeSessionId() {
   return store.activeId;

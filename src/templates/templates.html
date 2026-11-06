@@ -93,7 +93,11 @@
       <footer>
         <span class="sp"></span>
         <button type="button" class="small outline" id="tpl-load" data-action="click:tpl.loadInComposer">Load in composer</button>
-        <button type="button" class="small" id="tpl-send" data-action="click:tpl.send" disabled>Send now ➤</button>
+        <span class="send-split">
+          <button type="button" class="small" id="tpl-send" data-action="click:tpl.send" disabled>Send</button>
+          <button type="button" class="small" id="tpl-send-menu" data-action="click:tpl.sendMenu" aria-haspopup="menu" aria-expanded="false" aria-controls="tpl-send-list" aria-label="Choose the session to send to" disabled>▾</button>
+          <div id="tpl-send-list" class="send-menu hidden" role="menu" aria-label="Send to session"></div>
+        </span>
       </footer>
     </div>
   </section>

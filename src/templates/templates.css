@@ -149,6 +149,93 @@
   margin-top: 4px;
 }
 
+/* Split Send button: quick send + arrow opening the session menu. */
+.send-split {
+  display: inline-flex;
+  align-items: stretch;
+
+  & > button {
+    margin: 0;
+  }
+
+  & #tpl-send {
+    max-width: 24rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  & #tpl-send-menu {
+    padding-inline: var(--space-2);
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left: 1px solid color-mix(in srgb, var(--primary-foreground) 40%, var(--primary));
+  }
+}
+
+/* position: fixed + coordinates from templates.js: no overflow container can clip it. */
+.send-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1500;
+  display: flex;
+  flex-direction: column;
+  min-width: 14rem;
+  max-width: min(22rem, calc(100vw - 16px));
+  padding: var(--space-1);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-medium);
+  background: var(--paper);
+  color: var(--fg);
+  box-shadow: 0 8px 28px rgb(15 42 58 / 0.2);
+
+  & button[role="menuitem"] {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-3);
+    width: 100%;
+    margin: 0;
+    padding: var(--space-1) var(--space-2);
+    border: 0;
+    border-radius: var(--radius-medium);
+    background: none;
+    color: var(--fg);
+    font-weight: var(--font-normal);
+    text-align: left;
+    white-space: normal;
+
+    &:hover:not(:disabled),
+    &:focus-visible {
+      background: var(--wash);
+      outline: 2px solid var(--ring);
+      outline-offset: -2px;
+    }
+
+    &:disabled {
+      color: var(--mute);
+      cursor: not-allowed;
+      opacity: 0.8;
+    }
+
+    & .sm-name {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-weight: var(--font-medium);
+    }
+
+    & .sm-state {
+      flex: none;
+      color: var(--mute);
+      font-size: var(--text-8);
+    }
+  }
+}
+
 @media (max-width: 1100px) {
   .bd {
     grid-template-columns: 1fr;

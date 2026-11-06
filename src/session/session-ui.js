@@ -4,20 +4,12 @@ import { el } from "../render.js";
 import { cloneTemplate } from "../include.js";
 import { sessions, store } from "./sessions.js";
 import { showView } from "../nav.js";
-import { isBusyStatus, isTerminalStatus } from "./sessions-core.js";
+import { isBusyStatus, isTerminalStatus, statusText } from "./sessions-core.js";
 import { isServerMode, modeLabel, describeEndpoint, connectionDetails } from "../home/recent-core.js";
 import { bindHint, bindTooltip, syncTooltip } from "../tooltip.js";
 import { requestRename } from "./rename.js";
 
 const SESSION_ITEM = "session/session-item.html";
-
-const STATUS_TEXT = {
-  disconnected: "Disconnected",
-  connecting: "Connecting",
-  listening: "Listening",
-  connected: "Connected",
-  error: "Error",
-};
 
 const $ = (id) => document.getElementById(id);
 
@@ -165,7 +157,7 @@ function renderSidebar() {
     const active = session.id === store.activeId;
     const item = cloneTemplate(SESSION_ITEM, {
       label: endpointLabel(session),
-      detail: [addressNote(session), modeLabel(session.mode), STATUS_TEXT[session.status] ?? session.status]
+      detail: [addressNote(session), modeLabel(session.mode), statusText(session.status)]
         .filter(Boolean)
         .join(" · "),
       ...(session.unread > 0 && !active && { unread: String(Math.min(session.unread, 99)) }),

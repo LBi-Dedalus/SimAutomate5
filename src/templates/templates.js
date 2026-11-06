@@ -14,9 +14,11 @@ import {
 import { tokenPayload, splitTokens } from "../control-chars.js";
 import { describeMessage } from "../session/inspector-core.js";
 import { showView, setLeaveGuard, currentView } from "../nav.js";
-import { sendMessage, setComposerText, activeSendTarget, activeSessionId } from "../session/messages.js";
+import { sendMessage, setComposerText, activeSendTarget, activeSessionId, sendTargetFor } from "../session/messages.js";
 import { SAVE_AS_TEMPLATE_EVENT } from "../session/inspector.js";
-import { subscribeSendEligibility } from "../session/sessions.js";
+import { subscribeSendEligibility, store } from "../session/sessions.js";
+import { bindHint } from "../tooltip.js";
+import { mainLabel, mainHint, menuItems, hasSendable, itemText, moveFocus, initialFocus, placeMenu } from "./send-menu-core.js";
 import { el } from "../render.js";
 import { cloneTemplate } from "../include.js";
 import { logError } from "../log.js";
@@ -82,6 +84,7 @@ async function init() {
     save: () => void save(),
     loadInComposer: () => void loadInComposer(),
     send: () => void sendNow(),
+    sendMenu: () => (menuOpen ? closeSendMenu() : openSendMenu()),
     autobuild: () => onAutobuildChange(),
     insertVariable: () => insertVariable(),
     insertToken: (_ev, button) => {
@@ -114,6 +117,16 @@ async function init() {
   });
 
   subscribeSendEligibility(updateSendEnabled);
+  // A rename changes the main button label and the menu entries, but not who can send.
+  store.subscribe((event) => {
+    if (event.type === "renamed") updateSendEnabled();
+  });
+  bindHint($("tpl-send"), {
+    key: "hint:tpl-send",
+    text: () => mainHint(store.active(), activeSendTarget() !== null),
+    prefer: "top",
+  });
+  bindHint($("tpl-send-menu"), { key: "hint:tpl-send-menu", text: "Send to another session", prefer: "top" });
 
   await loadAll();
 }
@@ -565,14 +578,19 @@ async function loadInComposer() {
   showView("session", { force: true });
 }
 
-async function sendNow() {
+async function sendNow(sessionId = null) {
   if (!draft || delivering) return;
   const result = resolveNow();
   if (!result.ok) return;
-  // The target is captured before awaiting: a session switch cannot redirect the send.
-  const target = activeSendTarget();
+  // The destination is captured before awaiting: a session switch cannot redirect the send.
+  const target = sessionId ? sendTargetFor(sessionId) : activeSendTarget();
   if (!target) {
-    showBanner("The selected session is not connected: connect it to send.", "error");
+    showBanner(
+      sessionId
+        ? "That session cannot send right now: nothing was sent."
+        : "The selected session is not connected: connect it to send.",
+      "error",
+    );
     return;
   }
   const text = await buildForDelivery(result.text, autobuildOptions(), "sent");
@@ -610,12 +628,113 @@ async function buildForDelivery(text, options, verb) {
 
 function updateSendEnabled() {
   const target = activeSendTarget();
+  const active = store.active();
+  const items = currentMenuItems();
   $("tpl-send").disabled = !target || delivering;
   $("tpl-load").disabled = delivering;
-  $("tpl-send").textContent = target ? `Send to ${target.label} ➤` : "Send now ➤";
-  $("tpl-send").title = target
-    ? `Send to the selected session (${target.label})`
-    : "Select a connected session to send";
+  $("tpl-send").textContent = mainLabel(active);
+  $("tpl-send-menu").disabled = !hasSendable(items) || delivering;
+  if ($("tpl-send-menu").disabled) closeSendMenu();
+  else if (menuOpen) renderSendMenu(items);
+}
+
+// ── Send-to-session menu ────────────────────────────────────
+
+let menuOpen = false;
+let menuItemsShown = [];
+
+const currentMenuItems = () => menuItems(store.list(), store.activeId, (id) => sendTargetFor(id));
+
+function renderSendMenu(items) {
+  const menu = $("tpl-send-list");
+  const focusedId = menuItemsShown[menuButtons().indexOf(document.activeElement)]?.id;
+  menuItemsShown = items;
+  menu.replaceChildren();
+  for (const item of items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "small";
+    button.setAttribute("role", "menuitem");
+    button.setAttribute("tabindex", "-1");
+    button.setAttribute("aria-label", itemText(item));
+    button.dataset.sessionId = item.id;
+    button.disabled = !item.enabled;
+    const name = document.createElement("span");
+    name.className = "sm-name";
+    name.textContent = item.label;
+    const state = document.createElement("span");
+    state.className = "sm-state";
+    state.textContent = item.current ? `${item.state} · current` : item.state;
+    button.appendChild(name);
+    button.appendChild(state);
+    button.addEventListener("click", () => chooseSession(item.id));
+    menu.appendChild(button);
+  }
+  const keep = items.findIndex((item) => item.id === focusedId && item.enabled);
+  if (focusedId !== undefined && keep >= 0) menuButtons()[keep].focus();
+  placeSendMenu();
+}
+
+const menuButtons = () => [...$("tpl-send-list").children];
+
+function placeSendMenu() {
+  const menu = $("tpl-send-list");
+  const anchor = $("tpl-send-menu").getBoundingClientRect?.();
+  if (!anchor || !menu.style) return;
+  const viewport = { width: window.innerWidth, height: window.innerHeight };
+  const size = { width: menu.offsetWidth, height: menu.scrollHeight };
+  const { left, top, maxHeight } = placeMenu(anchor, size, viewport);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  menu.style.maxHeight = `${maxHeight}px`;
+}
+
+function openSendMenu() {
+  const items = currentMenuItems();
+  if (menuOpen || $("tpl-send-menu").disabled || !hasSendable(items)) return;
+  menuOpen = true;
+  $("tpl-send-menu").setAttribute("aria-expanded", "true");
+  $("tpl-send-list").classList.remove("hidden");
+  renderSendMenu(items);
+  menuButtons()[initialFocus(items)]?.focus();
+  document.addEventListener("pointerdown", onMenuPointer, true);
+  document.addEventListener("keydown", onMenuKey, true);
+  window.addEventListener("resize", closeSendMenu);
+}
+
+function closeSendMenu({ restoreFocus = false } = {}) {
+  if (!menuOpen) return;
+  menuOpen = false;
+  $("tpl-send-menu").setAttribute("aria-expanded", "false");
+  $("tpl-send-list").classList.add("hidden");
+  document.removeEventListener?.("pointerdown", onMenuPointer, true);
+  document.removeEventListener?.("keydown", onMenuKey, true);
+  window.removeEventListener?.("resize", closeSendMenu);
+  if (restoreFocus === true) $("tpl-send-menu").focus();
+}
+
+function onMenuPointer(ev) {
+  const inside = (node) => node && ($("tpl-send-list").contains?.(node) || $("tpl-send-menu").contains?.(node));
+  if (!inside(ev.target)) closeSendMenu();
+}
+
+function onMenuKey(ev) {
+  if (ev.key === "Escape") {
+    ev.preventDefault();
+    closeSendMenu({ restoreFocus: true });
+  } else if (ev.key === "Tab") {
+    closeSendMenu();
+  } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(ev.key)) {
+    ev.preventDefault();
+    const from = menuButtons().indexOf(document.activeElement);
+    menuButtons()[moveFocus(menuItemsShown, from, ev.key)]?.focus();
+  }
+}
+
+/** A menu choice sends to that session only; the menu is already closed when the build starts. */
+function chooseSession(id) {
+  closeSendMenu({ restoreFocus: true });
+  void sendNow(id);
 }
 
 // ── Editor events ───────────────────────────────────────────

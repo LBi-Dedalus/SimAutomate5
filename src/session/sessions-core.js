@@ -20,6 +20,15 @@ export const isBusyStatus = (status) => BUSY.includes(status);
 export const isTerminalStatus = (status) =>
   status === "disconnected" || status === "error";
 
+const STATUS_TEXT = {
+  disconnected: "Disconnected",
+  connecting: "Connecting",
+  listening: "Listening",
+  connected: "Connected",
+  error: "Error",
+};
+export const statusText = (status) => STATUS_TEXT[status] ?? status;
+
 const CONFIG_KEY = "simautomate:config";
 
 /**
