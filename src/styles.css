@@ -265,6 +265,73 @@ small:is(.ok, .warn, .error),
   }
 }
 
+/* Connection-details tooltip (src/tooltip.js). It lives in <body>, outside the dark sidebar, and is an
+   inverted surface on purpose: --ink background with --on text (about 14:1), labels at 70% of --on
+   (about 8:1), whichever row or card it describes. Both colours are set together so neither can fall
+   back to a default. Never catches the pointer, so it cannot block the buttons under it. */
+.conn-tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 2000;
+  max-width: min(340px, calc(100vw - 16px));
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--on) 28%, var(--ink));
+  border-radius: var(--radius-medium);
+  background: var(--ink);
+  color: var(--on);
+  box-shadow: 0 8px 28px rgb(15 42 58 / 0.35);
+  font-size: var(--text-7);
+  line-height: 1.4;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s, visibility 0.12s;
+
+  &.show {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  /* Text-only hint of an action button */
+  &.text {
+    max-width: min(260px, calc(100vw - 16px));
+    padding: var(--space-1) var(--space-2);
+    font-weight: var(--font-medium);
+    overflow-wrap: anywhere;
+  }
+
+  & dl {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 2px var(--space-3);
+    margin: 0;
+    padding: 0;
+  }
+
+  & dt {
+    margin: 0;
+    padding: 0;
+    color: color-mix(in srgb, var(--on) 70%, var(--ink));
+    font-size: var(--text-8);
+    font-weight: var(--font-medium);
+  }
+
+  & dd {
+    margin: 0;
+    padding: 0;
+    color: var(--on);
+    font-family: var(--font-sans);
+    font-weight: var(--font-semibold);
+    overflow-wrap: anywhere;
+
+    &.code {
+      font-family: var(--mono);
+      font-weight: 400;
+    }
+  }
+}
+
 /* ── Page actions ──
    Shared by Auto reply, Templates, Autobuild and Home:
    .k-strip  status strip with the one global switch of a view
@@ -793,21 +860,68 @@ footer {
 
 .ses-item {
   display: flex;
-  align-items: center;
+  align-items: stretch;
+  overflow: hidden;
   border-radius: var(--radius-medium);
 
   &.on {
     background: var(--line);
   }
 
-  /* Rename is a quiet action: shown on hover or focus of the row. */
-  & .ses-rename {
-    margin-right: 0;
+  /* Row actions: a vertical stack as tall as the row, one equal share per button.
+     The column is always laid out (only its opacity changes), so the row never shifts. */
+  & .ses-actions {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    width: 28px;
+    border-left: 1px solid var(--line);
     opacity: 0;
+    transition: opacity 0.12s;
   }
 
-  &:is(:hover, :focus-within) .ses-rename {
+  &:is(:hover, :focus-within) .ses-actions {
     opacity: 1;
+  }
+
+  & .ses-actions > button {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--mute);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+
+    & + button {
+      border-top: 1px solid var(--line);
+    }
+
+    &:hover:not(:disabled) {
+      background: var(--wash);
+      color: var(--teal);
+    }
+
+    &.ses-close:hover:not(:disabled) {
+      color: var(--red);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--ring);
+      outline-offset: -2px;
+    }
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.4;
+    }
   }
 }
 

@@ -5,7 +5,8 @@ import { cloneTemplate } from "../include.js";
 import { sessions, store } from "./sessions.js";
 import { showView } from "../nav.js";
 import { isBusyStatus, isTerminalStatus } from "./sessions-core.js";
-import { isServerMode, modeLabel, describeEndpoint } from "../home/recent-core.js";
+import { isServerMode, modeLabel, describeEndpoint, connectionDetails } from "../home/recent-core.js";
+import { bindHint, bindTooltip, syncTooltip } from "../tooltip.js";
 import { requestRename } from "./rename.js";
 
 const SESSION_ITEM = "session/session-item.html";
@@ -61,6 +62,18 @@ function init() {
     }
     render();
   });
+  bindHint($("session-rename"), { key: "hint:session-rename", text: "Rename this connection", prefer: "bottom" });
+  bindHint($("session-close"), { key: "hint:session-close", text: "Close this session", prefer: "bottom" });
+  bindHint($("session-new"), { key: "hint:session-new", text: "New session (go to Home)", prefer: "right" });
+  bindHint($("composer-autobuild"), { key: "hint:composer-autobuild", text: "Autobuild the message above (replaces it)", prefer: "top" });
+  for (const chip of document.querySelectorAll("#special-chars button[data-token]")) {
+    const token = chip.dataset.token.split(".").map((t) => `<${t}>`).join("");
+    bindHint(chip, {
+      key: `hint:chip:${chip.dataset.token}`,
+      text: () => `Send ${token}`,
+      prefer: "top",
+    });
+  }
   render();
 }
 
@@ -130,6 +143,11 @@ function addressNote(session) {
   return address && address !== session.label ? address : "";
 }
 
+/** The custom name of a session, "" while its label is just the address. */
+function customName(session) {
+  return session.endpoint && session.label !== describeEndpoint(session.endpoint) ? session.label : "";
+}
+
 /** Renames the connection of a session: every session and the recent entry sharing it follow. */
 function renameSession(id) {
   const session = id ? store.get(id) : null;
@@ -162,17 +180,26 @@ function renderSidebar() {
     if (!(session.unread > 0 && !active)) part("ses-unread").remove();
 
     const rename = part("ses-rename");
-    rename.title = `Rename ${session.label}`;
     rename.setAttribute("aria-label", `Rename session ${session.label}`);
     rename.disabled = !session.endpoint;
+    bindHint(rename, { key: `hint:rename:${session.id}`, text: "Rename", prefer: "right" });
 
     const close = part("ses-close");
-    close.title = `Close ${session.label}`;
     close.setAttribute("aria-label", `Close session ${session.label}`);
     close.disabled = session.op === "closing";
+    bindHint(close, { key: `hint:close:${session.id}`, text: "Close session", prefer: "right" });
+    if (session.endpoint) {
+      bindTooltip(item, {
+        key: `session:${session.id}`,
+        rows: connectionDetails(session.endpoint, customName(session)),
+        describes: open,
+        prefer: "right",
+      });
+    }
     list.appendChild(item);
     if (active) activeItem = item;
   }
+  syncTooltip();
   // Keep the selected row reachable in a long, scrolling list.
   activeItem?.scrollIntoView?.({ block: "nearest" });
 

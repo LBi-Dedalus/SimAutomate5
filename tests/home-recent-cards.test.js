@@ -16,6 +16,7 @@ class FakeNode {
     this.required = false;
     this.textContent = "";
     this.title = "";
+    this.style = {};
     this.attrs = {};
     const self = this;
     this.classList = {
@@ -46,11 +47,17 @@ class FakeNode {
     this.children.push(c);
     return c;
   }
-  replaceChildren() {
-    this.children = [];
+  replaceChildren(...nodes) {
+    this.children = nodes;
   }
   setAttribute(name, value) {
     this.attrs[name] = String(value);
+  }
+  removeAttribute(name) {
+    delete this.attrs[name];
+  }
+  getBoundingClientRect() {
+    return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
   }
   getAttribute(name) {
     return this.attrs[name] ?? null;
@@ -141,7 +148,7 @@ const slot = (node, name) => {
 test("recent cards show the mode and the SSH tunnel, and carry it for reconnecting", () => {
   const cards = getNode("recent-list").children;
   assert.deepEqual(
-    cards.map((c) => [slot(c, "kind").textContent, slot(c, "endpoint").textContent]),
+    cards.map((c) => [slot(c, "kind").textContent, slot(c, "name").textContent]),
     [
       ["Client", "10.0.0.1:6000"],
       ["Server", ":5001"],
@@ -241,12 +248,22 @@ test("the card still opens a session, unlike its copy button", async () => {
   assert.equal(connectCalls().length, 1);
 });
 
-test("unnamed cards show the address only; a rename button carries the endpoint", () => {
+test("unnamed cards use the address as the title, without repeating it; a rename button carries the endpoint", () => {
   const card = recentCard(0);
-  assert.equal(slot(card, "name"), undefined, "the empty name slot is removed");
+  assert.equal(slot(card, "name").textContent, "10.0.0.1:6000", "the address is the title");
+  assert.equal(slot(card, "name").classes.has("is-address"), true);
+  assert.equal(slot(card, "endpoint").textContent, "", "no duplicate supporting line");
   assert.equal(renameButton(card).dataset.action, "click:home.renameRecent");
   assert.equal(renameButton(card).dataset.host, "10.0.0.1");
   assert.equal(renameButton(card).getAttribute("aria-label"), "Rename 10.0.0.1:6000");
+});
+
+test("sidebar action buttons sit in one stack, each a real button next to (not inside) the row button", () => {
+  const item = getNode("side-recent").children[0];
+  assert.equal(item.children[0].classes.has("ses"), true);
+  const stack = item.children[1];
+  assert.equal(stack.classes.has("ses-actions"), true);
+  assert.deepEqual(stack.children.map((b) => b.classes.has("ses-rename")), [true]);
 });
 
 test("a saved name shows on the card and the sidebar item next to the address, and keeps the order", async () => {
@@ -259,7 +276,7 @@ test("a saved name shows on the card and the sidebar item next to the address, a
   assert.equal(slot(card, "name").textContent, "Lab LIS");
   assert.equal(slot(card, "endpoint").textContent, "10.0.0.1:6000");
   assert.equal(renameButton(card).getAttribute("aria-label"), "Rename Lab LIS");
-  assert.deepEqual(getNode("recent-list").children.map((c) => slot(c, "endpoint").textContent).slice(0, 2), ["10.0.0.1:6000", ":5001"]);
+  assert.deepEqual(getNode("recent-list").children.map((c) => slot(c, "name").textContent).slice(0, 2), ["Lab LIS", ":5001"]);
 
   const side = getNode("side-recent").children[0];
   assert.equal(slot(side, "endpoint").textContent, "Lab LIS");
@@ -273,6 +290,44 @@ test("a saved name shows on the card and the sidebar item next to the address, a
   assert.equal(sessions.renameConnection({ mode: "client", host: "10.0.0.1", port: 6000 }, "Other").ok, false);
   globalThis.localStorage.setItem = failing;
   assert.equal(slot(recentCard(0), "name").textContent, "Lab LIS");
+});
+
+test("recent cards and sidebar items show styled details with the real address, even once renamed", () => {
+  const rowsText = (anchor) => {
+    anchor.fire("mouseenter");
+    const tip = getNode("conn-tooltip");
+    const out = tip.children[0].children.map((n) => n.textContent);
+    anchor.fire("mouseleave");
+    return out;
+  };
+  for (const anchor of [recentCard(0), getNode("side-recent").children[0]]) {
+    assert.equal(rowsText(anchor).join("|"), "Name|Lab LIS|Type|Client|Host|10.0.0.1|Port|6000");
+  }
+  assert.equal(getNode("side-recent").children[0].querySelector(".ses").title, "", "no native tooltip");
+  assert.equal(getNode("conn-tooltip").classes.has("show"), false);
+});
+
+test("card and sidebar action buttons show a text-only hint that replaces the row tooltip", () => {
+  const tip = getNode("conn-tooltip");
+  const card = recentCard(0);
+  const side = getNode("side-recent").children[0];
+  for (const [row, button, text] of [
+    [card, copyButton(card), "Copy this configuration to the connection form"],
+    [card, renameButton(card), "Rename this connection"],
+    [side, side.querySelector(".ses-rename"), "Rename"],
+  ]) {
+    assert.equal(button.title, "", "no native title");
+    assert.equal(button.getAttribute("data-tooltip") ?? undefined, undefined);
+    row.fire("mouseenter");
+    assert.equal(tip.classes.has("text"), false, "row details first");
+    button.fire("mouseenter");
+    assert.equal(tip.classes.has("text"), true);
+    assert.equal(tip.children[0].textContent, text);
+    button.fire("mouseleave");
+    assert.equal(tip.classes.has("text"), false, "row details come back");
+    row.fire("mouseleave");
+    assert.equal(tip.classes.has("show"), false);
+  }
 });
 
 test("a new session from a named recent card takes the saved name", async () => {

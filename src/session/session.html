@@ -20,8 +20,8 @@
   <button class="small ghost" type="button" id="clear-chat" data-action="click:msg.clear">Clear</button>
   <button class="small outline" type="button" id="session-reconnect" data-action="click:sess.reconnect">Reconnect</button>
   <button class="small outline hidden" data-variant="danger" type="button" id="session-disconnect" data-action="click:sess.disconnect">Disconnect</button>
-  <button class="small ghost" type="button" id="session-rename" data-action="click:sess.rename" title="Rename this connection">Rename</button>
-  <button class="small ghost" type="button" id="session-close" data-action="click:sess.close" title="Close this session">Close</button>
+  <button class="small ghost" type="button"   id="session-rename" data-action="click:sess.rename">Rename</button>
+    <button class="small ghost" type="button" id="session-close" data-action="click:sess.close">Close</button>
 </header>
 
 <div class="split">
@@ -38,18 +38,18 @@
     <form id="message-form" class="card" data-action="input:msg.capture change:msg.capture reset:msg.reset submit:msg.submit">
       <div id="special-chars" aria-label="Send a control character">
         <span>Send</span>
-        <button type="button" class="chip" data-action="click:chars.send" data-token="ENQ" title="Send &lt;ENQ&gt; now" disabled>ENQ</button>
-        <button type="button" class="chip" data-action="click:chars.send" data-token="EOT" title="Send &lt;EOT&gt; now" disabled>EOT</button>
-        <button type="button" class="chip" data-action="click:chars.send" data-token="ACK" title="Send &lt;ACK&gt; now" disabled>ACK</button>
-        <button type="button" class="chip" data-action="click:chars.send" data-token="NAK" title="Send &lt;NAK&gt; now" disabled>NAK</button>
-        <button type="button" class="chip" data-action="click:chars.send" data-token="VT" title="Send &lt;VT&gt; now" disabled>VT</button>
-        <button type="button" class="chip" data-action="click:chars.send" data-token="FS.CR" title="Send &lt;FS&gt;&lt;CR&gt; now" disabled>FS·CR</button>
-        <button type="button" class="chip" data-action="click:chars.send" data-token="CR" title="Send &lt;CR&gt; now" disabled>CR</button>
+        <button type="button" class="chip" data-action="click:chars.send" data-token="ENQ" aria-label="Send &lt;ENQ&gt;" disabled>ENQ</button>
+        <button type="button" class="chip" data-action="click:chars.send" data-token="EOT" aria-label="Send &lt;EOT&gt;" disabled>EOT</button>
+        <button type="button" class="chip" data-action="click:chars.send" data-token="ACK" aria-label="Send &lt;ACK&gt;" disabled>ACK</button>
+        <button type="button" class="chip" data-action="click:chars.send" data-token="NAK" aria-label="Send &lt;NAK&gt;" disabled>NAK</button>
+        <button type="button" class="chip" data-action="click:chars.send" data-token="VT" aria-label="Send &lt;VT&gt;" disabled>VT</button>
+        <button type="button" class="chip" data-action="click:chars.send" data-token="FS.CR" aria-label="Send &lt;FS&gt;&lt;CR&gt;" disabled>FS·CR</button>
+        <button type="button" class="chip" data-action="click:chars.send" data-token="CR" aria-label="Send &lt;CR&gt;" disabled>CR</button>
       </div>
       <textarea type="text" placeholder="Type a message…" required name="message" spellcheck="false"></textarea>
       <div>
         <button class="small ghost" type="reset">Clear</button>
-        <button class="small outline" type="button" data-action="click:msg.autobuild" title="Autobuild the message above (replaces it)">⚒ Autobuild</button>
+        <button class="small outline" type="button" data-action="click:msg.autobuild" id="composer-autobuild" aria-label="Autobuild the message above (replaces it)">⚒ Autobuild</button>
         <button disabled type="submit">Send ➤</button>
       </div>
     </form>

@@ -7,12 +7,15 @@ import {
   recordRecent,
   clearRecent,
   endpointText,
+  endpointKey,
+  connectionDetails,
   isServerMode,
   isSshMode,
   modeLabel,
   MODES,
 } from "./recent-core.js";
 import { cloneTemplate } from "../include.js";
+import { bindHint, bindTooltip, syncTooltip } from "../tooltip.js";
 import { logWarn } from "../log.js";
 import { sessions, store } from "../session/sessions.js";
 import { showView } from "../nav.js";
@@ -240,30 +243,35 @@ function renderRecent() {
 
   for (const entry of entries) {
     const client = !isServerMode(entry.mode);
-    let name = savedName(names, entry);
-    let endpoint = endpointText(entry);
-    if (name === "") {
-      name = endpoint;
-      endpoint = "";
-    }
+    const name = savedName(names, entry);
+    const endpoint = endpointText(entry);
     const card = cloneTemplate(CARD_TEMPLATE, {
       kind: modeLabel(entry.mode),
       verb: client ? "Connect " : "Listen ",
-      name,
-      endpoint,
+      name: name || endpoint,
+      endpoint: name ? endpoint : "",
     });
-    if (!name) card.querySelector(".card-name").remove();
+    card.querySelector(".card-name").classList.toggle("is-address", !name);
     card.querySelector(".badge").classList.toggle("mute", !client);
     // Each action node reads the endpoint from its own dataset (the card and its buttons).
     for (const node of card.querySelectorAll("[data-action]")) Object.assign(node.dataset, entryData(entry));
     const shown = name || endpointText(entry);
-    card.querySelector(".card-copy").setAttribute("aria-label", `Copy ${shown} to the connection form`);
+    const key = endpointKey(entry);
+    const copy = card.querySelector(".card-copy");
+    copy.setAttribute("aria-label", `Copy ${shown} to the connection form`);
     card.querySelector(".card-rename").setAttribute("aria-label", `Rename ${shown}`);
+    bindHint(copy, { key: `hint:copy:${key}`, text: "Copy this configuration to the connection form", prefer: "top" });
+    bindHint(card.querySelector(".card-rename"), { key: `hint:card-rename:${key}`, text: "Rename this connection", prefer: "top" });
+    bindTooltip(card, {
+      key: `recent-card:${endpointKey(entry)}`,
+      rows: connectionDetails(entry, savedName(names, entry)),
+      describes: card.querySelector(".card"),
+      prefer: "bottom",
+    });
     list.appendChild(card);
   }
 
   for (const entry of entries.slice(0, 5)) {
-    const client = !isServerMode(entry.mode);
     const name = savedName(names, entry);
     const item = cloneTemplate(SIDE_ITEM_TEMPLATE, {
       endpoint: name || endpointText(entry),
@@ -272,11 +280,18 @@ function renderRecent() {
         .join(" · "),
     });
     for (const node of item.querySelectorAll("[data-action]")) Object.assign(node.dataset, entryData(entry));
-    item.querySelector(".ses").title = `${client ? "Connect to" : "Listen on"} ${endpointText(entry)} in a new session`;
-    item.querySelector(".ses-rename").setAttribute("aria-label", `Rename ${name || endpointText(entry)}`);
-    item.querySelector(".ses-rename").title = "Rename this connection";
+    const sideRename = item.querySelector(".ses-rename");
+    sideRename.setAttribute("aria-label", `Rename ${name || endpointText(entry)}`);
+    bindHint(sideRename, { key: `hint:side-rename:${endpointKey(entry)}`, text: "Rename", prefer: "right" });
+    bindTooltip(item, {
+      key: `recent-side:${endpointKey(entry)}`,
+      rows: connectionDetails(entry, name),
+      describes: item.querySelector(".ses"),
+      prefer: "right",
+    });
     side.appendChild(item);
   }
+  syncTooltip();
 }
 
 /** The recent endpoint carried by a card / side item (read back by actions.home.useRecent). */

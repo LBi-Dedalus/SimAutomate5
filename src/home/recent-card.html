@@ -1,4 +1,4 @@
-<!-- One recent endpoint on Home. Slots: kind (also the badge handle), verb, name (card-name, removed when the connection has no custom name), endpoint (the address, always shown). The wrapper draws the card frame; the rename and copy buttons form a footer strip, siblings of the card button because a button cannot nest another. -->
+<!-- One recent endpoint on Home. Slots: kind (also the badge handle), verb, name (the title: the custom name, else the address), endpoint (the address as supporting text; empty when the title already is the address). The wrapper draws the card frame; the rename and copy buttons form a footer strip, siblings of the card button because a button cannot nest another. -->
 <div class="card-wrap">
   <button type="button" class="card" data-action="click:home.useRecent">
     <div>
@@ -9,10 +9,10 @@
       </small>
     </div>
     <b class="card-name" data-slot="name"></b>
-    <div data-slot="endpoint"></div>
+    <div class="card-endpoint" data-slot="endpoint"></div>
   </button>
   <div class="card-actions">
     <button type="button" class="ghost card-rename" data-action="click:home.renameRecent">Rename</button>
-    <button type="button" class="ghost card-copy" data-action="click:home.copyRecent" title="Copy this configuration to the connection form">Copy</button>
+    <button type="button" class="ghost card-copy" data-action="click:home.copyRecent">Copy</button>
   </div>
 </div>

@@ -188,6 +188,36 @@ export function endpointText(endpoint) {
   return target;
 }
 
+/**
+ * The rows of the connection-details tooltip, shared by sessions and recent connections:
+ * [{ label, value, code }] (code: a technical value shown in the mono font). The name row appears
+ * only for a custom name; the real address rows always do, so renaming never hides them.
+ * Built from the normalized endpoint, i.e. a whitelist of mode, host, port and the SSH host, port
+ * and user: anything else carried by the object (requests, credentials, ...) can never leak here.
+ * Returns [] for an unusable endpoint.
+ */
+export function connectionDetails(endpoint, name = "") {
+  const e = normalizeEndpoint(endpoint);
+  if (!e) return [];
+  const rows = [];
+  const customName = cleanName(name);
+  if (customName) rows.push({ label: "Name", value: customName, code: false });
+  rows.push({ label: "Type", value: modeLabel(e.mode), code: false });
+  if (isServerMode(e.mode)) {
+    rows.push({ label: "Listening port", value: String(e.port), code: true });
+  } else {
+    rows.push({ label: "Host", value: e.host, code: true }, { label: "Port", value: String(e.port), code: true });
+  }
+  if (isSshMode(e.mode)) {
+    rows.push(
+      { label: "SSH host", value: e.sshHost, code: true },
+      { label: "SSH port", value: String(e.sshPort), code: true },
+      { label: "SSH user", value: e.sshUser || "(default)", code: !!e.sshUser },
+    );
+  }
+  return rows;
+}
+
 /** Session label: "host:port", "Server :port", "user@ssh:22 → host:port", "Server :port ← user@ssh:22". */
 export function describeEndpoint(endpoint) {
   const text = endpointText(endpoint);

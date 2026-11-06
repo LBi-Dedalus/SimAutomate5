@@ -202,6 +202,15 @@
 
   & .card-name {
     font-family: var(--font-sans);
+
+    &.is-address {
+      font-family: var(--font-mono);
+    }
+  }
+
+  /* An empty supporting line keeps its height so named and unnamed cards stay aligned. */
+  & .card-endpoint {
+    min-height: 1.4em;
   }
 
   & small {

@@ -1,7 +1,7 @@
 <!-- One recent autobuild. Text slots: kind, time. Handles (classes): ab-load (preview lines go inside it),
      ab-noetb (removed when the build had no ETB), ab-use, ab-del. Actions look the entry up from the li's data-id. -->
 <li class="card ab-card k-hover">
-  <button type="button" class="ab-load" title="Load into the builder" data-action="click:ab.load">
+  <button type="button" class="ab-load" data-action="click:ab.load">
     <span class="ab-top">
       <span class="badge ab-kind" data-slot="kind"></span>
       <span class="badge in ab-noetb">No ETB</span>
@@ -9,5 +9,5 @@
     </span>
   </button>
   <button type="button" class="small ghost ab-use k-tool" data-action="click:ab.use">Use in session</button>
-  <button type="button" class="ghost icon ab-del k-tool" title="Delete" data-action="click:ab.remove">×</button>
+  <button type="button" class="ghost icon ab-del k-tool" data-action="click:ab.remove">×</button>
 </li>
