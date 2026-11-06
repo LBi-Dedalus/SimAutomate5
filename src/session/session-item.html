@@ -1,5 +1,5 @@
 <!-- A session of the sidebar list. Text slots: label, detail, unread. Handles (classes): ses (open button), ses-dot (data-st set by the code),
-     ses-unread (removed when there is nothing to show), ses-close. -->
+     ses-unread (removed when there is nothing to show), ses-rename, ses-close. -->
 <div class="ses-item">
   <button type="button" class="ses" data-action="click:sess.open">
     <i class="ses-dot"></i>
@@ -9,5 +9,6 @@
     </span>
     <em class="ses-unread" data-slot="unread"></em>
   </button>
+  <button type="button" class="ghost icon ses-rename" data-action="click:sess.renameItem">✎</button>
   <button type="button" class="ghost icon ses-close" data-action="click:sess.closeItem">×</button>
 </div>

@@ -106,9 +106,11 @@ await installTemplates(["home/recent-card.html", "home/recent-side-item.html"]);
 await bindStaticActions("home/home.html", getNode);
 await import("../src/home/connection.js");
 
-// Each card is a wrapper: the card button first, then its copy button.
+// Each card is a wrapper: the card button first, then a footer holding rename and copy (in that order).
 const cardButton = (card) => card.children[0];
-const copyButton = (card) => card.children[1];
+const footerButtons = (card) => card.children[1].children;
+const renameButton = (card) => card.querySelector(".card-rename");
+const copyButton = (card) => card.querySelector(".card-copy");
 const goOf = (card) => cardButton(card).children[0].children.find((n) => n.classes.has("go"));
 
 test("each recent card pairs the verb with the quiet arrow", () => {
@@ -166,6 +168,15 @@ test("the hint follows the selected mode", () => {
 
 const connectCalls = () => calls.filter((c) => c.cmd === "connect_socket");
 const recentCard = (index) => getNode("recent-list").children[index];
+
+test("the footer keeps the keyboard order: connect, then Rename, then Copy", () => {
+  const card = recentCard(0);
+  assert.equal(card.children.length, 2);
+  assert.deepEqual(
+    [...footerButtons(card)].map((b) => b.dataset.action),
+    ["click:home.renameRecent", "click:home.copyRecent"],
+  );
+});
 
 test("the copy button names the endpoint it copies", () => {
   assert.equal(copyButton(recentCard(0)).getAttribute("aria-label"), "Copy 10.0.0.1:6000 to the connection form");
@@ -228,4 +239,45 @@ test("the card still opens a session, unlike its copy button", async () => {
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.equal(connectCalls().length, 1);
+});
+
+test("unnamed cards show the address only; a rename button carries the endpoint", () => {
+  const card = recentCard(0);
+  assert.equal(slot(card, "name"), undefined, "the empty name slot is removed");
+  assert.equal(renameButton(card).dataset.action, "click:home.renameRecent");
+  assert.equal(renameButton(card).dataset.host, "10.0.0.1");
+  assert.equal(renameButton(card).getAttribute("aria-label"), "Rename 10.0.0.1:6000");
+});
+
+test("a saved name shows on the card and the sidebar item next to the address, and keeps the order", async () => {
+  const { sessions } = await import("../src/session/sessions.js");
+  const before = storage.get("simautomate:recent-endpoints");
+  assert.equal(sessions.renameConnection({ mode: "client", host: "10.0.0.1", port: 6000 }, " Lab LIS ").ok, true);
+  assert.equal(storage.get("simautomate:recent-endpoints"), before, "recent entries are untouched");
+
+  const card = recentCard(0);
+  assert.equal(slot(card, "name").textContent, "Lab LIS");
+  assert.equal(slot(card, "endpoint").textContent, "10.0.0.1:6000");
+  assert.equal(renameButton(card).getAttribute("aria-label"), "Rename Lab LIS");
+  assert.deepEqual(getNode("recent-list").children.map((c) => slot(c, "endpoint").textContent).slice(0, 2), ["10.0.0.1:6000", ":5001"]);
+
+  const side = getNode("side-recent").children[0];
+  assert.equal(slot(side, "endpoint").textContent, "Lab LIS");
+  assert.match(slot(side, "detail").textContent, /^10\.0\.0\.1:6000 · Client/);
+
+  // A save failure shows nothing as renamed.
+  const failing = globalThis.localStorage.setItem;
+  globalThis.localStorage.setItem = () => {
+    throw new Error("full");
+  };
+  assert.equal(sessions.renameConnection({ mode: "client", host: "10.0.0.1", port: 6000 }, "Other").ok, false);
+  globalThis.localStorage.setItem = failing;
+  assert.equal(slot(recentCard(0), "name").textContent, "Lab LIS");
+});
+
+test("a new session from a named recent card takes the saved name", async () => {
+  const { store } = await import("../src/session/sessions.js");
+  cardButton(recentCard(0)).fire("click");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(store.active().label, "Lab LIS");
 });

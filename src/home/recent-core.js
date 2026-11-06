@@ -113,6 +113,65 @@ export function clearRecent(storage) {
   }
 }
 
+// ── Custom connection names ─────────────────────────────────
+// Kept apart from the recent list, keyed by endpointKey: a name survives the entry leaving the
+// recent list (eviction, Clear, repeat connections) and renaming never touches recent order.
+
+export const NAMES_KEY = "simautomate:connection-names";
+export const MAX_NAME_LENGTH = 60;
+
+/** Trims and collapses whitespace; an empty result means "use the address". */
+export const cleanName = (value) =>
+  String(value ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_NAME_LENGTH).trim();
+
+/** Never throws: corrupt or unavailable storage yields no names plus an error. Returns { names: Map, error }. */
+export function loadNames(storage) {
+  const names = new Map();
+  try {
+    const raw = storage.getItem(NAMES_KEY);
+    if (raw === null || raw === undefined) return { names, error: null };
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { names, error: "Connection names storage is not a map" };
+    }
+    for (const [key, value] of Object.entries(parsed)) {
+      const name = cleanName(value);
+      if (typeof value === "string" && name) names.set(key, name);
+    }
+    return { names, error: null };
+  } catch (err) {
+    return { names, error: `Connection names unreadable: ${String(err)}` };
+  }
+}
+
+/** The saved name of an endpoint, or "" when it has none. */
+export function savedName(names, endpoint) {
+  const normalized = normalizeEndpoint(endpoint);
+  return (normalized && names.get(endpointKey(normalized))) || "";
+}
+
+/** Saves (or, with an empty name, clears) the shared name. Returns { name, error }; on error nothing was saved. */
+export function saveName(storage, endpoint, name) {
+  const normalized = normalizeEndpoint(endpoint);
+  if (!normalized) return { name: "", error: "Invalid endpoint" };
+  const cleaned = cleanName(name);
+  const { names } = loadNames(storage);
+  const key = endpointKey(normalized);
+  if (cleaned) names.set(key, cleaned);
+  else names.delete(key);
+  try {
+    storage.setItem(NAMES_KEY, JSON.stringify(Object.fromEntries(names)));
+    return { name: cleaned, error: null };
+  } catch (err) {
+    return { name: "", error: `Cannot save the connection name: ${String(err)}` };
+  }
+}
+
+/** Name shown for an endpoint: the saved one, else its address. */
+export function connectionLabel(names, endpoint) {
+  return savedName(names, endpoint) || describeEndpoint(endpoint);
+}
+
 /** "user@host:22", or "host:22" when the SSH user is left to the backend. */
 export function describeSsh(endpoint) {
   const user = endpoint.sshUser ? `${endpoint.sshUser}@` : "";

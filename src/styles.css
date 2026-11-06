@@ -799,6 +799,16 @@ footer {
   &.on {
     background: var(--line);
   }
+
+  /* Rename is a quiet action: shown on hover or focus of the row. */
+  & .ses-rename {
+    margin-right: 0;
+    opacity: 0;
+  }
+
+  &:is(:hover, :focus-within) .ses-rename {
+    opacity: 1;
+  }
 }
 
 .ses {

@@ -13,12 +13,14 @@
   <h4>
     <span id="session-title">No connection</span>
     <span id="session-mode" class="badge hidden"></span>
+    <small id="session-address" class="hidden"></small>
   </h4>
   <span class="badge mute" data-status-pill><i></i>Disconnected</span>
   <div class="sp"></div>
   <button class="small ghost" type="button" id="clear-chat" data-action="click:msg.clear">Clear</button>
   <button class="small outline" type="button" id="session-reconnect" data-action="click:sess.reconnect">Reconnect</button>
   <button class="small outline hidden" data-variant="danger" type="button" id="session-disconnect" data-action="click:sess.disconnect">Disconnect</button>
+  <button class="small ghost" type="button" id="session-rename" data-action="click:sess.rename" title="Rename this connection">Rename</button>
   <button class="small ghost" type="button" id="session-close" data-action="click:sess.close" title="Close this session">Close</button>
 </header>
 

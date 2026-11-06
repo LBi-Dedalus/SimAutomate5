@@ -1,0 +1,15 @@
+<div>
+  <form method="dialog" id="rename-form" data-action="submit:rename.save">
+    <h4 id="rename-title">Rename connection</h4>
+    <label>
+      Name
+      <input id="rename-input" type="text" maxlength="60" autocomplete="off" />
+    </label>
+    <small id="rename-address"></small>
+    <p id="rename-error" class="hidden" role="alert"></p>
+    <div class="hstack gap-2 justify-end">
+      <button class="outline small" type="button" data-action="click:rename.cancel">Cancel</button>
+      <button class="small" type="submit">Save</button>
+    </div>
+  </form>
+</div>

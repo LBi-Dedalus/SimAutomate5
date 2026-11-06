@@ -1,9 +1,11 @@
 import {
   normalizeEndpoint,
   loadRecent,
+  loadNames,
+  savedName,
+  connectionLabel,
   recordRecent,
   clearRecent,
-  describeEndpoint,
   endpointText,
   isServerMode,
   isSshMode,
@@ -14,6 +16,7 @@ import { cloneTemplate } from "../include.js";
 import { logWarn } from "../log.js";
 import { sessions, store } from "../session/sessions.js";
 import { showView } from "../nav.js";
+import { requestRename } from "../session/rename.js";
 
 // Preloaded by the <link rel="x-template"> tags of home.html.
 const CARD_TEMPLATE = "home/recent-card.html";
@@ -27,6 +30,8 @@ function init() {
   // A recent endpoint is remembered once its session is really up (connected / listening).
   store.subscribe((event) => {
     if (event.type === "status") recordWhenUp(event.session);
+    // A name changed (from a session or a recent item): refresh the recent displays.
+    if (event.type === "renamed") renderRecent();
   });
   setMode("client");
   renderRecent();
@@ -166,7 +171,7 @@ function startSession(input) {
       button.disabled = true;
       const { done } = sessions.start({
         mode: sessionMode,
-        label: describeEndpoint(endpoint),
+        label: connectionLabel(loadNames(localStorage).names, endpoint),
         endpoint,
         req,
       });
@@ -225,6 +230,8 @@ function renderRecent() {
     logWarn(error, "connection.js:loadRecent");
     showRecentNote(error);
   }
+  const { names, error: namesError } = loadNames(localStorage);
+  if (namesError) logWarn(namesError, "connection.js:loadNames");
 
   list.replaceChildren();
   side.replaceChildren();
@@ -233,26 +240,41 @@ function renderRecent() {
 
   for (const entry of entries) {
     const client = !isServerMode(entry.mode);
+    let name = savedName(names, entry);
+    let endpoint = endpointText(entry);
+    if (name === "") {
+      name = endpoint;
+      endpoint = "";
+    }
     const card = cloneTemplate(CARD_TEMPLATE, {
       kind: modeLabel(entry.mode),
       verb: client ? "Connect " : "Listen ",
-      endpoint: endpointText(entry),
+      name,
+      endpoint,
     });
+    if (!name) card.querySelector(".card-name").remove();
     card.querySelector(".badge").classList.toggle("mute", !client);
-    // Each action node reads the endpoint from its own dataset (the card and the copy button).
+    // Each action node reads the endpoint from its own dataset (the card and its buttons).
     for (const node of card.querySelectorAll("[data-action]")) Object.assign(node.dataset, entryData(entry));
-    card.querySelector(".card-copy").setAttribute("aria-label", `Copy ${endpointText(entry)} to the connection form`);
+    const shown = name || endpointText(entry);
+    card.querySelector(".card-copy").setAttribute("aria-label", `Copy ${shown} to the connection form`);
+    card.querySelector(".card-rename").setAttribute("aria-label", `Rename ${shown}`);
     list.appendChild(card);
   }
 
   for (const entry of entries.slice(0, 5)) {
     const client = !isServerMode(entry.mode);
+    const name = savedName(names, entry);
     const item = cloneTemplate(SIDE_ITEM_TEMPLATE, {
-      endpoint: endpointText(entry),
-      detail: [modeLabel(entry.mode), relativeTime(entry.lastUsed)].filter(Boolean).join(" · "),
+      endpoint: name || endpointText(entry),
+      detail: [name && endpointText(entry), modeLabel(entry.mode), relativeTime(entry.lastUsed)]
+        .filter(Boolean)
+        .join(" · "),
     });
-    item.title = `${client ? "Connect to" : "Listen on"} ${endpointText(entry)} in a new session`;
-    Object.assign(item.dataset, entryData(entry));
+    for (const node of item.querySelectorAll("[data-action]")) Object.assign(node.dataset, entryData(entry));
+    item.querySelector(".ses").title = `${client ? "Connect to" : "Listen on"} ${endpointText(entry)} in a new session`;
+    item.querySelector(".ses-rename").setAttribute("aria-label", `Rename ${name || endpointText(entry)}`);
+    item.querySelector(".ses-rename").title = "Rename this connection";
     side.appendChild(item);
   }
 }
@@ -313,6 +335,7 @@ window.actions.home = {
   },
   useRecent: (ev, el) => useRecent(el.dataset),
   copyRecent: (ev, el) => copyRecent(el.dataset),
+  renameRecent: (ev, el) => requestRename(el.dataset),
 };
 
 init();

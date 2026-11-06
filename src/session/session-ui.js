@@ -5,7 +5,8 @@ import { cloneTemplate } from "../include.js";
 import { sessions, store } from "./sessions.js";
 import { showView } from "../nav.js";
 import { isBusyStatus, isTerminalStatus } from "./sessions-core.js";
-import { isServerMode, modeLabel } from "../home/recent-core.js";
+import { isServerMode, modeLabel, describeEndpoint } from "../home/recent-core.js";
+import { requestRename } from "./rename.js";
 
 const SESSION_ITEM = "session/session-item.html";
 
@@ -37,6 +38,10 @@ function init() {
       if (id) void requestClose(id);
     },
     open: (_ev, button) => openSession(button.closest("[data-session-id]").dataset.sessionId),
+    rename() {
+      renameSession(store.activeId);
+    },
+    renameItem: (_ev, button) => renameSession(button.closest("[data-session-id]").dataset.sessionId),
     closeItem: (_ev, button) => void requestClose(button.closest("[data-session-id]").dataset.sessionId),
   };
   store.subscribe((event) => {
@@ -119,6 +124,18 @@ function endpointLabel(session) {
   return session.label;
 }
 
+/** The address as supporting text, only when a custom name hides it. */
+function addressNote(session) {
+  const address = session.endpoint ? describeEndpoint(session.endpoint) : "";
+  return address && address !== session.label ? address : "";
+}
+
+/** Renames the connection of a session: every session and the recent entry sharing it follow. */
+function renameSession(id) {
+  const session = id ? store.get(id) : null;
+  if (session?.endpoint) requestRename(session.endpoint);
+}
+
 function renderSidebar() {
   const list = $("side-sessions");
   const all = store.list();
@@ -130,7 +147,9 @@ function renderSidebar() {
     const active = session.id === store.activeId;
     const item = cloneTemplate(SESSION_ITEM, {
       label: endpointLabel(session),
-      detail: `${modeLabel(session.mode)} · ${STATUS_TEXT[session.status] ?? session.status}`,
+      detail: [addressNote(session), modeLabel(session.mode), STATUS_TEXT[session.status] ?? session.status]
+        .filter(Boolean)
+        .join(" · "),
       ...(session.unread > 0 && !active && { unread: String(Math.min(session.unread, 99)) }),
     });
     const part = (cls) => item.querySelector(`.${cls}`);
@@ -141,6 +160,11 @@ function renderSidebar() {
     if (active) open.setAttribute("aria-current", "true");
     part("ses-dot").dataset.st = session.status;
     if (!(session.unread > 0 && !active)) part("ses-unread").remove();
+
+    const rename = part("ses-rename");
+    rename.title = `Rename ${session.label}`;
+    rename.setAttribute("aria-label", `Rename session ${session.label}`);
+    rename.disabled = !session.endpoint;
 
     const close = part("ses-close");
     close.title = `Close ${session.label}`;
@@ -163,6 +187,10 @@ function renderHeader() {
   const working = !!session?.op;
 
   $("session-title").textContent = session ? session.label : "No session";
+  const address = session ? addressNote(session) : "";
+  $("session-address").textContent = address;
+  $("session-address").classList.toggle("hidden", !address);
+  $("session-rename").classList.toggle("hidden", !session?.endpoint);
   const server = isServerMode(session?.mode);
   const badge = $("session-mode");
   badge.classList.toggle("hidden", !session);

@@ -129,25 +129,79 @@
     align-items: center;
   }
 
-  /* The copy button sits beside the card (a button cannot nest another), so the wrapper is a plain block. */
+  /* The wrapper owns the frame (border, radius, clipping); the connect button and the footer sit inside it. */
   & .card-wrap {
-    display: block;
-    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-large);
+    background: var(--card);
+    transition: border-color 0.12s, box-shadow 0.12s;
+
+    &:is(:hover, :focus-within) {
+      border-color: var(--teal);
+    }
   }
 
   & .card-wrap > .card {
+    flex: 1;
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+
+    &:hover {
+      background: var(--wash);
+    }
+
+    &:focus-visible {
+      outline-offset: -3px;
+    }
+  }
+
+  /* Footer strip: two equal buttons split by hairlines. */
+  & .card-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-top: 1px solid var(--line);
     width: 100%;
   }
 
-  /* Keeps the header's arrow clear of the copy button. */
-  & .card-wrap > .card > div:first-child {
-    padding-right: 64px;
+  & .card-actions > button {
+    margin: 0;
+    padding: 7px var(--space-2);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--mute);
+    font-size: var(--text-7);
+    font-weight: var(--font-semibold);
+    cursor: pointer;
+    transition: background-color 0.12s, color 0.12s;
+
+    &:hover {
+      background: var(--wash);
+      color: var(--teal);
+    }
+
+    &:active {
+      background: color-mix(in srgb, var(--teal) 12%, var(--card));
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--ring);
+      outline-offset: -2px;
+    }
+
+    & + button {
+      border-left: 1px solid var(--line);
+    }
   }
 
-  & .card-copy {
-    position: absolute;
-    top: 10px;
-    right: 10px;
+  & .card-name {
+    font-family: var(--font-sans);
   }
 
   & small {

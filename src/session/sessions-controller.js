@@ -6,6 +6,7 @@
 // - a session is registered in the store before its first connect, so early events are kept;
 // - the backend result never regresses a newer state observed through events.
 import { createSessionStore, isBusyStatus, isTerminalStatus, takeLegacyDraft } from "./sessions-core.js";
+import { describeEndpoint, normalizeEndpoint, saveName } from "../home/recent-core.js";
 
 export function createSessionController({ invoke, storage, log = {}, store = createSessionStore() }) {
   const logError = log.error ?? (() => {});
@@ -180,6 +181,22 @@ export function createSessionController({ invoke, storage, log = {}, store = cre
         fail(target.id, "Failed to send", "sessions:send", err);
         return { ok: false, error: String(err) };
       }
+    },
+
+    /**
+     * Renames a connection: saves the shared name, then relabels every linked session (an empty
+     * name restores the address). Nothing changes when saving fails.
+     */
+    renameConnection(endpoint, name) {
+      const normalized = normalizeEndpoint(endpoint);
+      if (!normalized) return { ok: false, error: "Invalid connection" };
+      const { name: saved, error } = saveName(storage, normalized, name);
+      if (error) {
+        logWarn(error, "sessions:rename");
+        return { ok: false, error };
+      }
+      store.relabel(normalized, saved || describeEndpoint(normalized));
+      return { ok: true, name: saved };
     },
 
     handleStatus(payload) {

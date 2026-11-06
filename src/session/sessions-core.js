@@ -11,6 +11,7 @@ import {
   forgetAstmRecord,
   isAstmUnit,
 } from "./astm-group.js";
+import { endpointKey } from "../home/recent-core.js";
 
 export const MAX_MESSAGES = 2000;
 
@@ -302,6 +303,15 @@ export function createSessionStore(options = {}) {
     if (session) session.recorded = true;
   }
 
+  /** Renames every session linked to a connection (same endpoint details, not same name). */
+  function relabel(endpoint, label) {
+    const key = endpointKey(endpoint);
+    for (const session of sessions.values()) {
+      if (session.endpoint && endpointKey(session.endpoint) === key) session.label = label;
+    }
+    emit("renamed", null, { endpoint, label });
+  }
+
   /** Forgets a session. The neighbour (next, else previous) becomes selected. */
   function remove(id) {
     const session = sessions.get(id);
@@ -337,6 +347,7 @@ export function createSessionStore(options = {}) {
     setOp,
     markRegistered,
     markRecorded,
+    relabel,
     list: () => [...sessions.values()],
     active: () => sessions.get(activeId) ?? null,
     get activeId() {

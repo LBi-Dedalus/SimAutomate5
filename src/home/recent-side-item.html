@@ -1,9 +1,12 @@
-<!-- One recent endpoint in the sidebar. Slots: endpoint, detail. -->
-<button type="button" class="ses" data-action="click:home.useRecent">
-  <i></i>
-  <span>
-    <span data-slot="endpoint"></span>
-    <small data-slot="detail"></small>
-  </span>
-  <b>↗</b>
-</button>
+<!-- One recent endpoint in the sidebar. Slots: endpoint (the name, else the address), detail. Handles: ses (connect button), ses-rename. -->
+<div class="ses-item">
+  <button type="button" class="ses" data-action="click:home.useRecent">
+    <i></i>
+    <span>
+      <span data-slot="endpoint"></span>
+      <small data-slot="detail"></small>
+    </span>
+    <b>↗</b>
+  </button>
+  <button type="button" class="ghost icon ses-rename" data-action="click:home.renameRecent">✎</button>
+</div>
