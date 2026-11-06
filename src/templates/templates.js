@@ -593,11 +593,22 @@ async function sendNow(sessionId = null) {
     );
     return;
   }
+  // Also captured now: the view and the draft the user initiated this from.
+  const startedInTemplates = currentView() === "templates";
+  const startDraft = draft;
   const text = await buildForDelivery(result.text, autobuildOptions(), "sent");
   if (text === null) return;
   const ok = await sendMessage(text, target);
-  if (ok) hideBanner();
-  else showBanner(`Sending to ${target.label} failed, see its conversation log.`, "error");
+  if (!ok) {
+    showBanner(`Sending to ${target.label} failed, see its conversation log.`, "error");
+    return;
+  }
+  hideBanner();
+  // Open the destination only if the user is still where they started and it still exists.
+  if (!startedInTemplates || currentView() !== "templates" || draft !== startDraft) return;
+  if (!store.select(target.id)) return;
+  // Leaving with unsaved edits is fine here: the draft stays in the editor.
+  showView("session", { force: true });
 }
 
 /** Autobuild options of the draft as they are right now (captured before any await). */

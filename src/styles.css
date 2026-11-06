@@ -928,6 +928,8 @@ footer {
   color: var(--fg);
   font-size: var(--text-7);
   font-weight: 400;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
 
   & i {
     flex-shrink: 0;

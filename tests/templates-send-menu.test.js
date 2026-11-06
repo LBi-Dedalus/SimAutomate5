@@ -105,7 +105,7 @@ globalThis.document = {
   },
   dispatchEvent: () => {},
 };
-const ipc = { calls: [], failSend: false };
+const ipc = { calls: [], failSend: false, buildGate: null };
 globalThis.window = {
   innerWidth: 1000,
   innerHeight: 700,
@@ -115,7 +115,20 @@ globalThis.window = {
     core: {
       invoke: async (cmd, args) => {
         ipc.calls.push({ cmd, args });
-        if (cmd === "load_config") return { revision: 0, templates: [{ id: "a", name: "Alpha", description: "", payload: "ALPHA", variables: [] }], auto_reply: { enabled: true, rules: [] } };
+        if (cmd === "load_config") {
+          return {
+            revision: 0,
+            templates: [
+              { id: "a", name: "Alpha", description: "", payload: "ALPHA", variables: [] },
+              { id: "z", name: "Zulu", description: "", payload: "ZULU", variables: [], autobuild: true },
+            ],
+            auto_reply: { enabled: true, rules: [] },
+          };
+        }
+        if (cmd === "auto_build_message_cmd") {
+          await ipc.buildGate;
+          return "BUILT";
+        }
         if (cmd === "send_message" && ipc.failSend) throw new Error("refused");
         return undefined;
       },
@@ -130,6 +143,12 @@ await bindStaticActions("templates/templates.html", getNode);
 const { sessions, store } = await import("../src/session/sessions.js");
 await import("../src/session/messages.js");
 await import("../src/templates/templates.js");
+const { showView, currentView } = await import("../src/nav.js");
+// A successful send now opens the Session view: tests that do not care go back to Templates.
+const backToTemplates = () => {
+  showView("templates", { force: true });
+  store.select(a);
+};
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const startConnected = async (port, label, extra = {}) => {
@@ -150,6 +169,7 @@ const pressKey = (key) => {
 // Open the template in the editor.
 const card = getNode("tpl-list").children[0];
 card.find((n) => n.classes.has("tload"))[0].fire("click");
+showView("templates", { force: true });
 
 let a, b, c;
 test("main button says Send to <name>, falls back to Send, and follows renames", async () => {
@@ -173,6 +193,9 @@ test("quick send goes to the selected session", async () => {
   getNode("tpl-send").fire("click");
   await tick();
   assert.deepEqual(sent(), [{ id: a, message: "ALPHA" }]);
+  assert.equal(currentView(), "session", "quick send opens the current session");
+  assert.equal(store.activeId, a);
+  backToTemplates();
 });
 
 test("menu lists sessions with state, marks the current one, disables those that cannot send", async () => {
@@ -200,9 +223,13 @@ test("choosing a session sends immediately to that session and closes the menu",
   arrow().fire("click");
   entryFor(b).fire("click");
   assert.equal(menu().hidden, true);
+  assert.equal(store.activeId, a, "choosing alone does not select");
+  assert.equal(currentView(), "templates", "nor switch the view before the send completes");
   await tick();
   assert.deepEqual(sent(), [{ id: b, message: "ALPHA" }]);
-  assert.equal(store.activeId, a, "the selection is unchanged");
+  assert.equal(store.activeId, b, "the destination is selected after the send");
+  assert.equal(currentView(), "session");
+  backToTemplates();
 });
 
 test("keyboard: arrows skip disabled entries, Escape and Tab close, Escape restores focus to the arrow", async () => {
@@ -257,7 +284,92 @@ test("session changes while the menu is open update it and never redirect a send
   entryFor(a).fire("click");
   await tick();
   assert.deepEqual(sent(), [{ id: a, message: "ALPHA" }]);
+  backToTemplates();
+});
+
+const openCard = (id) => {
+  const el = getNode("tpl-list").children.find((n) => n.dataset.id === id);
+  el.find((n) => n.classes.has("tload"))[0].fire("click");
+};
+
+test("unsaved template edits remain after a successful send that opens the session", async () => {
+  getNode("tpl-name").value = "Alpha edited";
+  getNode("tpl-name").fire("input");
+  assert.equal(getNode("tpl-dirty").hidden, false);
+  getNode("tpl-send").fire("click");
+  await tick();
+  assert.equal(currentView(), "session");
+  assert.equal(getNode("tpl-name").value, "Alpha edited");
+  assert.equal(getNode("tpl-dirty").hidden, false, "still dirty");
+  backToTemplates();
+  assert.equal(getNode("tpl-name").value, "Alpha edited");
+  getNode("tpl-name").value = "Alpha";
+  getNode("tpl-name").fire("input");
+  assert.equal(getNode("tpl-dirty").hidden, true, "clean again");
+});
+
+test("a failed send stays in Templates with the banner", async () => {
+  ipc.failSend = true;
+  const before = store.activeId;
+  getNode("tpl-send").fire("click");
+  await tick();
+  ipc.failSend = false;
+  assert.equal(currentView(), "templates");
+  assert.equal(store.activeId, before);
+  assert.match(getNode("tpl-banner-text").textContent, /Sending to Alpha failed/);
+});
+
+test("moving to another view during preparation is respected", async () => {
+  openCard("z"); // autobuild template: preparation awaits the build
+  let release;
+  ipc.buildGate = new Promise((r) => (release = r));
+  const d = await startConnected(4, "Delta");
   store.select(a);
+  ipc.calls = [];
+  arrow().fire("click");
+  entryFor(d).fire("click");
+  await tick();
+  showView("home", { force: true });
+  release();
+  await tick();
+  assert.deepEqual(sent(), [{ id: d, message: "BUILT" }]);
+  assert.equal(currentView(), "home");
+  assert.equal(store.activeId, a);
+  ipc.buildGate = null;
+  backToTemplates();
+});
+
+test("selecting another template during preparation does not switch", async () => {
+  let release;
+  ipc.buildGate = new Promise((r) => (release = r));
+  getNode("tpl-send").fire("click");
+  await tick();
+  getNode("tpl-new").fire("click"); // clean draft: a new template replaces it
+  release();
+  await tick();
+  assert.equal(currentView(), "templates");
+  assert.equal(store.activeId, a);
+  ipc.buildGate = null;
+  openCard("z");
+});
+
+test("a destination closed during preparation does not switch nor open another session", async () => {
+  const e = await startConnected(5, "Epsilon");
+  store.select(a);
+  let release;
+  ipc.buildGate = new Promise((r) => (release = r));
+  ipc.calls = [];
+  arrow().fire("click");
+  entryFor(e).fire("click");
+  await tick();
+  store.remove(e);
+  assert.equal(store.get(e), null);
+  const activeAfterClose = store.activeId;
+  release();
+  await tick();
+  assert.equal(currentView(), "templates");
+  assert.equal(store.activeId, activeAfterClose, "no other session is opened");
+  ipc.buildGate = null;
 });
 
 test("a failed menu send shows the error banner with the session name", async () => {
@@ -272,6 +384,7 @@ test("a failed menu send shows the error banner with the session name", async ()
 test("when no session can send the arrow is disabled and the menu closes", async () => {
   arrow().fire("click");
   sessions.handleStatus({ session_id: a, attempt: store.get(a).attempt, status: "disconnected" });
+  for (const s of store.list()) sessions.handleStatus({ session_id: s.id, attempt: s.attempt, status: "disconnected" });
   assert.equal(arrow().disabled, true);
   assert.equal(menu().hidden, true);
   arrow().fire("click");
