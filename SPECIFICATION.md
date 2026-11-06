@@ -9,7 +9,7 @@ This application is a Tauri-based desktop app with a Vanilla JS frontend and a R
 ### UI and Theme
 
 - The UI is built with semantic HTML, Oat CSS classes, and project-specific styling (light content area, dark sidebar, teal accents).
-- A labelled left navigation switches between Home, Session, Templates, Auto reply and Autobuild (a dedicated view, not a dialog). The sidebar footer shows the live connection status badge.
+- A labelled left navigation switches between Home, Session, Templates, Auto reply and Autobuild (a dedicated view, not a dialog). The sidebar footer shows a quiet "SimAutomate v<version>" label, read from the running app ("Version unavailable" if that fails); connection status is shown per session in the session list and the Session view.
 - Home offers quick connect (Client/Server, host/port; there is no protocol selector), and recent endpoints.
 - Session shows the conversation of the selected session (bubbles plus system lines), its composer with control-character buttons, and an always-docked message inspector (Parsed/Raw/Hex of the selected message).
 - Multiple sessions can be open at once (client and server, any mix). The sidebar has a **Sessions** list (selected row, endpoint, mode, status, unread badge for background traffic, a close button, and a `＋` button that goes to Home) next to the **Recent servers** shortcuts.

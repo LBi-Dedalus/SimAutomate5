@@ -202,9 +202,6 @@ function renderSidebar() {
   syncTooltip();
   // Keep the selected row reachable in a long, scrolling list.
   activeItem?.scrollIntoView?.({ block: "nearest" });
-
-  const active = store.active();
-  $("side-endpoint").textContent = active ? active.label : "";
 }
 
 function renderHeader() {

@@ -796,13 +796,11 @@ footer {
     align-items: stretch;
     gap: 6px;
     padding: 12px 16px;
-    font: var(--text-8) var(--mono);
-    word-break: break-all;
   }
 
-  & footer .badge {
-    align-self: flex-start;
-    font-family: var(--font-sans);
+  & footer .app-version {
+    color: var(--mute);
+    font: var(--text-8) var(--font-sans);
   }
 }
 
