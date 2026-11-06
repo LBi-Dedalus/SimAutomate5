@@ -74,6 +74,18 @@ function endedByEtx(record) {
 }
 
 /**
+ * True when `frame` continues the transfer after an ETX frame: ETX only ends a record, so the
+ * next frame must carry the next number (modulo 8), or the same one when the last was NAKed.
+ */
+function continuesTransfer(record, frame) {
+  const last = lastEntry(record);
+  const previous = last?.frame?.number;
+  if (!Number.isInteger(previous) || !Number.isInteger(frame?.number)) return false;
+  const expected = last.reply?.kind === "nak" ? previous : (previous + 1) % 8;
+  return frame.number === expected;
+}
+
+/**
  * Applies one ASTM unit. `create(fields)` appends a new record to the session and returns it.
  * Returns the records created and updated by the unit.
  */
@@ -116,8 +128,8 @@ export function applyAstmUnit(state, payload, create) {
 
     case "frame": {
       let record = state.open[direction];
-      // After the last frame (ETX) only EOT is expected: anything else starts a new message.
-      if (record && endedByEtx(record)) {
+      // A frame that does not follow the numbering of the last ETX frame starts a new message.
+      if (record && endedByEtx(record) && !continuesTransfer(record, payload.astm)) {
         close(state, record, "incomplete", updated);
         record = null;
       }

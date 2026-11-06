@@ -130,6 +130,52 @@ test("a new ENQ closes the previous transfer as incomplete", () => {
   assert.ok(updated.includes(h.records[0]));
 });
 
+test("ETX-terminated frames with continuing numbers form one transfer, wrapping 7 -> 0 -> 1", () => {
+  const h = harness();
+  h.apply(unit("received", enq));
+  h.apply(unit("sent", ack));
+  const texts = ["H|\\^&\r", "P|1\r", "O|1\r", "R|1\r", "O|2\r", "R|2\r", "O|3\r", "O|4\r", "L|1\r"];
+  texts.forEach((text, i) => {
+    h.apply(unit("received", frame((i + 1) % 8, text)));
+    h.apply(unit("sent", ack));
+  });
+  h.apply(unit("received", eot));
+
+  assert.equal(h.records.length, 1);
+  const { transfer } = h.records[0];
+  assert.equal(transfer.status, "complete");
+  assert.deepEqual(replyCounts(transfer), { ack: 9, nak: 0, none: 0, frames: 9 });
+  assert.equal(partitionFrames(transfer).merged.length, 9);
+  assert.equal(h.records[0].content.split("\n").length, 11);
+});
+
+test("a NAKed ETX frame is retransmitted inside the same transfer", () => {
+  const h = harness();
+  h.apply(unit("sent", enq));
+  h.apply(unit("received", ack));
+  h.apply(unit("sent", frame(1, "H|\\^&\r")));
+  h.apply(unit("received", nak));
+  h.apply(unit("sent", frame(1, "H|\\^&\r")));
+  h.apply(unit("received", ack));
+  h.apply(unit("sent", frame(2, "L|1\r")));
+  assert.equal(h.records.length, 1);
+  assert.deepEqual(replyCounts(h.records[0].transfer), { ack: 1, nak: 1, none: 1, frames: 3 });
+});
+
+test("a frame breaking the numbering after an ETX frame splits the transfer", () => {
+  const h = harness();
+  h.apply(unit("received", frame(1, "H|\\^&\r")));
+  h.apply(unit("sent", ack));
+  h.apply(unit("received", frame(2, "P|1\r")));
+  h.apply(unit("sent", ack));
+  h.apply(unit("received", frame(1, "H|\\^&\r")));
+
+  assert.equal(h.records.length, 2);
+  assert.equal(h.records[0].transfer.status, "incomplete");
+  assert.equal(h.records[0].transfer.entries.length, 2);
+  assert.equal(h.records[1].transfer.implicit, true);
+});
+
 test("a frame after an ETX frame starts a new implicit message", () => {
   const h = harness();
   h.apply(unit("received", frame(1, "H|\\^&\rL|1\r")));
