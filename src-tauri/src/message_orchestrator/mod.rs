@@ -152,6 +152,7 @@ impl MessageOrchestrator {
                     continue;
                 }
                 if let Some(frame) = state.take_due(now) {
+                    drop(state);
                     self.reporter.only_log(
                         LogLevel::Inf,
                         file!(),
