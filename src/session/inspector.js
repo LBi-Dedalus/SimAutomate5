@@ -14,6 +14,18 @@ import { renderTokens, el } from "../render.js";
 import { logError } from "../log.js";
 import { cloneTemplate } from "../include.js";
 
+import { resendPayload, RESEND_HINT, RESEND_UNAVAILABLE_HINT, RESEND_OFFLINE_HINT } from "./resend-core.js";
+import { bindHint } from "../tooltip.js";
+
+// Wired by messages.js (which imports this module): how to find a session's send target and send.
+let sender = { sendTargetFor: () => null, sendMessage: async () => false };
+let resending = false;
+let hintBound = false;
+
+export function configureResend(next) {
+  sender = next;
+}
+
 const INSPECTOR_TAB = "session/inspector-tab.html";
 const SEGMENT_BLOCK = "session/segment-block.html";
 
@@ -44,6 +56,25 @@ function sync() {
   record = view.record;
   tab = view.tab;
   collapsed = view.collapsed;
+}
+
+function resendHint() {
+  if (!record || resendPayload(record) === null) return RESEND_UNAVAILABLE_HINT;
+  return sender.sendTargetFor(record.session_id) ? RESEND_HINT : RESEND_OFFLINE_HINT;
+}
+
+/** Enables Resend for a resendable sent message whose OWN session can send now. */
+export function updateResend() {
+  const button = document.getElementById("insp-resend");
+  if (!button) return;
+  if (!hintBound) {
+    hintBound = true;
+    bindHint(button, { key: "hint:insp-resend", text: resendHint, prefer: "top" });
+  }
+  const can =
+    !!record && resendPayload(record) !== null && !!sender.sendTargetFor(record.session_id);
+  button.disabled = !can || resending;
+  button.setAttribute("aria-busy", String(resending));
 }
 
 function available(rec) {
@@ -126,6 +157,7 @@ function render() {
     );
     copy.disabled = true;
     save.disabled = true;
+    updateResend();
     return;
   }
 
@@ -172,7 +204,8 @@ function render() {
 
   copy.disabled = false;
   save.disabled = record.msg_type !== "sent" && record.msg_type !== "received";
-}
+    updateResend();
+  }
 
 function renderRaw(body) {
   const raw = el("div", "raw");
@@ -275,6 +308,29 @@ function init() {
         const meta = document.getElementById("insp-meta");
         meta.appendChild(el("span", "badge error", "Copy failed"));
       }
+    },
+    async resend() {
+      if (resending || !record) return;
+      // Everything is captured before the first await: later selection changes never redirect it.
+      const rec = record;
+      const payload = resendPayload(rec);
+      const target = sender.sendTargetFor(rec.session_id);
+      if (payload === null || !target) return;
+      resending = true;
+      updateResend();
+      let accepted = false;
+      try {
+        accepted = await sender.sendMessage(payload, target);
+      } catch (err) {
+        logError(`Resend failed: ${String(err)}`, "inspector.js:resend");
+      } finally {
+        resending = false;
+      }
+      // The send path already reports the failure in the conversation of rec's session.
+      if (!accepted && record === rec) {
+        document.getElementById("insp-meta").appendChild(el("span", "badge error", "Resend failed"));
+      }
+      updateResend();
     },
     saveTemplate() {
       if (!record) return;

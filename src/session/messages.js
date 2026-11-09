@@ -5,6 +5,8 @@ import {
   activateInspector,
   forgetInspector,
   refreshInspector,
+  configureResend,
+  updateResend,
 } from "./inspector.js";
 import { buildFrameRows, replySummary, transferBadges } from "./astm-view.js";
 import { renderTokens, el } from "../render.js";
@@ -132,7 +134,9 @@ function initComposer() {
 }
 
 function initSendButton() {
+  configureResend({ sendTargetFor, sendMessage });
   subscribeSendEligibility((target) => {
+    updateResend();
     const sendButton = document
       .getElementById("message-form")
       .querySelector('button[type="submit"]');
