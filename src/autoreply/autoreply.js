@@ -561,6 +561,11 @@ window.actions.ar = {
   guardDiscard,
   guardCancel,
   noSubmit: (ev) => ev.preventDefault(),
+  closeEditor: () => {
+    if (!selectedId) return;
+    selectedId = null;
+    renderAll();
+  },
   // Rule form fields: data-field names the rule property.
   text: (ev, el) => edit((r) => (r[el.dataset.field] = el.value)),
   choose: (ev, el) => edit((r) => (r[el.dataset.field] = el.value), true),

@@ -1,9 +1,12 @@
 <link rel="x-template" href="home/recent-card.html" />
 <link rel="x-template" href="home/recent-side-item.html" />
 <script type="after-include" src="home/connection.js"></script>
+<header>
+  <h4>Home <small class="sub">Start a session or reopen a recent connection</small></h4>
+</header>
 <div class="scroll">
   <div class="home">
-    <h2>Start a session</h2>
+    <h5>New session</h5>
     <form id="connect-form" class="card" novalidate data-action="submit:home.submit">
       <div>
         <small>Mode</small>
@@ -56,5 +59,6 @@
     </h5>
     <p id="recent-note" class="hidden" role="alert" data-variant="danger"></p>
     <div id="recent-list" class="cards"></div>
+    <p class="dashed-note">No recent connection yet. Connected servers appear here for one-click reuse.</p>
   </div>
 </div>

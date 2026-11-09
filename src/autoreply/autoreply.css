@@ -34,17 +34,18 @@
   }
 
   &.on {
-    border-color: var(--teal);
-    background: color-mix(in srgb, var(--teal) 8%, var(--paper));
+    border-color: transparent;
+    background: color-mix(in srgb, var(--teal) 9%, var(--paper));
+    box-shadow: inset 3px 0 0 var(--teal);
   }
 
   &.off > :not(:first-child, :last-child) {
-    opacity: 0.55;
+    opacity: 0.9;
   }
 
   & > :nth-child(n + 3):nth-child(-n + 5),
   & .ar-sub {
-    font: var(--text-8) var(--mono);
+    font: 11.5px var(--mono);
   }
 
   & > :nth-child(2) {
@@ -56,6 +57,22 @@
     display: flex;
     justify-content: flex-end;
     gap: 2px;
+  }
+
+  /* Row tools: full-strength glyphs with a comfortable hit area; only a disabled one fades. */
+  & .k-tool > button {
+    min-width: 32px;
+    min-height: 32px;
+    color: var(--fg);
+    font-size: 15px;
+
+    &:disabled {
+      opacity: 0.35;
+    }
+
+    &.ar-remove {
+      color: var(--red);
+    }
   }
 }
 
@@ -88,14 +105,26 @@
   gap: 10px;
 }
 
+/* The editor scrolls inside the dock: fade its bottom edge so the cut reads as scrolling. */
+@media (min-width: 961px) {
+  #ar-dock {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+  }
+}
+
 #ar-form {
   padding: 14px 16px 18px;
+
+  &:not(.hidden) + #ar-empty {
+    display: none;
+  }
 
   & fieldset {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
+    gap: var(--space-1);
     margin: 0;
+    padding: var(--space-3);
     border-radius: var(--radius-large);
   }
 
@@ -136,15 +165,30 @@
 }
 
 @media (max-width: 960px) {
-  /* Stacked: the rule editor is below the list, so the pill centres on the whole view. */
+  /* Stacked: no rule selected means nothing to show below the list. */
+  #ar-dock:has(#ar-form.hidden) {
+    display: none;
+  }
+
   #view-autoreply {
-    --k-right: 0px;
+    --k-right: 340px;
 
     &.pending .scroll {
       padding-bottom: 16px;
     }
   }
 
+  #ar-form > header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin: -14px -16px 0;
+    padding: 12px 44px 8px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--paper);
+  }
+
+  /* Column headings are hidden here: each value carries its own small label (--l). */
   .ar-th {
     display: none;
   }
@@ -164,19 +208,31 @@
     }
 
     & > :nth-child(3) {
+      --l: "Condition";
       grid-area: cond;
     }
 
     & > :nth-child(4) {
+      --l: "Reply";
       grid-area: reply;
     }
 
     & > :nth-child(5) {
+      --l: "Delay";
       grid-area: delay;
     }
 
     & > :nth-child(6) {
       grid-area: tools;
+    }
+
+    & > :is(:nth-child(3), :nth-child(4), :nth-child(5))::before {
+      content: var(--l);
+      display: block;
+      color: var(--mute);
+      font: var(--font-medium) 10px var(--font-sans);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
     }
   }
 }

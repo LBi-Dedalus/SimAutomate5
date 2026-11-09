@@ -1,16 +1,25 @@
 /* Home view. */
 
 .home {
-  max-width: 880px;
-  margin: 0 auto;
-  padding: 34px 32px;
-  text-align: center;
+  max-width: none;
+  margin: 0;
+  padding: 20px var(--pad) 32px;
 
   & > h5 {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    min-height: 30px;
     padding: 26px 0 10px;
+    box-sizing: content-box;
+  }
+
+  & > h5:first-child {
+    padding-top: 0;
+  }
+
+  & > p {
+    margin-top: var(--space-2);
   }
 }
 
@@ -19,8 +28,7 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--space-3);
-  max-width: 720px;
-  margin: 18px auto var(--space-2);
+  margin: 0;
   padding: 16px;
   box-shadow: 0 10px 30px -14px color-mix(in srgb, var(--ink) 25%, transparent);
 
@@ -42,31 +50,18 @@
     min-width: 140px;
   }
 
-  /*
-   * Natural wrapping, no hard line break. Content width = 720 - 2*16 = 688px,
-   * gap g = var(--space-3) (assumed <= 12px), min-width of a label = 140px.
-   * An item wraps when (line so far + g + its basis) > 688.
-   *   Line 1 (SSH client): Mode 220 + Host 200 + Port 120 + 2g(24) = 564;
-   *     next SSH host: remaining 688 - 564 - 12 = 112 < 140 (its min-width) -> wraps.
-   *   Line 1 (SSH server): Mode 220 + server Port 320 + g(12) = 552;
-   *     remaining 688 - 552 - 12 = 124 < 140 -> SSH host wraps.
-   *   Non-SSH client: 564 + g + Connect (~80) = ~656 <= 688 -> one line.
-   *   Non-SSH server: 552 + g + Connect (~80) = ~644 <= 688 -> one line.
-   *   Line 2: SSH host 200 + SSH port 100 + SSH user 200 + Connect ~80 + 3g(36)
-   *     = ~616 <= 688 -> fits, the button ends the line.
-   * Port fields grow (flex-grow) to fill line 1; SSH host/user grow on line 2.
-   */
+  /* Natural wrapping, no hard line break: fields grow to fill their line, the button ends the last one. */
   & #client-host-field {
-    flex: 0 0 200px;
+    flex: 1 1 200px;
   }
 
   & #client-port-field {
-    flex: 1 1 120px;
+    flex: 0 0 120px;
     min-width: 0;
   }
 
   & #server-port-field {
-    flex: 1 1 320px;
+    flex: 0 1 240px;
   }
 
   & .ssh-host-field,
@@ -86,6 +81,13 @@
 
   & #connect-btn {
     flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 960px) {
+  /* Mode takes its own row so the fields read Mode, then Host, Port and Connect. */
+  #connect-form > div:first-child {
+    flex: 1 0 100%;
   }
 }
 
@@ -111,7 +113,7 @@
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--space-3);
 
   & .card {
@@ -120,7 +122,7 @@
     align-items: stretch;
     justify-content: flex-start;
     gap: 4px;
-    padding: 14px;
+    padding: 12px;
   }
 
   & div {
@@ -170,7 +172,7 @@
 
   & .card-actions > button {
     margin: 0;
-    padding: 7px var(--space-2);
+    padding: 5px var(--space-2);
     border: 0;
     border-radius: 0;
     background: transparent;
@@ -234,9 +236,7 @@
   }
 
   & b {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
     font: var(--font-bold) 13.5px var(--font-mono);
   }
 }

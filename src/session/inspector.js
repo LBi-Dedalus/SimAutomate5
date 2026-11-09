@@ -122,7 +122,7 @@ function render() {
     title.textContent = "Message inspector";
     dir.classList.add("hidden");
     body.appendChild(
-      el("p", "", "Select a message in the conversation to inspect it."),
+      el("p", "", "Click a message in the conversation to inspect its fields."),
     );
     copy.disabled = true;
     save.disabled = true;
@@ -265,6 +265,9 @@ function init() {
       else collapsed.delete(head.dataset.segment);
       head.querySelector(".sg-arrow").textContent = isCollapsed ? "▸" : "▾";
       head.setAttribute("aria-expanded", String(!isCollapsed));
+    },
+    close() {
+      if (currentKey) clearInspector(currentKey);
     },
     async copy() {
       if (!record) return;
