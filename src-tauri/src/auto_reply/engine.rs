@@ -106,7 +106,7 @@ impl AutoReplyRuleSet {
                 (AutoReplyTrigger::Hl7 { message_type }, FrameEvent::Hl7(_)) => hl7
                     .as_ref()
                     .map(|message| {
-                        type_matches(message_type, &message.message_type())
+                        type_matches(message_type, message.message_type())
                             && rule
                                 .condition
                                 .as_ref()

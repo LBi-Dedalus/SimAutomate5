@@ -4,6 +4,7 @@ pub(crate) struct Hl7Message {
     field_sep: char,
     component_sep: char,
     segments: Vec<String>,
+    message_type: String,
     /// MSH-10 exactly as received (the decoded `segments` are lossy for non UTF-8 bytes).
     raw_control_id: Option<Vec<u8>>,
 }
@@ -17,6 +18,15 @@ fn raw_control_id(msh: &[u8], field_sep: u8) -> Option<Vec<u8>> {
         return None;
     }
     Some(id.to_vec())
+}
+
+fn message_type(msh: &str, field_sep: char, component_sep: char) -> String {
+    let message_type_field = msh.split(field_sep).nth(9);
+
+    match message_type_field {
+        None => return String::new(),
+        Some(field) => field.split(component_sep).take(2).collect::<Vec<_>>().join("^"),
+    }
 }
 
 pub(crate) fn parse_hl7(body: &[u8]) -> Option<Hl7Message> {
@@ -48,6 +58,7 @@ pub(crate) fn parse_hl7(body: &[u8]) -> Option<Hl7Message> {
         field_sep,
         component_sep,
         raw_control_id: raw_control_id(raw_msh, field_sep as u8),
+        message_type: message_type(msh, field_sep, component_sep),
         segments,
     })
 }
@@ -55,7 +66,7 @@ pub(crate) fn parse_hl7(body: &[u8]) -> Option<Hl7Message> {
 impl Hl7Message {
     /// Field `n` of the first segment named `segment`. MSH-1 is the field separator itself,
     /// so MSH-n is the n-th separated item (MSH-2 are the encoding characters).
-    pub(crate) fn field(&self, segment: &str, n: u32) -> Option<String> {
+    pub(crate) fn field(&self, segment: &str, n: u32) -> Option<&str> {
         let n = n as usize;
         for line in &self.segments {
             let mut parts = line.split(self.field_sep);
@@ -66,23 +77,18 @@ impl Hl7Message {
             // separator itself, hence MSH-n is the (n-1)-th remaining item.
             if segment == "MSH" {
                 if n == 1 {
-                    return Some(self.field_sep.to_string());
+                    return line.get(3..4);
                 }
-                return parts.nth(n - 2).map(str::to_string);
+                return parts.nth(n - 2);
             }
-            return parts.nth(n - 1).map(str::to_string);
+            return parts.nth(n - 1);
         }
         None
     }
 
     /// First two MSH-9 components joined with `^` (`ORU^R01^ORU_R01` gives `ORU^R01`).
-    pub(crate) fn message_type(&self) -> String {
-        let value = self.field("MSH", 9).unwrap_or_default();
-        value
-            .split(self.component_sep)
-            .take(2)
-            .collect::<Vec<_>>()
-            .join("^")
+    pub(crate) fn message_type(&self) -> &str {
+        &self.message_type
     }
 
     /// MSH-10 as received (raw bytes), only when non empty and free of control bytes.
