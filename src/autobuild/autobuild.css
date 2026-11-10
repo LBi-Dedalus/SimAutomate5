@@ -9,24 +9,12 @@
 .ab-body {
   display: flex;
   flex-direction: column;
+  justify-content: start;
   gap: 10px;
-}
-
-.ab-body {
   padding: 14px 18px;
 
-  /* The two boxes share the height left, so the builder fills the view instead of floating in it. */
-  & > label:has(textarea) {
-    display: flex;
-    flex: 1 1 140px;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-
   & textarea {
-    flex: 1;
-    min-height: 100px;
-    max-height: 200px;
+    height: 200px;
     field-sizing: fixed;
   }
 

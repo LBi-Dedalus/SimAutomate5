@@ -156,7 +156,7 @@ async function boot(stored = SEED) {
 
 const cards = () => getNode("tpl-list").children;
 const cardNamed = (name) => cards().find((c) => c.text.includes(name));
-const loadBtn = (card) => card.find((n) => n.classes.has("tload"))[0];
+const loadBtn = (card) => card;
 const open = (name) => loadBtn(cardNamed(name)).fire("click");
 /** The delete ✕ only exists on the selected card. */
 const delBtn = () => cards().find((c) => c.classes.has("on"))?.find((n) => n.classes.has("k-x"))[0];

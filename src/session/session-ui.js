@@ -157,7 +157,7 @@ function renderSidebar() {
     const active = session.id === store.activeId;
     const item = cloneTemplate(SESSION_ITEM, {
       label: endpointLabel(session),
-      detail: [addressNote(session), modeLabel(session.mode), statusText(session.status)]
+      detail: [modeLabel(session.mode), statusText(session.status)]
         .filter(Boolean)
         .join(" · "),
       ...(session.unread > 0 && !active && { unread: String(Math.min(session.unread, 99)) }),

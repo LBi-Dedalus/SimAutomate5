@@ -249,7 +249,6 @@ function renderRecent() {
       kind: modeLabel(entry.mode),
       verb: client ? "Connect " : "Listen ",
       name: name || endpoint,
-      endpoint: name ? endpoint : "",
     });
     card.querySelector(".card-name").classList.toggle("is-address", !name);
     card.querySelector(".badge").classList.toggle("mute", !client);
@@ -275,7 +274,7 @@ function renderRecent() {
     const name = savedName(names, entry);
     const item = cloneTemplate(SIDE_ITEM_TEMPLATE, {
       endpoint: name || endpointText(entry),
-      detail: [name && endpointText(entry), modeLabel(entry.mode), relativeTime(entry.lastUsed)]
+      detail: [modeLabel(entry.mode), relativeTime(entry.lastUsed)]
         .filter(Boolean)
         .join(" · "),
     });

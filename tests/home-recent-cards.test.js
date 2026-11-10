@@ -252,7 +252,6 @@ test("unnamed cards use the address as the title, without repeating it; a rename
   const card = recentCard(0);
   assert.equal(slot(card, "name").textContent, "10.0.0.1:6000", "the address is the title");
   assert.equal(slot(card, "name").classes.has("is-address"), true);
-  assert.equal(slot(card, "endpoint").textContent, "", "no duplicate supporting line");
   assert.equal(renameButton(card).dataset.action, "click:home.renameRecent");
   assert.equal(renameButton(card).dataset.host, "10.0.0.1");
   assert.equal(renameButton(card).getAttribute("aria-label"), "Rename 10.0.0.1:6000");
@@ -274,13 +273,12 @@ test("a saved name shows on the card and the sidebar item next to the address, a
 
   const card = recentCard(0);
   assert.equal(slot(card, "name").textContent, "Lab LIS");
-  assert.equal(slot(card, "endpoint").textContent, "10.0.0.1:6000");
   assert.equal(renameButton(card).getAttribute("aria-label"), "Rename Lab LIS");
   assert.deepEqual(getNode("recent-list").children.map((c) => slot(c, "name").textContent).slice(0, 2), ["Lab LIS", ":5001"]);
 
   const side = getNode("side-recent").children[0];
   assert.equal(slot(side, "endpoint").textContent, "Lab LIS");
-  assert.match(slot(side, "detail").textContent, /^10\.0\.0\.1:6000 · Client/);
+  assert.match(slot(side, "detail").textContent, /^Client/);
 
   // A save failure shows nothing as renamed.
   const failing = globalThis.localStorage.setItem;

@@ -9,6 +9,7 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-1);
+  cursor: pointer;
 
   & .tload {
     display: flex;
@@ -35,7 +36,7 @@
 .bd {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 210px;
+  grid-template-columns: minmax(0, 1fr) 210px;
   gap: 16px;
   padding: 12px var(--pad) 16px;
   overflow: auto;
@@ -101,6 +102,7 @@
 }
 
 .vars {
+  min-width: 0;
   padding-left: 14px;
   border-left: 1px solid var(--line);
 
@@ -108,6 +110,18 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: var(--space-2);
+  }
+
+  & label > .var {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  & label > em {
+    flex: none;
   }
 
   & em {
@@ -290,7 +304,7 @@
   }
 
   .bd {
-    grid-template-columns: 1fr 176px;
+    grid-template-columns: minmax(0, 1fr) 176px;
     gap: 14px;
   }
 }

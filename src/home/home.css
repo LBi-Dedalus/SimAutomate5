@@ -1,8 +1,8 @@
 /* Home view. */
 
 .home {
-  max-width: none;
-  margin: 0;
+  max-width: 960px;
+  margin: 0 auto;
   padding: 20px var(--pad) 32px;
 
   & > h5 {
@@ -96,6 +96,7 @@
   padding: 3px;
   border-radius: var(--radius-medium);
   background: var(--wash);
+  width: fit-content;
 
   & button {
     padding: 6px 14px;
@@ -208,11 +209,6 @@
     &.is-address {
       font-family: var(--font-mono);
     }
-  }
-
-  /* An empty supporting line keeps its height so named and unnamed cards stay aligned. */
-  & .card-endpoint {
-    min-height: 1.4em;
   }
 
   & small {

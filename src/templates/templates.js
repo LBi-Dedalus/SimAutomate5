@@ -101,7 +101,10 @@ async function init() {
       if (draft && String(draft.id) === id) return;
       requestAction(() => openTemplate(templates.find((t) => String(t.id) === id)?.id ?? id));
     },
-    remove: () => void onDelete(),
+    remove: (ev) => {
+      ev.stopPropagation();
+      void onDelete();
+    },
     variable: (_ev, input) => onVariableInput(input),
   };
 

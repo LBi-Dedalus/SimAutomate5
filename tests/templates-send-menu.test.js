@@ -168,7 +168,7 @@ const pressKey = (key) => {
 
 // Open the template in the editor.
 const card = getNode("tpl-list").children[0];
-card.find((n) => n.classes.has("tload"))[0].fire("click");
+card.fire("click");
 showView("templates", { force: true });
 
 let a, b, c;
@@ -289,7 +289,7 @@ test("session changes while the menu is open update it and never redirect a send
 
 const openCard = (id) => {
   const el = getNode("tpl-list").children.find((n) => n.dataset.id === id);
-  el.find((n) => n.classes.has("tload"))[0].fire("click");
+  el.fire("click");
 };
 
 test("unsaved template edits remain after a successful send that opens the session", async () => {
