@@ -1,6 +1,7 @@
 //! Queue state: bounded admission of user items and scheduled replies, and ACK-wait scheduling.
 
 use std::collections::VecDeque;
+use std::fmt::Display;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,6 +14,43 @@ pub(super) struct ScheduledReply {
     pub(super) due: Instant,
     pub(super) seq: u64,
     pub(super) frame: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub(crate) enum QueueError {
+    Closed,
+    Full {
+        queued_items: usize,
+        queued_bytes: usize,
+    },
+    TooLarge {
+        actual_bytes: usize,
+        max_bytes: usize,
+    },
+}
+
+impl Display for QueueError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            QueueError::Closed => write!(f, "send queue closed"),
+            QueueError::Full {
+                queued_items,
+                queued_bytes,
+            } => write!(
+                f,
+                "send queue full ({} items, {} bytes)",
+                queued_items, queued_bytes
+            ),
+            QueueError::TooLarge {
+                actual_bytes,
+                max_bytes,
+            } => write!(
+                f,
+                "message too large ({} bytes, {} max)",
+                actual_bytes, max_bytes
+            ),
+        }
+    }
 }
 
 /// Ceiling on queued items (user items + scheduled reply frames, combined).
@@ -100,18 +138,22 @@ impl MessageQueueState {
     }
 
     /// Whether `items` more items totalling `bytes` bytes fit.
-    fn check(&self, items: usize, bytes: usize) -> Result<(), String> {
+    fn check(&self, items: usize, bytes: usize) -> Result<(), QueueError> {
+        if self.closed {
+            return Err(QueueError::Closed);
+        }
+
         if self.queued_items + items > MAX_ITEMS || self.queued_bytes + bytes > MAX_BYTES {
-            return Err(format!(
-                "send queue full ({} items, {} bytes)",
-                self.queued_items, self.queued_bytes
-            ));
+            return Err(QueueError::Full {
+                queued_items: self.queued_items,
+                queued_bytes: self.queued_bytes,
+            });
         }
         Ok(())
     }
 
     /// All-or-nothing admission of user items.
-    pub(super) fn push_user(&mut self, items: Vec<Vec<u8>>) -> Result<(), String> {
+    pub(super) fn push_user(&mut self, items: Vec<Vec<u8>>) -> Result<(), QueueError> {
         let bytes = items.iter().map(Vec::len).sum();
         self.check(items.len(), bytes)?;
         self.queued_items += items.len();
@@ -125,7 +167,7 @@ impl MessageQueueState {
         &mut self,
         due: Instant,
         frames: Vec<Vec<u8>>,
-    ) -> Result<(), String> {
+    ) -> Result<(), QueueError> {
         let bytes = frames.iter().map(Vec::len).sum();
         self.check(frames.len(), bytes)?;
         self.queued_items += frames.len();

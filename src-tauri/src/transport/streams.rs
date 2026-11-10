@@ -98,8 +98,7 @@ async fn send_loop(
     writer: &mut (impl AsyncWrite + Unpin),
     message_orchestrator: SharedMessageOrchestrator,
 ) -> Result<(), String> {
-    loop {
-        let msg = message_orchestrator.recv().await;
+    while let Some(msg) = message_orchestrator.recv().await {
         let mut pos = 0;
 
         while pos < msg.len() {
@@ -116,4 +115,5 @@ async fn send_loop(
         message_orchestrator.handle_sent_message(&msg);
         sleep(Duration::from_millis(200)).await;
     }
+    Ok(())
 }

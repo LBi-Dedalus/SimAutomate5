@@ -10,6 +10,7 @@ use tokio::sync::{Mutex, Notify};
 use tokio::time::{sleep_until, Instant};
 
 use crate::auto_reply::{AutoReplyOutcome, AutoReplyRuleSet};
+use crate::message_orchestrator::state::QueueError;
 use crate::models::{LogLevel, MessageType, SendRequest};
 use crate::protocol::astm::astm_unit;
 use crate::protocol::frames::{FrameBuffer, FrameEvent};
@@ -46,7 +47,7 @@ pub(crate) struct MessageOrchestrator {
     state: Mutex<MessageQueueState>,
     // Separate lock so decoding never contends with the send loop.
     receive: Mutex<ReceiveState>,
-    ready: Notify,
+    state_changed: Notify,
 }
 
 impl MessageOrchestrator {
@@ -70,7 +71,7 @@ impl MessageOrchestrator {
                 decoder: translate::ControlTokenDecoder::new(),
                 frames: FrameBuffer::new(),
             }),
-            ready: Notify::new(),
+            state_changed: Notify::new(),
         })
     }
 
@@ -91,21 +92,24 @@ impl MessageOrchestrator {
                 format!("auto reply rules changed, dropped {dropped} pending replies"),
             );
         }
-        self.ready.notify_one();
+        self.state_changed.notify_one();
     }
 
     /// The attempt is over: pending user messages and automatic replies are discarded.
     pub(crate) async fn close(&self) {
-        let mut state = self.state.lock().await;
-        state.close();
+        {
+            let mut state = self.state.lock().await;
+            state.close();
+        }
+        self.state_changed.notify_one();
     }
 
-    pub(crate) async fn send_user_message(&self, payload: &SendRequest) -> Result<(), String> {
+    pub(crate) async fn send_user_message(&self, payload: &SendRequest) -> Result<(), QueueError> {
         if payload.message.len() > MAX_USER_PAYLOAD {
-            return Err(format!(
-                "Message too large ({} bytes, maximum {MAX_USER_PAYLOAD})",
-                payload.message.len()
-            ));
+            return Err(QueueError::TooLarge {
+                actual_bytes: payload.message.len(),
+                max_bytes: MAX_USER_PAYLOAD,
+            });
         }
         self.reporter.only_log(
             LogLevel::Inf,
@@ -121,7 +125,7 @@ impl MessageOrchestrator {
         self.enqueue_message(&payload.message).await
     }
 
-    async fn enqueue_message(&self, message: &str) -> Result<(), String> {
+    async fn enqueue_message(&self, message: &str) -> Result<(), QueueError> {
         let items = split_message(message);
         // Scope the lock so it is released before notifying.
         {
@@ -131,17 +135,22 @@ impl MessageOrchestrator {
             }
             state.push_user(items)?;
         }
-        self.ready.notify_one();
+        self.state_changed.notify_one();
         Ok(())
     }
 
-    pub(crate) async fn recv(&self) -> Vec<u8> {
+    pub(crate) async fn recv(&self) -> Option<Vec<u8>> {
         loop {
-            let ready = self.ready.notified();
+            let changed = self.state_changed.notified();
             let wake_at;
 
             {
                 let mut state = self.state.lock().await;
+                
+                if state.closed {
+                    return None;
+                }
+
                 let now = Instant::now();
                 if state.ack_overdue(now) {
                     let dropped = state.reset_sending();
@@ -159,7 +168,7 @@ impl MessageOrchestrator {
                         line!(),
                         format!("releasing automatic reply bytes={}", frame.len()),
                     );
-                    return frame;
+                    return Some(frame);
                 }
                 if !state.waiting_for_ack() {
                     if let Some(message) = state.pop_user() {
@@ -170,7 +179,7 @@ impl MessageOrchestrator {
                             line!(),
                             format!("releasing queued message bytes={}", message.len()),
                         );
-                        return message;
+                        return Some(message);
                     }
                 }
                 let ack_wake = state.ack_wait.map(|wait| wait.deadline);
@@ -185,11 +194,11 @@ impl MessageOrchestrator {
             match wake_at {
                 Some(deadline) => {
                     tokio::select! {
-                        _ = ready => {}
+                        _ = changed => {}
                         _ = sleep_until(deadline) => {}
                     }
                 }
-                None => ready.await,
+                None => changed.await,
             }
         }
     }
@@ -298,7 +307,7 @@ impl MessageOrchestrator {
                 ),
             ),
         }
-        self.ready.notify_one();
+        self.state_changed.notify_one();
     }
 
     async fn handle_ack(&self) -> Result<(), String> {
@@ -319,7 +328,7 @@ impl MessageOrchestrator {
 
         if let Some((dropped, timeout)) = timed_out {
             self.report_ack_timeout(dropped, timeout);
-            self.ready.notify_one();
+            self.state_changed.notify_one();
         }
         if should_release {
             self.reporter.only_log(
@@ -328,7 +337,7 @@ impl MessageOrchestrator {
                 line!(),
                 "received expected ACK, releasing queued messages",
             );
-            self.ready.notify_one();
+            self.state_changed.notify_one();
         }
 
         Ok(())
@@ -392,7 +401,7 @@ impl MessageOrchestrator {
                             line!(),
                             "Auto reply: an ASTM frame has a wrong checksum; <NAK> sent",
                         );
-                        self.ready.notify_one();
+                        self.state_changed.notify_one();
                     }
                     Err(e) => self.reporter.warn(
                         file!(),
@@ -466,7 +475,7 @@ impl MessageOrchestrator {
                         reply.delay.as_millis()
                     ),
                 );
-                self.ready.notify_one();
+                self.state_changed.notify_one();
             }
         }
     }

@@ -48,7 +48,7 @@ pub async fn send(
 ) -> Result<(), String> {
     let connection = ConnectionId::parse(session_id, attempt)?;
     let queue = manager.send_target(&connection).await?;
-    queue.send_user_message(payload).await
+    queue.send_user_message(payload).await.map_err(|err| format!("{}", err))
 }
 
 /// Stops one session: `Close` forgets it, `Disconnect` keeps it registered for a reconnect.
