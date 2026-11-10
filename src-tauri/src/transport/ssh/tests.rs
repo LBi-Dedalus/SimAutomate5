@@ -6,12 +6,12 @@ use std::sync::Arc;
 use russh::client;
 use russh::keys::{parse_public_key_base64, Algorithm, HashAlg, PublicKey};
 use russh::ChannelOpenFailure;
-use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio::time::{timeout, Duration};
 
 use super::forwarding::{classify_open_error, OpenErrorKind};
 use super::session::{
-    connect_transport, describe_connect_error, CancellableStream, OneShot, SshError, SshHandler,
+    connect_transport, describe_connect_error, CancellableStream, SshError, SshHandler,
 };
 use super::settings::{
     expand_path, load_host_settings, load_key, preferred_host_key_algorithms, resolve_key,
@@ -307,21 +307,36 @@ fn recorded_host_key_algorithms_come_first() {
     assert_eq!(rsa.iter().filter(|a| **a == Algorithm::Ed25519).count(), 1);
 }
 
-#[test]
-fn one_shot_hands_off_once_whatever_the_receiver_does() {
-    let (sender, mut receiver) = mpsc::channel(1);
-    let mut gate = OneShot::new(sender);
-    assert_eq!(gate.hand_off(1), Ok(()));
-    // The slot is free again after the receive, yet the gate stays shut.
+#[tokio::test]
+async fn oneshot_handoff_remains_available_when_shutdown_wins() {
+    let (sender, mut receiver) = oneshot::channel();
+    sender.send(1).unwrap();
+    tokio::select! {
+        biased;
+        _ = std::future::ready(()) => {}
+        _ = &mut receiver => panic!("shutdown must win"),
+    }
+    receiver.close();
     assert_eq!(receiver.try_recv(), Ok(1));
-    assert_eq!(gate.hand_off(2), Err(2));
-    assert!(receiver.try_recv().is_err());
+    assert_eq!(
+        receiver.try_recv(),
+        Err(oneshot::error::TryRecvError::Closed)
+    );
+}
 
-    let (sender, receiver) = mpsc::channel(1);
+#[test]
+fn oneshot_handoff_rejects_a_closed_or_dropped_receiver() {
+    let (sender, mut receiver) = oneshot::channel();
+    receiver.close();
+    assert_eq!(sender.send(1), Err(1));
+    assert_eq!(
+        receiver.try_recv(),
+        Err(oneshot::error::TryRecvError::Closed)
+    );
+
+    let (sender, receiver) = oneshot::channel();
     drop(receiver);
-    let mut gate = OneShot::new(sender);
-    assert_eq!(gate.hand_off(3), Err(3));
-    assert_eq!(OneShot::<u8>::none().hand_off(4), Err(4));
+    assert_eq!(sender.send(2), Err(2));
 }
 
 #[test]
@@ -382,7 +397,7 @@ async fn a_stalled_handshake_times_out_and_closes_the_connection() {
         alias: "127.0.0.1".into(),
         port,
         known_hosts: dir.paths().known_hosts(),
-        forwarded: OneShot::none(),
+        forwarded: None,
     };
     let result = connect_transport(
         Arc::new(client::Config::default()),

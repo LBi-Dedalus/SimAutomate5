@@ -130,9 +130,6 @@ impl MessageOrchestrator {
         // Scope the lock so it is released before notifying.
         {
             let mut state = self.state.lock().await;
-            if state.closed {
-                return Ok(());
-            }
             state.push_user(items)?;
         }
         self.state_changed.notify_one();
@@ -173,6 +170,7 @@ impl MessageOrchestrator {
                 if !state.waiting_for_ack() {
                     if let Some(message) = state.pop_user() {
                         state.start_ack_wait(&message, now, AckOrigin::User);
+                        drop(state);
                         self.reporter.only_log(
                             LogLevel::Inf,
                             file!(),

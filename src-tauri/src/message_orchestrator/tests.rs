@@ -1,17 +1,18 @@
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use tokio::time::{timeout, Instant};
 
 use super::composer::split_message;
-use super::state::{AckOrigin, MessageQueueState, ACK_TIMEOUT, MAX_BYTES, MAX_ITEMS};
+use super::state::{AckOrigin, MessageQueueState, QueueError, ACK_TIMEOUT, MAX_BYTES, MAX_ITEMS};
 use super::{MessageOrchestrator, SharedMessageOrchestrator, MAX_USER_PAYLOAD};
 use crate::auto_reply::AutoReplyRuleSet;
 use crate::ids::ConnectionId;
-use crate::models::{MessagePayload, SendRequest, StatusPayload};
+use crate::models::{FrontendLogEntry, LogLevel, MessagePayload, SendRequest, StatusPayload};
 use crate::protocol::frames::FrameEvent;
-use crate::reporting::NullLogger;
 use crate::reporting::{ConnectionReporter, ConnectionReporterFactory};
+use crate::reporting::{Logger, NullLogger};
 use crate::translate;
 
 struct NoSink;
@@ -38,6 +39,68 @@ fn queue() -> SharedMessageOrchestrator {
         reporter(Arc::new(NoSink)),
         Arc::new(AutoReplyRuleSet::disabled()),
     )
+}
+
+struct ReleaseLockLogger {
+    queue: std::sync::Mutex<Weak<MessageOrchestrator>>,
+    origin: AckOrigin,
+    releases: AtomicUsize,
+}
+
+impl Logger for ReleaseLockLogger {
+    fn log_backend(&self, _: LogLevel, _: &str, _: u32, message: &str) {
+        if !message.contains("releasing automatic reply bytes=")
+            && !message.contains("releasing queued message bytes=")
+        {
+            return;
+        }
+        let queue = self.queue.lock().unwrap().upgrade().unwrap();
+        let state = queue
+            .state
+            .try_lock()
+            .expect("release logging must not hold the queue lock");
+        assert_eq!((state.queued_items, state.queued_bytes), (0, 0));
+        assert_eq!(state.ack_wait.map(|wait| wait.origin), Some(self.origin));
+        self.releases.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn log_frontend(&self, _: &FrontendLogEntry) {}
+}
+
+fn release_logging_queue(origin: AckOrigin) -> (SharedMessageOrchestrator, Arc<ReleaseLockLogger>) {
+    let logger = Arc::new(ReleaseLockLogger {
+        queue: std::sync::Mutex::new(Weak::new()),
+        origin,
+        releases: AtomicUsize::new(0),
+    });
+    let reporter = ConnectionReporterFactory::new(Arc::new(NoSink), logger.clone())
+        .create(&ConnectionId::parse("s", 1).unwrap());
+    let queue = MessageOrchestrator::shared(reporter, Arc::new(AutoReplyRuleSet::disabled()));
+    *logger.queue.lock().unwrap() = Arc::downgrade(&queue);
+    (queue, logger)
+}
+
+#[tokio::test]
+async fn user_release_logging_observes_unlocked_updated_queue() {
+    let (queue, logger) = release_logging_queue(AckOrigin::User);
+    queue.enqueue_message("<ENQ>").await.unwrap();
+
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
+    assert_eq!(logger.releases.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn automatic_release_logging_observes_unlocked_updated_queue() {
+    let (queue, logger) = release_logging_queue(AckOrigin::Scheduled);
+    queue
+        .state
+        .lock()
+        .await
+        .push_replies(Instant::now(), vec![vec![0x05]])
+        .unwrap();
+
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
+    assert_eq!(logger.releases.load(Ordering::Relaxed), 1);
 }
 
 const AUTOBUILD: &str = "<VT>\nMSH|^~\\&|A|B<CR>\nPID|1||123<CR>\n<FS><CR>";
@@ -200,7 +263,8 @@ async fn hl7_frame_is_released_in_one_piece_without_waiting_for_ack() {
     for _ in 0..2 {
         let item = timeout(Duration::from_millis(200), queue.recv())
             .await
-            .expect("frame released");
+            .expect("frame released")
+            .expect("queue still open");
         assert_eq!(item, AUTOBUILD_BYTES);
     }
 }
@@ -209,12 +273,12 @@ async fn hl7_frame_is_released_in_one_piece_without_waiting_for_ack() {
 async fn astm_items_still_wait_for_ack() {
     let queue = queue();
     queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     assert!(timeout(Duration::from_millis(100), queue.recv())
         .await
         .is_err());
     queue.handle_frame(FrameEvent::Ack).await;
-    assert_eq!(queue.recv().await, b"second".to_vec());
+    assert_eq!(queue.recv().await, Some(b"second".to_vec()));
 }
 
 struct TypedSink(std::sync::Mutex<Vec<(String, String)>>);
@@ -270,7 +334,7 @@ fn default_ack_timeout_is_ten_seconds() {
 async fn missing_ack_times_out_clears_queue_and_reports() {
     let (queue, sink) = short_queue(Arc::new(AutoReplyRuleSet::disabled()));
     queue.enqueue_message("<ENQ>\nsecond\nthird").await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     // Nothing else is released: the queue was cleared when the ACK window elapsed.
     assert!(timeout(Duration::from_millis(400), queue.recv())
         .await
@@ -281,16 +345,16 @@ async fn missing_ack_times_out_clears_queue_and_reports() {
     assert!(warns[0].contains("No ACK received within 60 ms"));
     // The queue is usable again.
     queue.enqueue_message("next").await.unwrap();
-    assert_eq!(queue.recv().await, b"next".to_vec());
+    assert_eq!(queue.recv().await, Some(b"next".to_vec()));
 }
 
 #[tokio::test]
 async fn ack_within_the_window_does_not_time_out() {
     let (queue, sink) = short_queue(Arc::new(AutoReplyRuleSet::disabled()));
     queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     queue.handle_frame(FrameEvent::Ack).await;
-    assert_eq!(queue.recv().await, b"second".to_vec());
+    assert_eq!(queue.recv().await, Some(b"second".to_vec()));
     tokio::time::sleep(SHORT * 2).await;
     assert!(warnings(&sink).is_empty());
 }
@@ -299,7 +363,7 @@ async fn ack_within_the_window_does_not_time_out() {
 async fn late_ack_after_reset_is_ignored() {
     let (queue, sink) = short_queue(Arc::new(AutoReplyRuleSet::disabled()));
     queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     assert!(timeout(Duration::from_millis(300), queue.recv())
         .await
         .is_err());
@@ -315,7 +379,7 @@ async fn late_ack_after_reset_is_ignored() {
 async fn ack_arriving_after_the_deadline_is_a_timeout_not_a_release() {
     let (queue, sink) = short_queue(Arc::new(AutoReplyRuleSet::disabled()));
     queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     tokio::time::sleep(SHORT * 2).await; // recv is not polled: nobody noticed yet
     queue.handle_frame(FrameEvent::Ack).await;
     assert_idle(&queue).await;
@@ -326,21 +390,21 @@ async fn ack_arriving_after_the_deadline_is_a_timeout_not_a_release() {
 async fn duplicate_ack_is_harmless() {
     let (queue, sink) = short_queue(Arc::new(AutoReplyRuleSet::disabled()));
     queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     queue.handle_frame(FrameEvent::Ack).await;
-    assert_eq!(queue.recv().await, b"second".to_vec());
+    assert_eq!(queue.recv().await, Some(b"second".to_vec()));
     queue.handle_frame(FrameEvent::Ack).await; // duplicate
     assert_idle(&queue).await;
     assert!(warnings(&sink).is_empty());
     queue.enqueue_message("third").await.unwrap();
-    assert_eq!(queue.recv().await, b"third".to_vec());
+    assert_eq!(queue.recv().await, Some(b"third".to_vec()));
 }
 
 #[tokio::test]
 async fn nak_stops_sending_and_clears_the_queue_without_resend() {
     let (queue, sink) = short_queue(Arc::new(AutoReplyRuleSet::disabled()));
     queue.enqueue_message("<ENQ>\nsecond\nthird").await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     queue.handle_frame(FrameEvent::Nak).await;
     assert_idle(&queue).await;
     let warns = warnings(&sink);
@@ -351,7 +415,7 @@ async fn nak_stops_sending_and_clears_the_queue_without_resend() {
         .is_err());
     // Not blocked any more, and the timeout does not fire later.
     queue.enqueue_message("next").await.unwrap();
-    assert_eq!(queue.recv().await, b"next".to_vec());
+    assert_eq!(queue.recv().await, Some(b"next".to_vec()));
     assert_eq!(warnings(&sink).len(), 1);
 }
 
@@ -359,7 +423,7 @@ async fn nak_stops_sending_and_clears_the_queue_without_resend() {
 async fn eot_does_not_leave_the_queue_blocked() {
     let (queue, sink) = short_queue(Arc::new(AutoReplyRuleSet::disabled()));
     queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     queue.handle_frame(FrameEvent::Eot).await;
     assert_idle(&queue).await;
     assert!(warnings(&sink)[0].contains("EOT"));
@@ -373,7 +437,7 @@ async fn eot_does_not_leave_the_queue_blocked() {
 async fn disconnect_cancels_the_ack_wait() {
     let (queue, sink) = short_queue(Arc::new(AutoReplyRuleSet::disabled()));
     queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     queue.close().await;
     assert_idle(&queue).await;
     tokio::time::sleep(SHORT * 3).await;
@@ -387,7 +451,7 @@ async fn disconnect_cancels_the_ack_wait() {
 async fn pending_recv_is_woken_by_the_deadline_and_stays_usable() {
     let (queue, _sink) = short_queue(Arc::new(AutoReplyRuleSet::disabled()));
     queue.enqueue_message("<ENQ>").await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     let waiter = tokio::spawn({
         let queue = queue.clone();
         async move { queue.recv().await }
@@ -395,21 +459,21 @@ async fn pending_recv_is_woken_by_the_deadline_and_stays_usable() {
     tokio::time::sleep(SHORT * 3).await;
     assert!(!waiter.is_finished());
     queue.enqueue_message("after").await.unwrap();
-    assert_eq!(waiter.await.unwrap(), b"after".to_vec());
+    assert_eq!(waiter.await.unwrap(), Some(b"after".to_vec()));
 }
 
 #[tokio::test]
 async fn control_reply_still_goes_out_while_waiting_for_our_ack() {
     let (queue, sink) = short_queue(ack_rules());
     queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     // The peer sends its own ENQ before answering ours: our <ACK> must not wait.
     queue.handle_frame(FrameEvent::Enq).await;
-    assert_eq!(queue.recv().await, vec![0x06]);
+    assert_eq!(queue.recv().await, Some(vec![0x06]));
     assert!(queue.state.lock().await.ack_wait.is_some());
     // Then the peer ACKs our ENQ: the queue resumes.
     queue.handle_frame(FrameEvent::Ack).await;
-    assert_eq!(queue.recv().await, b"second".to_vec());
+    assert_eq!(queue.recv().await, Some(b"second".to_vec()));
     assert!(warnings(&sink).is_empty());
 }
 
@@ -417,12 +481,12 @@ async fn control_reply_still_goes_out_while_waiting_for_our_ack() {
 async fn control_reply_keeps_working_after_a_timeout_reset() {
     let (queue, _sink) = short_queue(ack_rules());
     queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     assert!(timeout(Duration::from_millis(300), queue.recv())
         .await
         .is_err());
     queue.handle_frame(FrameEvent::Enq).await;
-    assert_eq!(queue.recv().await, vec![0x06]);
+    assert_eq!(queue.recv().await, Some(vec![0x06]));
 }
 
 const AUTO_STX: &[u8] = b"\x021H|X\r\x035D\r\n";
@@ -438,7 +502,7 @@ async fn start_auto_send(queue: &SharedMessageOrchestrator) {
             vec![vec![0x05], AUTO_STX.to_vec(), vec![0x04]],
         )
         .unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     let s = queue.state.lock().await;
     assert_eq!(
         s.ack_wait.map(|wait| wait.origin),
@@ -467,9 +531,9 @@ async fn assert_auto_send_aborted(queue: &SharedMessageOrchestrator, sink: &Type
         .await
         .push_replies(Instant::now(), vec![vec![0x05], AUTO_STX.to_vec()])
         .unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     queue.handle_frame(FrameEvent::Ack).await;
-    assert_eq!(queue.recv().await, AUTO_STX.to_vec());
+    assert_eq!(queue.recv().await, Some(AUTO_STX.to_vec()));
 }
 
 #[tokio::test]
@@ -516,14 +580,14 @@ async fn aborted_automatic_send_drops_control_replies_and_keeps_user_items() {
     let warns = warnings(&sink);
     assert!(warns[0].contains("4 scheduled automatic frame(s) dropped"));
     assert!(!warns[0].contains("queued item(s)"));
-    assert_eq!(queue.recv().await, b"user".to_vec());
+    assert_eq!(queue.recv().await, Some(b"user".to_vec()));
 }
 
 #[tokio::test]
 async fn aborted_user_send_keeps_scheduled_frames() {
     let (queue, sink) = short_queue(Arc::new(AutoReplyRuleSet::disabled()));
     queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     assert_eq!(
         queue.state.lock().await.ack_wait.map(|wait| wait.origin),
         Some(AckOrigin::User)
@@ -635,7 +699,17 @@ async fn user_payload_too_large_is_rejected() {
         })
         .await
         .unwrap_err();
-    assert!(err.contains("Message too large"));
+    assert!(matches!(
+        err,
+        QueueError::TooLarge {
+            actual_bytes,
+            max_bytes: MAX_USER_PAYLOAD,
+        } if actual_bytes == MAX_USER_PAYLOAD + 1
+    ));
+    assert!(err
+        .to_string()
+        .contains(&(MAX_USER_PAYLOAD + 1).to_string()));
+    assert!(err.to_string().contains(&MAX_USER_PAYLOAD.to_string()));
     let state = queue.state.lock().await;
     assert_eq!((state.queued_items, state.queued_bytes), (0, 0));
     drop(state);
@@ -665,7 +739,14 @@ async fn full_queue_rejects_user_message_and_drops_auto_reply() {
         .unwrap();
     queue.handle_frame(FrameEvent::Enq).await; // pure <ACK> is dropped too
     let err = queue.enqueue_message("x").await.unwrap_err();
-    assert!(err.contains("send queue full"));
+    assert!(matches!(
+        err,
+        QueueError::Full {
+            queued_items: MAX_ITEMS,
+            queued_bytes: MAX_ITEMS,
+        }
+    ));
+    assert!(err.to_string().contains("send queue full"));
     let state = queue.state.lock().await;
     assert!(state.scheduled.is_empty());
     assert_eq!(state.queued_items, MAX_ITEMS);
@@ -703,7 +784,8 @@ async fn drain_resets_counters() {
     for _ in 0..items + 5 {
         timeout(Duration::from_millis(200), queue.recv())
             .await
-            .expect("released");
+            .expect("released")
+            .expect("queue still open");
     }
     let state = queue.state.lock().await;
     assert_eq!((state.queued_items, state.queued_bytes), (0, 0));
@@ -738,6 +820,146 @@ async fn close_and_update_rules_reset_counters() {
     let s = queue.state.lock().await;
     assert_eq!((s.queued_items, s.queued_bytes), (0, 0));
     assert!(s.closed && s.pending_messages.is_empty() && s.scheduled.is_empty());
+}
+
+#[tokio::test]
+async fn closed_queue_rejects_a_retained_user_sender() {
+    let queue = queue();
+    let retained = queue.clone();
+    retained
+        .send_user_message(&SendRequest {
+            message: "accepted before close".into(),
+        })
+        .await
+        .unwrap();
+    queue.close().await;
+
+    for message in ["rejected after close", ""] {
+        let result = retained
+            .send_user_message(&SendRequest {
+                message: message.into(),
+            })
+            .await;
+        assert!(matches!(result, Err(QueueError::Closed)), "{result:?}");
+        assert_idle(&queue).await;
+    }
+}
+
+#[tokio::test]
+async fn user_admission_waiting_for_the_lock_rechecks_closure() {
+    let queue = queue();
+    let mut state = queue.state.lock().await;
+    let payload = SendRequest {
+        message: "must not be accepted".into(),
+    };
+    let admission = queue.send_user_message(&payload);
+    tokio::pin!(admission);
+    tokio::select! {
+        biased;
+        result = &mut admission => panic!("admission must wait for the queue lock: {result:?}"),
+        _ = std::future::ready(()) => {}
+    }
+
+    state.close();
+    drop(state);
+    let result = timeout(Duration::from_millis(200), admission)
+        .await
+        .expect("admission completes after releasing the queue lock");
+    assert!(matches!(result, Err(QueueError::Closed)), "{result:?}");
+    assert_idle(&queue).await;
+}
+
+#[test]
+fn closed_state_rejects_user_and_automatic_admission_without_changing_counters() {
+    let mut state = state();
+    state.push_user(vec![vec![1, 2]]).unwrap();
+    state.push_replies(far(), vec![vec![3, 4]]).unwrap();
+    state.close();
+
+    for frames in [vec![vec![1], vec![2]], vec![]] {
+        assert!(matches!(
+            state.push_user(frames.clone()),
+            Err(QueueError::Closed)
+        ));
+        assert!(matches!(
+            state.push_replies(far(), frames),
+            Err(QueueError::Closed)
+        ));
+        assert_eq!((state.queued_items, state.queued_bytes), (0, 0));
+        assert!(state.ack_wait.is_none());
+        assert_invariant(&state);
+    }
+}
+
+#[tokio::test]
+async fn pending_recv_wakes_on_close() {
+    let queue = queue();
+    let receive = queue.recv();
+    tokio::pin!(receive);
+    tokio::select! {
+        biased;
+        result = &mut receive => panic!("an empty open queue must wait: {result:?}"),
+        _ = std::future::ready(()) => {}
+    }
+
+    queue.close().await;
+    assert_eq!(
+        timeout(Duration::from_millis(200), receive)
+            .await
+            .expect("close wakes the pending receiver"),
+        None
+    );
+}
+
+#[tokio::test]
+async fn recv_after_repeated_close_ends_without_draining_old_items() {
+    let queue = queue();
+    queue.enqueue_message("old user item").await.unwrap();
+    queue
+        .state
+        .lock()
+        .await
+        .push_replies(Instant::now(), vec![vec![0x06]])
+        .unwrap();
+    queue.close().await;
+    queue.close().await;
+
+    for _ in 0..2 {
+        assert_eq!(
+            timeout(Duration::from_millis(200), queue.recv())
+                .await
+                .expect("a closed queue ends immediately"),
+            None
+        );
+    }
+    assert_idle(&queue).await;
+}
+
+#[tokio::test]
+async fn empty_input_keeps_an_open_queue_waiting_until_admission() {
+    let queue = queue();
+    queue
+        .send_user_message(&SendRequest {
+            message: String::new(),
+        })
+        .await
+        .unwrap();
+    assert_idle(&queue).await;
+    let receive = queue.recv();
+    tokio::pin!(receive);
+    tokio::select! {
+        biased;
+        result = &mut receive => panic!("empty input must not end the queue: {result:?}"),
+        _ = std::future::ready(()) => {}
+    }
+
+    queue.enqueue_message("next").await.unwrap();
+    assert_eq!(
+        timeout(Duration::from_millis(200), receive)
+            .await
+            .expect("admission wakes the receiver"),
+        Some(b"next".to_vec())
+    );
 }
 
 struct AstmSink(std::sync::Mutex<Vec<MessagePayload>>);
@@ -886,7 +1108,7 @@ async fn bad_checksum_frame_is_answered_with_a_nak_and_a_warning() {
     // Even with no rule matching frames at all.
     let (queue, sink) = short_queue(ack_rules());
     queue.on_received(BAD_FRAME).await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x15]);
+    assert_eq!(queue.recv().await, Some(vec![0x15]));
     let warned = warnings(&sink);
     assert_eq!(warned.len(), 1);
     assert!(warned[0].contains("wrong checksum") && warned[0].contains("NAK"));
@@ -897,7 +1119,7 @@ async fn bad_checksum_frame_is_answered_with_a_nak_and_a_warning() {
 async fn bad_checksum_frame_never_triggers_a_user_rule() {
     let (queue, _sink) = short_queue(frame_rules("REPLY"));
     queue.on_received(BAD_FRAME).await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x15]);
+    assert_eq!(queue.recv().await, Some(vec![0x15]));
     assert!(timeout(Duration::from_millis(150), queue.recv())
         .await
         .is_err());
@@ -910,7 +1132,7 @@ async fn valid_frame_is_still_answered_by_its_rule_only() {
         .on_received(&astm_frame(1, "H|\\^&\r", 0x03))
         .await
         .unwrap();
-    assert_eq!(queue.recv().await, vec![0x06]);
+    assert_eq!(queue.recv().await, Some(vec![0x06]));
     assert!(timeout(Duration::from_millis(150), queue.recv())
         .await
         .is_err());
@@ -921,9 +1143,9 @@ async fn valid_frame_is_still_answered_by_its_rule_only() {
 async fn bad_checksum_nak_goes_out_while_waiting_for_our_ack() {
     let (queue, _sink) = short_queue(ack_rules());
     queue.enqueue_message("<ENQ>\nsecond").await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x05]);
+    assert_eq!(queue.recv().await, Some(vec![0x05]));
     queue.on_received(BAD_FRAME).await.unwrap();
-    assert_eq!(queue.recv().await, vec![0x15]);
+    assert_eq!(queue.recv().await, Some(vec![0x15]));
     assert!(queue.state.lock().await.ack_wait.is_some());
 }
 

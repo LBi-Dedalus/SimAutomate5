@@ -3,6 +3,7 @@ use super::matching::glob_match;
 use super::*;
 use crate::config_store::builtin_templates;
 use crate::protocol::frames::FrameEvent;
+use crate::protocol::hl7::parse_hl7;
 use crate::templates::{AutobuildMode, Template, TemplateVariable};
 use crate::translate;
 
@@ -267,6 +268,71 @@ fn disabled_rules_and_disabled_master_never_reply() {
         AutoReplyRuleSet::disabled().evaluate(&FrameEvent::Enq),
         AutoReplyOutcome::NoMatch
     ));
+}
+
+#[test]
+fn cached_hl7_message_type_uses_msh9_and_actual_component_separator() {
+    for (body, expected) in [
+        ("MSH|^~\\&|S|F|R|F|2026||ORU^R01|CTL|P|2.4\r", "ORU^R01"),
+        (
+            "MSH|^~\\&|S|F|R|F|2026||ORU^R01^ORU_R01|CTL|P|2.4\r",
+            "ORU^R01",
+        ),
+        (
+            "MSH#*~\\&#S#F#R#F#2026##QRY*A19*QRY_A19#CTL#P#2.4\r",
+            "QRY^A19",
+        ),
+        ("MSH|^~\\&|S|F|R|F|2026||ACK|CTL|P|2.4\r", "ACK"),
+        ("MSH|^~\\&|S|F|R|F|2026|||CTL|P|2.4\r", ""),
+        ("MSH|^~\\&|S|F|R|F|2026|\r", ""),
+    ] {
+        let message = parse_hl7(body.as_bytes()).unwrap();
+        let first = message.message_type();
+        assert_eq!(first, expected, "{body:?}");
+        assert!(std::ptr::eq(first, message.message_type()));
+    }
+}
+
+#[test]
+fn hl7_trigger_does_not_match_the_control_id_instead_of_the_message_type() {
+    let set = compile(
+        vec![
+            rule("wrong", hl7("CONTROL"), None, literal("WRONG")),
+            rule("right", hl7("ORU^R01"), None, literal("RIGHT")),
+        ],
+        &[],
+    )
+    .unwrap();
+    assert_eq!(
+        reply_text(set.evaluate(&msg("ORU^R01^ORU_R01", "CONTROL", ""))),
+        "RIGHT"
+    );
+}
+
+#[test]
+fn repeated_hl7_field_reads_preserve_msh_offsets_empty_and_missing_fields() {
+    let message =
+        parse_hl7(b"MSH#*~\\&#S#F#R#F#2026##QRY*A19*QRY_A19#CTL#P#2.4\rPID#1##ABC*DEF#\r").unwrap();
+    for (segment, field, expected) in [
+        ("MSH", 1, Some("#")),
+        ("MSH", 2, Some("*~\\&")),
+        ("MSH", 9, Some("QRY*A19*QRY_A19")),
+        ("MSH", 10, Some("CTL")),
+        ("PID", 1, Some("1")),
+        ("PID", 2, Some("")),
+        ("PID", 3, Some("ABC*DEF")),
+        ("PID", 4, Some("")),
+        ("PID", 5, None),
+        ("OBX", 1, None),
+    ] {
+        let first = message.field(segment, field);
+        assert_eq!(first, expected, "{segment}-{field}");
+        assert_eq!(message.field(segment, field), expected);
+        if let Some(first) = first {
+            assert!(std::ptr::eq(first, message.field(segment, field).unwrap()));
+        }
+    }
+    assert_eq!(message.control_id(), Some(&b"CTL"[..]));
 }
 
 #[test]

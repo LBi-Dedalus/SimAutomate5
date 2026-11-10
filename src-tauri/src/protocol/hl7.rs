@@ -21,7 +21,7 @@ fn raw_control_id(msh: &[u8], field_sep: u8) -> Option<Vec<u8>> {
 }
 
 fn message_type(msh: &str, field_sep: char, component_sep: char) -> String {
-    let message_type_field = msh.split(field_sep).nth(9);
+    let message_type_field = msh.split(field_sep).nth(8);
 
     match message_type_field {
         None => return String::new(),

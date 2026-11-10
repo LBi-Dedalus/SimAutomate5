@@ -115,7 +115,7 @@ fn save_preserves_unknown_root_fields_and_replaces_existing_file() {
     let path = config_path(&dir);
     fs::write(
         &path,
-        r#"{"theme":{"dark":true},"future":[1,2],"templates":[]}"#,
+        r#"{"theme":{"dark":true},"future":[1,2],"templates":[],"auto_reply":{}}"#,
     )
     .unwrap();
     save_templates_to(&path, &[sample("a")]).unwrap();
@@ -259,10 +259,10 @@ fn missing_auto_reply_loads_default_rules_without_writing() {
 }
 
 #[test]
-fn default_rules_fall_back_to_empty_when_their_template_is_missing() {
+fn default_rules_return_error_when_their_template_is_missing() {
     let (dir, path) = setup_file("ar-default-fallback", r#"{"templates":[]}"#);
-    let loaded = load_from(&path).unwrap().auto_reply;
-    assert!(!loaded.enabled() && loaded.rules().is_empty());
+    let loaded = load_from(&path);
+    assert!(loaded.is_err());
     let _ = fs::remove_dir_all(dir);
 }
 
@@ -306,7 +306,7 @@ fn no_auto_reply_rule_round_trips_and_needs_no_template() {
 
 #[test]
 fn saving_rules_rejects_missing_or_unusable_template_references() {
-    let (dir, path) = setup_file("ar-missingref", r#"{"templates":[]}"#);
+    let (dir, path) = setup_file("ar-missingref", r#"{"templates":[],"auto_reply":{}}"#);
     let before = fs::read_to_string(&path).unwrap();
     // Empty explicit list: the builtins are not effective any more.
     let err = save_auto_reply_to(
@@ -394,7 +394,7 @@ fn deleting_a_template_used_by_a_default_rule_names_template_and_rule() {
 
 #[test]
 fn enabling_changes_only_the_flag() {
-    let (dir, path) = setup_file("ar-enable", r#"{"templates":[]}"#);
+    let (dir, path) = setup_file("ar-enable", r#"{"templates":[],"auto_reply":{}}"#);
     save_templates_to(&path, &[sample("a")]).unwrap();
     let config = config_with(vec![rule_with_template("r1", "a")], false);
     save_auto_reply_to(&path, &config).unwrap();
