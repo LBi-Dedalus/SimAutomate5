@@ -178,7 +178,7 @@ function renderSidebar() {
 
     const close = part("ses-close");
     close.setAttribute("aria-label", `Close session ${session.label}`);
-    close.disabled = session.op === "closing";
+    close.disabled = !!session.op || session.status === "stopping";
     bindHint(close, { key: `hint:close:${session.id}`, text: "Close session", prefer: "right" });
     if (session.endpoint) {
       bindTooltip(item, {
@@ -200,7 +200,7 @@ function renderHeader() {
   const session = store.active();
   const busy = !!session && isBusyStatus(session.status);
   const terminal = !!session && isTerminalStatus(session.status);
-  const working = !!session?.op;
+  const working = !!session?.op || session?.status === "stopping";
 
   $("session-title").textContent = session ? session.label : "No session";
   const address = session ? addressNote(session) : "";
@@ -224,7 +224,7 @@ function renderHeader() {
 
   const close = $("session-close");
   close.classList.toggle("hidden", !session);
-  close.disabled = session?.op === "closing";
+  close.disabled = working;
 
   $("clear-chat").disabled = !session;
 }

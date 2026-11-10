@@ -35,7 +35,7 @@ pub(super) async fn client_task(
     );
 
     let session = tokio::select! {
-        res =         open_session(&reporter, tunnel, None) => match res {
+        res =         open_session(&reporter, tunnel, None, &ctx.cleanup) => match res {
             Ok(session) => session,
             Err(message) => {
                 reporter.error(file!(), line!(), message);
@@ -98,7 +98,7 @@ pub(super) async fn server_task(
 
     let (sender, mut receiver) = oneshot::channel();
     let session = tokio::select! {
-        res =         open_session(&reporter, tunnel, Some(sender)) => match res {
+        res =         open_session(&reporter, tunnel, Some(sender), &ctx.cleanup) => match res {
             Ok(session) => session,
             Err(message) => {
                 reporter.error(file!(), line!(), message);
@@ -141,8 +141,7 @@ pub(super) async fn server_task(
         line!(),
         format!("Server listening on {bind} of the SSH host, waiting for a client..."),
     );
-    ctx.status.send_replace(ConnectionStatus::Listening);
-    reporter.emit_status(ConnectionStatus::Listening);
+    ctx.publish_status(ConnectionStatus::Listening);
 
     let channel = tokio::select! {
         res = &mut receiver => match res {

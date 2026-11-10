@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createSessionStore, MAX_MESSAGES, takeLegacyDraft } from "../src/session/sessions-core.js";
+import { createSessionStore, isBusyStatus, isTerminalStatus, MAX_MESSAGES, statusText, takeLegacyDraft } from "../src/session/sessions-core.js";
 
 const make = () => {
   let n = 0;
@@ -93,4 +93,29 @@ test("legacy composer text becomes a one-time draft", () => {
   assert.equal(first.draft, "old");
   assert.equal(takeLegacyDraft(storage).draft, "", "consumed once");
   assert.equal(JSON.parse(Object.values(data)[0]).host, "h", "other fields are preserved");
+});
+
+test("stopping is busy and authoritative until terminal completion of the same attempt", () => {
+  const store = make();
+  const session = open(store, "A");
+  const event = (status) => ({ session_id: session.id, attempt: session.attempt, status });
+  assert.equal(isBusyStatus("stopping"), true);
+  assert.equal(isTerminalStatus("stopping"), false);
+  assert.equal(statusText("stopping"), "Stopping");
+  assert.equal(store.applyStatus(event("stopping")).accepted, true);
+  for (const status of ["connecting", "listening", "connected"]) {
+    assert.equal(store.applyStatus(event(status)).accepted, false);
+    assert.equal(session.status, "stopping");
+  }
+  assert.equal(store.beginAttempt(session.id), null);
+  assert.equal(store.setStatus(session.id, session.attempt, "error"), false);
+  assert.equal(store.applyStatus(event("disconnected")).accepted, true);
+  for (const status of ["stopping", "connecting", "listening", "connected"]) {
+    assert.equal(store.applyStatus(event(status)).accepted, false);
+    assert.equal(store.setStatus(session.id, session.attempt, status), false);
+    assert.equal(session.status, "disconnected");
+  }
+  assert.equal(store.setStatus(session.id, session.attempt, "error"), false);
+  assert.equal(store.beginAttempt(session.id), 2);
+  assert.equal(store.applyStatus(event("connected")).accepted, true);
 });

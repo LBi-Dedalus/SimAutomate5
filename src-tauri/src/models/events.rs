@@ -77,5 +77,7 @@ pub enum ConnectionStatus {
     /// Server mode only: the port is bound and the server waits for a client.
     Listening,
     Connected,
+    /// Local worker termination or required cleanup is still outstanding.
+    Stopping,
     Error,
 }

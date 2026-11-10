@@ -30,6 +30,12 @@ export function createSessionController({ invoke, storage, log = {}, store = cre
     store.addLocal(id, "systemerror", `${text}: ${String(err)}`);
   }
 
+  function preserveIncompleteStop(id, attempt, err) {
+    if (String(err).replace(/^Error: /, "").startsWith("Stop incomplete:")) {
+      store.setStatus(id, attempt, "stopping");
+    }
+  }
+
   function firstSessionDraft() {
     if (legacyChecked) return "";
     legacyChecked = true;
@@ -87,6 +93,9 @@ export function createSessionController({ invoke, storage, log = {}, store = cre
       if (!store.get(id)) return Promise.resolve({ ok: false, error: "The session was closed" });
       // Sends are refused from this very moment, not from when the queued task starts.
       const early = store.get(id);
+      if (early.status === "stopping" || early.op) {
+        return Promise.resolve({ ok: false, error: "The session is already being stopped" });
+      }
       // This also covers a connect/reconnect still queued or pending (not registered yet, or
       // terminal until it starts): the queued task clears the intent when nothing was to stop.
       if (!early.op) store.setOp(id, "disconnecting");
@@ -108,6 +117,7 @@ export function createSessionController({ invoke, storage, log = {}, store = cre
           }
           return { ok: true };
         } catch (err) {
+          preserveIncompleteStop(id, attempt, err);
           fail(id, "Failed to disconnect", "sessions:disconnect", err);
           return { ok: false, error: String(err) };
         } finally {
@@ -129,15 +139,21 @@ export function createSessionController({ invoke, storage, log = {}, store = cre
     /** Stops the session and forgets it. On failure the session stays, with a visible error. */
     close(id) {
       if (!store.get(id)) return Promise.resolve({ ok: false, error: "The session was closed" });
+      const early = store.get(id);
+      if (early.status === "stopping" || early.op) {
+        return Promise.resolve({ ok: false, error: "The session is already being stopped" });
+      }
       if (!store.get(id).op) store.setOp(id, "closing");
       return serial(id, async () => {
         const session = store.get(id);
         if (!session) return { ok: true };
         store.setOp(id, "closing");
         if (session.registered) {
+          const attempt = session.attempt;
           try {
             await invoke("close_session", { sessionId: id });
           } catch (err) {
+            preserveIncompleteStop(id, attempt, err);
             store.setOp(id, null);
             fail(id, "Failed to close the session", "sessions:close", err);
             return { ok: false, error: String(err) };

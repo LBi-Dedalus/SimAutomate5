@@ -236,3 +236,19 @@ test("a refused send is reported in the conversation and on the inspector", asyn
   assert.ok(getNode("insp-meta").children.some((n) => n.textContent === "Resend failed"));
   assert.equal(button().disabled, false, "restored after the failure");
 });
+
+test("persistent stopping disables Resend even after the transient operation clears", async () => {
+  const id = await startConnected(4, "Stopping");
+  store.select(id);
+  store.selectRecord(id, hl7(id).id);
+  assert.equal(button().disabled, false);
+  sessions.handleStatus({ session_id: id, attempt: store.get(id).attempt, status: "stopping" });
+  store.setOp(id, null);
+  assert.equal(button().disabled, true);
+  const calls = ipc.calls.length;
+  window.actions.insp.resend();
+  await tick();
+  assert.equal(ipc.calls.length, calls);
+  sessions.handleStatus({ session_id: id, attempt: store.get(id).attempt, status: "connected" });
+  assert.equal(button().disabled, true, "late progress cannot enable Resend");
+});

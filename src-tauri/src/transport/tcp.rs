@@ -61,8 +61,7 @@ pub(super) async fn server_task(ctx: &mut ConnectionContext, port: u16) -> Conne
         line!(),
         format!("Server listening on {}, waiting for a client...", addr),
     );
-    ctx.status.send_replace(ConnectionStatus::Listening);
-    reporter.emit_status(ConnectionStatus::Listening);
+    ctx.publish_status(ConnectionStatus::Listening);
 
     let stream = tokio::select! {
         res = listener.accept() => {

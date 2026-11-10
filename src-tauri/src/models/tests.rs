@@ -132,6 +132,20 @@ fn listening_status_serializes_lowercase() {
 }
 
 #[test]
+fn stopping_status_serializes_lowercase() {
+    let json = serde_json::to_string(&StatusPayload {
+        session_id: "s1".to_string(),
+        attempt: 2,
+        status: ConnectionStatus::Stopping,
+    })
+    .unwrap();
+    assert_eq!(
+        json,
+        r#"{"session_id":"s1","attempt":2,"status":"stopping"}"#
+    );
+}
+
+#[test]
 fn message_payload_omits_absent_raw_and_keeps_present_raw() {
     let mut payload = MessagePayload {
         session_id: "s1".to_string(),

@@ -25,6 +25,7 @@ use super::settings::{
 };
 use crate::models::SshTunnel;
 use crate::reporting::ConnectionReporter;
+use crate::transport::cleanup::{wait_for_force, AttemptCleanup};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
@@ -213,6 +214,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for CancellableStream<S> {
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.cancel.register(cx.waker());
         if self.cancel.is_cancelled() {
             return Poll::Ready(Ok(()));
         }
@@ -228,56 +230,136 @@ pub(super) async fn connect_transport(
     port: u16,
     handler: SshHandler,
     budget: Duration,
-) -> Result<(Handle<SshHandler>, CancelHandle), String> {
+    cleanup: &AttemptCleanup,
+    reporter: &ConnectionReporter,
+) -> Result<SshSession, String> {
     let attempt = async {
         let tcp = TcpStream::connect((host, port))
             .await
-            .map_err(|err| SshError::Russh(err.into()))?;
+            .map_err(|err| describe_connect_error(host, port, SshError::Russh(err.into())))?;
         if config.nodelay {
             let _ = tcp.set_nodelay(true);
         }
         let (stream, cancel) = CancellableStream::new(tcp);
-        let guard = CancelOnDrop(Some(cancel));
-        let handle = client::connect_stream(config, stream, handler).await?;
-        Ok::<_, SshError>((handle, guard.disarm()))
+        let guard = CancelOnDrop(Some(cancel.clone()));
+        let (connected, connection) = oneshot::channel();
+        let session_cleanup = cleanup.clone();
+        let session_reporter = reporter.clone();
+        let host = host.to_string();
+        // Never abandon connect_stream after it has spawned russh's task: on cancellation
+        // the guard cuts its stream, while this tracked job still observes its completion.
+        cleanup.spawn(async move {
+            let result = client::connect_stream(config, stream, handler)
+                .await
+                .map(|handle| SshSession::new(handle, cancel, session_cleanup, session_reporter))
+                .map_err(|err| describe_connect_error(&host, port, err));
+            if let Err(undelivered) = connected.send(result) {
+                drop(undelivered);
+            }
+            Ok(())
+        });
+        let session = connection
+            .await
+            .map_err(|err| format!("The SSH handshake task ended without a result: {err}"))??;
+        guard.disarm();
+        Ok(session)
     };
-    timeout(budget, attempt)
-        .await
-        .map_err(|_| {
-            format!(
-                "Timed out connecting to {host}:{port} after {} s",
-                budget.as_secs()
-            )
-        })?
-        .map_err(|err| describe_connect_error(host, port, err))
+    timeout(budget, attempt).await.map_err(|_| {
+        format!(
+            "Timed out connecting to {host}:{port} after {} s",
+            budget.as_secs()
+        )
+    })?
 }
 
-/// An SSH connection that is always disconnected when it goes away: explicitly with `close`
-/// (awaited, so a stop really waits for it), or from `Drop` when the task is aborted. The
-/// transport is cut afterwards, so the russh session task ends even if the disconnect fails.
+/// Explicit close and Drop transfer the handle to the same attempt-owned cleanup tracker.
+/// Cutting the transport is a safety net; only awaiting the handle confirms local completion.
 pub(super) struct SshSession {
     handle: Option<Handle<SshHandler>>,
     transport: CancelHandle,
+    cleanup: AttemptCleanup,
+    reporter: ConnectionReporter,
 }
 
 impl SshSession {
-    fn new(handle: Handle<SshHandler>, transport: CancelHandle) -> Self {
+    fn new(
+        handle: Handle<SshHandler>,
+        transport: CancelHandle,
+        cleanup: AttemptCleanup,
+        reporter: ConnectionReporter,
+    ) -> Self {
         Self {
             handle: Some(handle),
             transport,
+            cleanup,
+            reporter,
         }
     }
 
     pub(super) async fn close(mut self) {
-        if let Some(handle) = self.handle.take() {
-            let _ = timeout(DISCONNECT_TIMEOUT, disconnect(&handle)).await;
+        if let Some(completion) = self.start_close() {
+            if let Err(err) = completion.await {
+                self.reporter.error(
+                    file!(),
+                    line!(),
+                    format!("The SSH cleanup task ended without confirming completion: {err}"),
+                );
+            }
         }
-        self.transport.cancel();
+    }
+
+    fn start_close(&mut self) -> Option<oneshot::Receiver<()>> {
+        let handle = self.handle.take()?;
+        Some(self.cleanup.spawn(disconnect(
+            handle,
+            self.transport.clone(),
+            self.cleanup.force_stop(),
+            self.reporter.clone(),
+        )))
     }
 }
 
-async fn disconnect(handle: &Handle<SshHandler>) {
-    let _ = handle.disconnect(Disconnect::ByApplication, "", "en").await;
+async fn disconnect(
+    mut handle: Handle<SshHandler>,
+    transport: CancelHandle,
+    mut force_stop: tokio::sync::watch::Receiver<bool>,
+    reporter: ConnectionReporter,
+) -> Result<(), String> {
+    let _guard = CancelOnDrop(Some(transport.clone()));
+    let graceful = async {
+        if let Err(err) = handle.disconnect(Disconnect::ByApplication, "", "en").await {
+            reporter.warn(
+                file!(),
+                line!(),
+                format!("SSH disconnect request failed: {err}"),
+            );
+        }
+        (&mut handle).await
+    };
+    tokio::select! {
+        biased;
+        _ = wait_for_force(&mut force_stop) => {}
+        result = timeout(DISCONNECT_TIMEOUT, graceful) => {
+            match result {
+                Ok(Ok(())) | Ok(Err(SshError::Russh(russh::Error::Disconnect))) => return Ok(()),
+                Ok(Err(err)) => return Err(format!("SSH shutdown failed: {err:?}")),
+                Err(_) => reporter.warn(
+                    file!(),
+                    line!(),
+                    "SSH graceful shutdown timed out; cancelling its transport and waiting for cleanup",
+                ),
+            }
+        }
+    }
+    transport.cancel();
+    if let Err(err) = handle.await {
+        reporter.warn(
+            file!(),
+            line!(),
+            format!("The SSH task ended after transport cancellation: {err:?}"),
+        );
+    }
+    Ok(())
 }
 
 impl Deref for SshSession {
@@ -292,15 +374,17 @@ impl Deref for SshSession {
 
 impl Drop for SshSession {
     fn drop(&mut self) {
-        let transport = self.transport.clone();
-        match (self.handle.take(), tokio::runtime::Handle::try_current()) {
-            (Some(handle), Ok(runtime)) => {
-                runtime.spawn(async move {
-                    let _ = timeout(DISCONNECT_TIMEOUT, disconnect(&handle)).await;
-                    transport.cancel();
-                });
-            }
-            _ => transport.cancel(),
+        if self.handle.is_none() {
+            self.transport.cancel();
+        } else if tokio::runtime::Handle::try_current().is_ok() {
+            self.start_close();
+        } else {
+            self.transport.cancel();
+            self.reporter.error(
+                file!(),
+                line!(),
+                "The SSH transport was cancelled, but cleanup could not be observed without a runtime",
+            );
         }
     }
 }
@@ -310,6 +394,7 @@ pub(super) async fn open_session(
     reporter: &ConnectionReporter,
     tunnel: &SshTunnel,
     forwarded: Option<oneshot::Sender<Channel<Msg>>>,
+    cleanup: &AttemptCleanup,
 ) -> Result<SshSession, String> {
     let paths = SshPaths::from_env()?;
     let alias = tunnel.host.as_str();
@@ -360,9 +445,16 @@ pub(super) async fn open_session(
         forwarded,
     };
 
-    let (connected, transport) =
-        connect_transport(Arc::new(config), &host, port, handler, CONNECT_TIMEOUT).await?;
-    let mut session = SshSession::new(connected, transport);
+    let mut session = connect_transport(
+        Arc::new(config),
+        &host,
+        port,
+        handler,
+        CONNECT_TIMEOUT,
+        cleanup,
+        reporter,
+    )
+    .await?;
     reporter.info(
         file!(),
         line!(),

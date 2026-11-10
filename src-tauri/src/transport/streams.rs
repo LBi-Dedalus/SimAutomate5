@@ -8,6 +8,8 @@ use crate::message_orchestrator::SharedMessageOrchestrator;
 use crate::models::ConnectionStatus;
 use crate::reporting::ConnectionReporter;
 
+use super::cleanup::AttemptCleanup;
+
 /// Any bidirectional byte stream a transport can hand over to `serve` (TCP socket, SSH channel...).
 pub trait AsyncStream: AsyncRead + AsyncWrite + Unpin + Send {}
 
@@ -19,6 +21,21 @@ pub struct ConnectionContext {
     pub message_orchestrator: SharedMessageOrchestrator,
     pub shutdown: oneshot::Receiver<()>,
     pub status: Arc<watch::Sender<ConnectionStatus>>,
+    pub(super) cleanup: AttemptCleanup,
+}
+
+impl ConnectionContext {
+    pub(super) fn publish_status(&self, next: ConnectionStatus) {
+        if self.status.send_if_modified(|status| {
+            if *status == ConnectionStatus::Stopping {
+                return false;
+            }
+            *status = next;
+            true
+        }) {
+            self.reporter.emit_status(next);
+        }
+    }
 }
 
 /// Publishes the Connected status, then exchanges data over `stream` until the end of the connection.
@@ -27,9 +44,10 @@ pub async fn serve(
     stream: impl AsyncStream,
     notification: &str,
 ) -> ConnectionStatus {
-    ctx.status.send_replace(ConnectionStatus::Connected);
-    ctx.reporter.emit_status(ConnectionStatus::Connected);
-    ctx.reporter.emit_notification("Connected", notification);
+    ctx.publish_status(ConnectionStatus::Connected);
+    if *ctx.status.borrow() != ConnectionStatus::Stopping {
+        ctx.reporter.emit_notification("Connected", notification);
+    }
 
     run_connected(ctx, stream).await
 }
@@ -67,10 +85,7 @@ async fn run_connected(ctx: &mut ConnectionContext, stream: impl AsyncStream) ->
                 Ok(()) => ConnectionStatus::Disconnected,
             }
         }
-        _ = &mut ctx.shutdown => {
-            reporter.info(file!(), line!(), "Disconnected successfully");
-            ConnectionStatus::Disconnected
-        }
+        _ = &mut ctx.shutdown => ConnectionStatus::Disconnected,
     };
 
     // Nothing pending (user messages, delayed automatic replies) may outlive the connection.

@@ -245,3 +245,104 @@ test("autobuild reports a closed or missing target instead of dropping output", 
   const preview = await buildForTarget({ ...base, activeId: () => null, hasSession: () => false }, "i", false, { deliver: false });
   assert.equal(preview.error, null);
 });
+
+const incompleteStop = "Stop incomplete: cleanup could not be confirmed within the 15-second forced-cleanup period.";
+
+for (const operation of ["disconnect", "close"]) {
+  test(`incomplete ${operation} retains stopping, history and draft until late completion`, async () => {
+    let incomplete = true;
+    const command = operation === "close" ? "close_session" : "disconnect_socket";
+    const { controller, store, calls } = setup(async (cmd, args, c) => {
+      if (cmd === command && incomplete) {
+        c.handleStatus(status(store.get(args.sessionId), "stopping"));
+        throw incompleteStop;
+      }
+    });
+    const a = controller.start({ mode: "client", label: "A", req });
+    const b = controller.start({ mode: "client", label: "B", req });
+    await Promise.all([a.done, b.done]);
+    const session = store.get(a.id);
+    controller.handleStatus(status(session, "connected"));
+    controller.handleStatus(status(store.get(b.id), "connected"));
+    controller.handleMessage(incoming(session, "history"));
+    store.setDraft(a.id, "draft");
+    const captured = controller.sendTarget(a.id);
+
+    assert.equal((await controller[operation](a.id)).ok, false);
+    assert.equal(session.op, null);
+    assert.equal(session.status, "stopping");
+    assert.equal(session.draft, "draft");
+    assert.equal(session.records[0].content, "history");
+    const lifecycleCalls = calls.length;
+    for (const action of ["reconnect", "disconnect", "close"]) {
+      assert.equal((await controller[action](a.id)).ok, false);
+    }
+    assert.equal(calls.length, lifecycleCalls, "no additional cancellation attempts");
+    assert.equal(controller.sendTarget(a.id), null);
+    assert.equal((await controller.send(captured, "late")).ok, false);
+    assert.equal(controller.handleStatus(status(session, "connected")).accepted, false);
+    assert.equal((await controller.send(controller.sendTarget(b.id), "other")).ok, true);
+
+    controller.handleStatus(status(session, "disconnected"));
+    assert.equal(store.get(a.id), session, "even an earlier Close must not delete the session");
+    assert.equal(session.draft, "draft");
+    assert.equal((await controller.reconnect(a.id)).ok, true);
+    assert.equal(session.attempt, 2);
+    assert.equal(controller.handleStatus(status(session, "stopping", 1)).accepted, false);
+    incomplete = false;
+    assert.equal((await controller.close(a.id)).ok, true);
+  });
+}
+
+for (const earlyCompletion of [false, true]) {
+  test(`incomplete Close error ${earlyCompletion ? "after" : "before"} terminal event cannot regress or remove the session`, async () => {
+    const { controller, store } = setup(async (cmd, args, c) => {
+      if (cmd === "close_session") {
+        if (earlyCompletion) c.handleStatus(status(store.get(args.sessionId), "disconnected"));
+        throw new Error(incompleteStop);
+      }
+    });
+    const { id, done } = controller.start({ mode: "client", label: "A", req });
+    await done;
+    const session = store.get(id);
+    controller.handleStatus(status(session, "connected"));
+    assert.equal((await controller.close(id)).ok, false);
+    assert.equal(store.get(id), session);
+    assert.equal(session.status, earlyCompletion ? "disconnected" : "stopping");
+    controller.handleStatus(status(session, "disconnected"));
+    assert.equal(session.status, "disconnected");
+    assert.equal(store.get(id), session);
+  });
+}
+
+for (const observed of ["stopping", "disconnected"]) {
+  test(`a late rejected connect command cannot override observed ${observed}`, async () => {
+    const { controller, store } = setup(async (cmd, args, c) => {
+      if (cmd === "connect_socket") {
+        c.handleStatus(status(store.get(args.sessionId), observed));
+        throw "late command failure";
+      }
+    });
+    const { id, done } = controller.start({ mode: "client", label: "A", req });
+    assert.equal((await done).ok, false);
+    assert.equal(store.get(id).status, observed);
+  });
+}
+
+test("repeated Stop and Close are rejected while the first operation is pending", async () => {
+  let release;
+  const gate = new Promise((resolve) => (release = resolve));
+  const { controller, store, calls } = setup(async (cmd) => {
+    if (cmd === "disconnect_socket") await gate;
+  });
+  const { id, done } = controller.start({ mode: "client", label: "A", req });
+  await done;
+  controller.handleStatus(status(store.get(id), "connected"));
+  const stopping = controller.disconnect(id);
+  assert.equal((await controller.disconnect(id)).ok, false);
+  assert.equal((await controller.close(id)).ok, false);
+  release();
+  await stopping;
+  assert.equal(calls.filter(({ cmd }) => cmd === "disconnect_socket").length, 1);
+  assert.equal(calls.filter(({ cmd }) => cmd === "close_session").length, 0);
+});

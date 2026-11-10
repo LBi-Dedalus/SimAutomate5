@@ -944,7 +944,8 @@ footer {
   }
 
   & i[data-st="connecting"],
-  & i[data-st="listening"] {
+  & i[data-st="listening"],
+  & i[data-st="stopping"] {
     background: var(--amber);
   }
 

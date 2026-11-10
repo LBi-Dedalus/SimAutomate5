@@ -7,6 +7,7 @@ const STATUS_LABELS = {
   connecting: "Connecting",
   listening: "Listening",
   connected: "Connected",
+  stopping: "Stopping",
   error: "Error",
 };
 
@@ -16,11 +17,12 @@ const STATUS_PILL_CLASSES = {
   connecting: "warn",
   listening: "warn",
   connected: "",
+  stopping: "warn",
   error: "error",
 };
 
 // A connection attempt, a listening server or a live connection is "busy".
-const BUSY_STATUSES = ["connecting", "listening", "connected"];
+const BUSY_STATUSES = ["connecting", "listening", "connected", "stopping"];
 
 window.connection_status = {
   _value: "disconnected",

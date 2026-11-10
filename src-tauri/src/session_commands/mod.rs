@@ -24,7 +24,7 @@ mod tests;
 pub enum StopMode {
     /// The session stays registered and can be reconnected.
     Disconnect,
-    /// The session is forgotten (closed and removed).
+    /// The session is forgotten only when cleanup is confirmed before the stop deadline.
     Close,
 }
 
@@ -48,10 +48,14 @@ pub async fn send(
 ) -> Result<(), String> {
     let connection = ConnectionId::parse(session_id, attempt)?;
     let queue = manager.send_target(&connection).await?;
-    queue.send_user_message(payload).await.map_err(|err| format!("{}", err))
+    queue
+        .send_user_message(payload)
+        .await
+        .map_err(|err| format!("{}", err))
 }
 
-/// Stops one session: `Close` forgets it, `Disconnect` keeps it registered for a reconnect.
+/// Stops one session. An incomplete stop returns an error and retains the stopping session,
+/// including for `Close`; its supervisor continues observing cleanup.
 pub async fn stop(
     manager: &ConnectionManager,
     session_id: &str,

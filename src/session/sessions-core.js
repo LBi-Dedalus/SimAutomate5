@@ -15,7 +15,7 @@ import { endpointKey } from "../home/recent-core.js";
 
 export const MAX_MESSAGES = 2000;
 
-const BUSY = ["connecting", "listening", "connected"];
+const BUSY = ["connecting", "listening", "connected", "stopping"];
 export const isBusyStatus = (status) => BUSY.includes(status);
 export const isTerminalStatus = (status) =>
   status === "disconnected" || status === "error";
@@ -25,6 +25,7 @@ const STATUS_TEXT = {
   connecting: "Connecting",
   listening: "Listening",
   connected: "Connected",
+  stopping: "Stopping",
   error: "Error",
 };
 export const statusText = (status) => STATUS_TEXT[status] ?? status;
@@ -134,6 +135,7 @@ export function createSessionStore(options = {}) {
       req,
       status: "connecting",
       attempt: 0,
+      ended: false,
       /** True once the backend accepted a connect for this id (so it must be closed there). */
       registered: false,
       /** Operation in flight on this session: "disconnecting" | "closing" | null. */
@@ -170,10 +172,11 @@ export function createSessionStore(options = {}) {
   /** Starts a new attempt: older events of this session are ignored from now on. */
   function beginAttempt(id) {
     const session = sessions.get(id);
-    if (!session) return null;
+    if (!session || session.status === "stopping") return null;
     emitUpdated(session, closeAstm(session.astm));
     syncIdleTimers(session);
     session.attempt += 1;
+    session.ended = false;
     session.status = "connecting";
     emit("status", session);
     return session.attempt;
@@ -184,7 +187,12 @@ export function createSessionStore(options = {}) {
     const session = sessions.get(payload?.session_id);
     if (!session) return { accepted: false, reason: "unknown" };
     if (payload.attempt !== session.attempt) return { accepted: false, reason: "stale" };
+    if (
+      (session.ended && !isTerminalStatus(payload.status)) ||
+      (session.status === "stopping" && !isTerminalStatus(payload.status) && payload.status !== "stopping")
+    ) return { accepted: false, reason: "regression" };
     session.status = payload.status;
+    session.ended ||= isTerminalStatus(payload.status);
     if (isTerminalStatus(payload.status)) closeTransfers(session);
     emit("status", session);
     return { accepted: true, session };
@@ -195,7 +203,9 @@ export function createSessionStore(options = {}) {
     const session = sessions.get(id);
     if (!session || session.attempt !== attempt) return false;
     if (session.status === status) return true;
+    if (session.ended || (session.status === "stopping" && status !== "disconnected")) return false;
     session.status = status;
+    session.ended ||= isTerminalStatus(status);
     if (isTerminalStatus(status)) closeTransfers(session);
     emit("status", session);
     return true;

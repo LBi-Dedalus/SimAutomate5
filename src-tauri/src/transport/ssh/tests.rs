@@ -18,6 +18,7 @@ use super::settings::{
     resolve_user, verify_host_key, HostSettings, SshPaths, DEFAULT_KEY_FILES,
 };
 use crate::models::User;
+use crate::transport::cleanup::AttemptCleanup;
 
 #[test]
 fn classify_open_error_retries_refused_target() {
@@ -372,6 +373,49 @@ async fn cancelling_a_stream_ends_reads_and_fails_writes() {
     assert_eq!(write.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
 }
 
+#[test]
+fn cancelling_a_stream_wakes_pending_transport_shutdown() {
+    use std::pin::Pin;
+    use std::task::{Context, Poll, Wake, Waker};
+    use tokio::io::AsyncWrite;
+
+    struct PendingIo;
+    impl AsyncWrite for PendingIo {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            _: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Poll::Pending
+        }
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Pending
+        }
+        fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Pending
+        }
+    }
+    struct CountWake(AtomicUsize);
+    impl Wake for CountWake {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let count = Arc::new(CountWake(AtomicUsize::new(0)));
+    let waker = Waker::from(count.clone());
+    let mut context = Context::from_waker(&waker);
+    let (mut stream, cancel) = CancellableStream::new(PendingIo);
+    assert!(Pin::new(&mut stream)
+        .poll_shutdown(&mut context)
+        .is_pending());
+    cancel.cancel();
+    assert_eq!(count.0.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        Pin::new(&mut stream).poll_shutdown(&mut context),
+        Poll::Ready(Ok(()))
+    ));
+}
+
 #[tokio::test]
 async fn a_stalled_handshake_times_out_and_closes_the_connection() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -399,12 +443,17 @@ async fn a_stalled_handshake_times_out_and_closes_the_connection() {
         known_hosts: dir.paths().known_hosts(),
         forwarded: None,
     };
+    let (_force, force_stop) = tokio::sync::watch::channel(false);
+    let cleanup = AttemptCleanup::new(force_stop);
+    let (_, reporter) = crate::transport::test_support::reporter();
     let result = connect_transport(
         Arc::new(client::Config::default()),
         "127.0.0.1",
         port,
         handler,
         Duration::from_millis(300),
+        &cleanup,
+        &reporter,
     )
     .await;
     match result {
@@ -414,5 +463,133 @@ async fn a_stalled_handshake_times_out_and_closes_the_connection() {
     timeout(Duration::from_secs(3), server)
         .await
         .expect("the connection must be closed after the timeout")
+        .unwrap();
+    assert!(timeout(Duration::from_secs(3), cleanup.finish(&reporter))
+        .await
+        .expect("the cancelled SSH handshake must be observed"));
+}
+
+struct TestSshServer;
+
+impl russh::server::Handler for TestSshServer {
+    type Error = russh::Error;
+}
+
+struct ConnectedSsh {
+    session: super::session::SshSession,
+    cleanup: AttemptCleanup,
+    force_stop: tokio::sync::watch::Sender<bool>,
+    reporter: crate::reporting::ConnectionReporter,
+    peer: tokio::task::JoinHandle<()>,
+    sink: Arc<crate::transport::test_support::Sink>,
+    _dir: TempDir,
+}
+
+async fn connected_ssh() -> ConnectedSsh {
+    use russh::keys::ssh_key::private::Ed25519Keypair;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    // Public, deterministic seed used only for this in-process loopback fixture.
+    let key = russh::keys::PrivateKey::from(Ed25519Keypair::from_seed(&[42; 32]));
+    let public = key.public_key().to_openssh().unwrap();
+    let config = Arc::new(russh::server::Config {
+        keys: vec![key],
+        ..Default::default()
+    });
+    let peer = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let session = russh::server::run_stream(config, stream, TestSshServer)
+            .await
+            .unwrap();
+        // A forced client-side transport cut may end the peer with an EOF error.
+        let _ = session.await;
+    });
+    let dir = TempDir::new();
+    let known_hosts = dir.write(
+        ".ssh/known_hosts",
+        &format!("[127.0.0.1]:{port} {public}\n"),
+    );
+    let handler = SshHandler {
+        host: "127.0.0.1".into(),
+        alias: "127.0.0.1".into(),
+        port,
+        known_hosts,
+        forwarded: None,
+    };
+    let (force_stop, force) = tokio::sync::watch::channel(false);
+    let cleanup = AttemptCleanup::new(force);
+    let (sink, reporter) = crate::transport::test_support::reporter();
+    let session = connect_transport(
+        Arc::new(client::Config::default()),
+        "127.0.0.1",
+        port,
+        handler,
+        Duration::from_secs(3),
+        &cleanup,
+        &reporter,
+    )
+    .await
+    .unwrap();
+    ConnectedSsh {
+        session,
+        cleanup,
+        force_stop,
+        reporter,
+        peer,
+        sink,
+        _dir: dir,
+    }
+}
+
+#[tokio::test]
+async fn explicit_ssh_close_observes_local_task_completion() {
+    let fixture = connected_ssh().await;
+    timeout(Duration::from_secs(3), fixture.session.close())
+        .await
+        .unwrap();
+    assert!(
+        timeout(
+            Duration::from_secs(3),
+            fixture.cleanup.finish(&fixture.reporter)
+        )
+        .await
+        .unwrap(),
+        "{:?}",
+        fixture
+            .sink
+            .messages
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|message| message.content.clone())
+            .collect::<Vec<_>>()
+    );
+    timeout(Duration::from_secs(3), fixture.peer)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn cancelling_explicit_ssh_close_does_not_lose_the_tracked_handle() {
+    let fixture = connected_ssh().await;
+    let mut close = Box::pin(fixture.session.close());
+    tokio::select! {
+        biased;
+        _ = &mut close => panic!("cleanup cannot finish before its job has been polled"),
+        _ = std::future::ready(()) => {}
+    }
+    drop(close);
+    fixture.force_stop.send_replace(true);
+    assert!(timeout(
+        Duration::from_secs(3),
+        fixture.cleanup.finish(&fixture.reporter)
+    )
+    .await
+    .expect("abandoned explicit close remains observable"));
+    timeout(Duration::from_secs(3), fixture.peer)
+        .await
+        .unwrap()
         .unwrap();
 }

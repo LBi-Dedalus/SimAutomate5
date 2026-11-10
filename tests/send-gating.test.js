@@ -3,6 +3,7 @@
 // rule, sessions.sendTarget(), including while a disconnect/close is pending.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { installTemplates } from "./helpers/markup.js";
 
 class FakeNode {
@@ -54,8 +55,8 @@ class FakeNode {
     this.children.push(...c);
   }
   remove() {}
-  replaceChildren() {
-    this.children = [];
+  replaceChildren(...children) {
+    this.children = children;
   }
   setAttribute() {}
   focus() {}
@@ -84,6 +85,7 @@ const getNode = (id) => {
 
 // Composer form: `message` field and one submit button.
 const composerSend = new FakeNode("button", "composer-send");
+const statusPill = new FakeNode("span", "status-pill");
 const composerForm = getNode("message-form");
 composerForm.message = new FakeNode("textarea", "message");
 composerForm.querySelector = (sel) => (sel === 'button[type="submit"]' ? composerSend : null);
@@ -100,6 +102,7 @@ globalThis.document = {
   createElement: (tag) => new FakeNode(tag),
   createTextNode: (t) => ({ textContent: t }),
   querySelectorAll(sel) {
+    if (sel === "[data-status-pill]") return [statusPill];
     if (sel === "#tpl-vars input") return getNode("tpl-vars").find((n) => n.tag === "input");
     return [];
   },
@@ -130,11 +133,16 @@ globalThis.window = {
   connection_status: { get: () => "disconnected", set() {}, subscribe() {} },
 };
 
-await installTemplates(["templates/template-card.html", "templates/variable-auto-row.html", "templates/variable-value-row.html"]);
+await installTemplates([
+  "templates/template-card.html", "templates/variable-auto-row.html", "templates/variable-value-row.html",
+  "session/session-item.html", "session/system-message.html",
+]);
+await import("../src/status.js");
 const { sessions, store } = await import("../src/session/sessions.js");
 await import("../src/session/messages.js");
 await import("../src/session/special-chars.js");
 await import("../src/templates/templates.js");
+await import("../src/session/session-ui.js");
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const surfaces = () => ({
@@ -327,4 +335,48 @@ test("rejected initial connect after a disconnect request: no backend disconnect
   // Idempotent: another disconnect on the terminal session is a no-op that leaves no op.
   assert.deepEqual(await sessions.disconnect(id), { ok: true });
   assert.equal(store.get(id).op, null);
+});
+
+test("incomplete Close keeps every send surface and lifecycle button disabled with amber Stopping", async () => {
+  const id = await startConnected(30);
+  const other = await startConnected(31);
+  store.select(id);
+  store.setDraft(id, "keep this draft");
+  hold("close_session");
+  const closing = sessions.close(id);
+  await tick();
+  sessions.handleStatus({ session_id: id, attempt: store.get(id).attempt, status: "stopping" });
+  ipc.pending.get("close_session").reject("Stop incomplete: cleanup could not be confirmed");
+  await closing;
+  ipc.pending.delete("close_session");
+  assert.equal(store.get(id).op, null);
+  assert.equal(store.get(id).status, "stopping");
+  assertAll(true, "after incomplete Close returned");
+  assert.equal(statusPill.className, "badge warn");
+  assert.equal(statusPill.children.at(-1).textContent, "Stopping");
+  assert.equal(window.connection_status.isBusy(), true);
+  for (const action of ["disconnect", "reconnect", "close"]) {
+    assert.equal(getNode(`session-${action}`).disabled, true, `${action} stays disabled`);
+  }
+  const row = getNode("side-sessions").children.find((node) => node.dataset.sessionId === id);
+  assert.equal(row.querySelector(".ses-dot").dataset.st, "stopping");
+  assert.equal(row.querySelector(".ses-close").disabled, true);
+  assert.match(readFileSync(new URL("../src/styles.css", import.meta.url), "utf8"),
+    /i\[data-st="stopping"\]\s*\{\s*background:\s*var\(--amber\)/);
+  const calls = ipc.calls.length;
+  assert.equal((await sessions.close(id)).ok, false);
+  assert.equal((await sessions.disconnect(id)).ok, false);
+  assert.equal((await sessions.reconnect(id)).ok, false);
+  assert.equal(ipc.calls.length, calls);
+  emitConnected(id);
+  assertAll(true, "after a late connected event");
+  store.select(other);
+  assertAll(false, "another connected session remains usable");
+  store.select(id);
+  sessions.handleStatus({ session_id: id, attempt: store.get(id).attempt, status: "disconnected" });
+  assert.ok(store.get(id), "late completion does not repeat the earlier Close");
+  assert.equal(store.get(id).draft, "keep this draft");
+  assert.equal(getNode("session-reconnect").disabled, false);
+  assert.equal(getNode("session-close").disabled, false);
+  assertAll(true, "completed but disconnected");
 });
