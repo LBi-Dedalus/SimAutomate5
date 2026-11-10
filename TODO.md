@@ -1,4 +1,2 @@
 - [ ] Voir les x-preload links sont tous nécessaires. Beaucoup pourraient être chargés dans le code JS notamment les templates à cloner
 - [ ] Config imports and exports
-- [ ] reprise frontend
-- [ ] finitions architecturales backend
