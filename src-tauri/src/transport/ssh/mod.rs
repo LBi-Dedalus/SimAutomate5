@@ -8,12 +8,12 @@ mod forwarding;
 mod session;
 mod settings;
 
-use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 
 use super::streams::{serve, ConnectionContext};
 use crate::models::{ConnectionStatus, Host, Port, SshTunnel};
 use forwarding::{close_unserved, open_forward_channel, stop_forwarding, REMOTE_BIND_ADDRESS};
-use session::{open_session, OneShot};
+use session::open_session;
 
 /// Client mode (`-L`): `host:port` is the target as seen from the SSH host.
 pub(super) async fn client_task(
@@ -35,7 +35,7 @@ pub(super) async fn client_task(
     );
 
     let session = tokio::select! {
-        res =         open_session(&reporter, tunnel, OneShot::none()) => match res {
+        res =         open_session(&reporter, tunnel, None) => match res {
             Ok(session) => session,
             Err(message) => {
                 reporter.error(file!(), line!(), message);
@@ -96,9 +96,9 @@ pub(super) async fn server_task(
         ),
     );
 
-    let (sender, mut receiver) = mpsc::channel(1);
+    let (sender, mut receiver) = oneshot::channel();
     let session = tokio::select! {
-        res =         open_session(&reporter, tunnel, OneShot::new(sender)) => match res {
+        res =         open_session(&reporter, tunnel, Some(sender)) => match res {
             Ok(session) => session,
             Err(message) => {
                 reporter.error(file!(), line!(), message);
@@ -145,9 +145,9 @@ pub(super) async fn server_task(
     reporter.emit_status(ConnectionStatus::Listening);
 
     let channel = tokio::select! {
-        res = receiver.recv() => match res {
-            Some(channel) => channel,
-            None => {
+        res = &mut receiver => match res {
+            Ok(channel) => channel,
+            Err(_) => {
                 reporter.error(
                     file!(),
                     line!(),

@@ -3,7 +3,7 @@
 
 use russh::client::Msg;
 use russh::{Channel, ChannelOpenFailure};
-use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio::time::{sleep, timeout, Duration};
 
 use super::session::{SshSession, DISCONNECT_TIMEOUT};
@@ -132,9 +132,9 @@ pub(super) fn classify_open_error(err: &russh::Error) -> OpenErrorKind {
 
 /// Explicitly closes the channels nobody will serve (a bare russh channel does not send a close
 /// when dropped).
-pub(super) async fn close_unserved(mut receiver: mpsc::Receiver<Channel<Msg>>) {
+pub(super) async fn close_unserved(mut receiver: oneshot::Receiver<Channel<Msg>>) {
     receiver.close();
-    while let Ok(channel) = receiver.try_recv() {
+    if let Ok(channel) = receiver.try_recv() {
         let _ = channel.close().await;
     }
 }

@@ -16,7 +16,7 @@ use russh::keys::{Algorithm, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh::{Channel, ChannelOpenFailure, Disconnect, Preferred};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio::time::{timeout, Duration};
 
 use super::settings::{
@@ -58,7 +58,7 @@ pub(super) struct SshHandler {
     pub(super) port: u16,
     pub(super) known_hosts: PathBuf,
     /// Server mode: receives the first channel opened by the SSH host for the forwarded port.
-    pub(super) forwarded: OneShot<Channel<Msg>>,
+    pub(super) forwarded: Option<oneshot::Sender<Channel<Msg>>>, // OneShot<Channel<Msg>>,
 }
 
 impl client::Handler for SshHandler {
@@ -91,7 +91,12 @@ impl client::Handler for SshHandler {
     ) -> Result<(), Self::Error> {
         // Only one client is served: the gate hands off the first channel and refuses all later
         // ones, whatever the state of the receiver.
-        match self.forwarded.hand_off(channel) {
+        let delivered = match self.forwarded.take() {
+            Some(sender) => sender.send(channel),
+            None => Err(channel),
+        };
+
+        match delivered {
             Ok(()) => reply.accept().await,
             Err(_refused) => {
                 // Never confirmed: nothing is established, the SSH host just sees the refusal.
@@ -101,27 +106,6 @@ impl client::Handler for SshHandler {
             }
         }
         Ok(())
-    }
-}
-
-/// Hands off at most one item, ever: the sender is taken on the first attempt, so later items are
-/// refused even while the receiver is still alive.
-pub(super) struct OneShot<T>(Option<mpsc::Sender<T>>);
-
-impl<T> OneShot<T> {
-    pub(super) fn new(sender: mpsc::Sender<T>) -> Self {
-        Self(Some(sender))
-    }
-
-    pub(super) fn none() -> Self {
-        Self(None)
-    }
-
-    pub(super) fn hand_off(&mut self, item: T) -> Result<(), T> {
-        match self.0.take() {
-            Some(sender) => sender.try_send(item).map_err(|err| err.into_inner()),
-            None => Err(item),
-        }
     }
 }
 
@@ -325,7 +309,7 @@ impl Drop for SshSession {
 pub(super) async fn open_session(
     reporter: &ConnectionReporter,
     tunnel: &SshTunnel,
-    forwarded: OneShot<Channel<Msg>>,
+    forwarded: Option<oneshot::Sender<Channel<Msg>>>,
 ) -> Result<SshSession, String> {
     let paths = SshPaths::from_env()?;
     let alias = tunnel.host.as_str();
