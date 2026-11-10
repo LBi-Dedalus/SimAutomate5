@@ -59,7 +59,7 @@ pub(super) struct SshHandler {
     pub(super) port: u16,
     pub(super) known_hosts: PathBuf,
     /// Server mode: receives the first channel opened by the SSH host for the forwarded port.
-    pub(super) forwarded: Option<oneshot::Sender<Channel<Msg>>>, // OneShot<Channel<Msg>>,
+    pub(super) forwarded: Option<oneshot::Sender<Channel<Msg>>>,
 }
 
 impl client::Handler for SshHandler {
