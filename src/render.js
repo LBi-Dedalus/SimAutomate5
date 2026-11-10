@@ -4,6 +4,17 @@ import { splitTokens } from "./control-chars.js";
 const SEGMENT_AT_START = /^[A-Z][A-Z0-9]{2}(?=\|)/;
 const LINE_BREAK_TOKENS = new Set(["CR", "LF", "VT"]);
 
+/** Appends text with a line-break opportunity after every "|", so long HL7 lines wrap between fields. */
+function appendWrappable(container, text) {
+  const pieces = text.split("|");
+  pieces.forEach((piece, i) => {
+    const last = i === pieces.length - 1;
+    const value = last ? piece : `${piece}|`;
+    if (value) container.appendChild(document.createTextNode(value));
+    if (!last) container.appendChild(document.createElement("wbr"));
+  });
+}
+
 /** Appends text, wrapping segment names (MSH, PID…) found at a line start in .sg spans. */
 function appendText(container, text, atLineStart) {
   const lines = text.split("\n");
@@ -17,7 +28,7 @@ function appendText(container, text, atLineStart) {
       container.appendChild(sg);
       line = line.slice(match[0].length);
     }
-    if (line) container.appendChild(document.createTextNode(line));
+    appendWrappable(container, line);
   });
 }
 
@@ -36,7 +47,7 @@ export function renderTokens(
   parts.forEach((part, index) => {
     if (part.type === "text") {
       if (segments) appendText(container, part.value, lineStart);
-      else container.appendChild(document.createTextNode(part.value));
+      else appendWrappable(container, part.value);
       lineStart = part.value.endsWith("\n");
       return;
     }

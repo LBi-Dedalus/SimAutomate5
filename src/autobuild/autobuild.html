@@ -1,6 +1,9 @@
 <link rel="x-template" href="autobuild/recent-card.html" />
 <link rel="x-template" href="autobuild/recent-preview-line.html" />
 <script type="after-include" src="autobuild/autobuild.js"></script>
+<header>
+  <h4>Autobuild <small class="sub">Wrap a message in HL7 (MLLP) or ASTM framing</small></h4>
+</header>
 <div class="split stack">
   <form id="ab-form" class="dock" novalidate data-action="submit:ab.buildAndSend">
     <div class="ab-body">
@@ -48,5 +51,6 @@
     </div>
     <p id="ab-note" class="hidden" role="alert" data-variant="danger"></p>
     <ul id="ab-list" aria-labelledby="ab-list-label"></ul>
+    <p class="dashed-note">No autobuild yet. Successful builds are kept here so you can reload them.</p>
   </aside>
 </div>

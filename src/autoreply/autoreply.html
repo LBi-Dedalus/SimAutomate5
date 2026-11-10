@@ -1,5 +1,8 @@
 <link rel="x-template" href="autoreply/rule-row.html" />
 <script type="after-include" src="autoreply/autoreply.js"></script>
+<header>
+  <h4>Auto reply <small class="sub">Answer incoming messages automatically, in every session</small></h4>
+</header>
 <div id="ar-banner" class="banner hidden" role="status" aria-live="polite">
   <span id="ar-banner-text"></span>
   <button type="button" class="small outline hidden" id="ar-banner-retry" data-action="click:ar.retry">Retry</button>
@@ -53,10 +56,11 @@
     </section>
   </div>
 
-  <aside id="ar-dock" aria-label="Rule editor">
+  <aside id="ar-dock" class="drawer" aria-label="Rule editor">
     <form class="hidden" id="ar-form" autocomplete="off" novalidate data-action="submit:ar.noSubmit">
       <header>
         <h6>Rule details</h6>
+        <button type="button" class="small ghost icon drawer-close" id="ar-close" aria-label="Close rule editor" data-action="click:ar.closeEditor">✕</button>
         <label>
           <input type="checkbox" id="ar-rule-enabled" data-field="enabled" data-action="change:ar.check" />
           Enabled
@@ -167,6 +171,12 @@
         <code>ACK^A01</code> does.
       </p>
     </form>
+
+    <div id="ar-empty" class="empty">
+      <i aria-hidden="true">↺</i>
+      <b>No rule selected</b>
+      <p>Select a rule in the list to edit it, or add a new one.</p>
+    </div>
   </aside>
 </div>
 

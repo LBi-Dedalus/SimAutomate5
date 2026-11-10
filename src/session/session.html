@@ -55,20 +55,22 @@
     </form>
   </div>
 
-  <aside id="inspector" aria-label="Message inspector">
+  <aside id="inspector" class="drawer" aria-label="Message inspector">
     <header>
       <div class="hstack gap-2">
         <span id="insp-dir" class="badge hidden"></span>
         <b id="insp-title">Message inspector</b>
       </div>
       <small id="insp-meta" class="hstack gap-2"></small>
+      <button type="button" class="small ghost icon drawer-close" id="insp-close" aria-label="Close inspector" data-action="click:insp.close">✕</button>
       <div id="insp-tabs" role="tablist"></div>
     </header>
     <div id="insp-body">
       <p>Select a message in the conversation to inspect it.</p>
     </div>
     <footer>
-      <button type="button" class="small outline" id="insp-copy" data-action="click:insp.copy" disabled>Copy</button>
+          <span class="sp"></span>
+          <button type="button" class="small outline" id="insp-copy" data-action="click:insp.copy" disabled>Copy</button>
       <button type="button" class="small outline" id="insp-save-template" data-action="click:insp.saveTemplate" disabled>Save as template</button>
             <button type="button" class="small outline" id="insp-resend" data-action="click:insp.resend" aria-label="Resend this message" disabled>Resend</button>    </footer>
   </aside>

@@ -14,6 +14,8 @@
   gap: 10px;
   padding: 16px 24px;
   overflow-x: hidden; /* bubbles are width-capped: never a horizontal scrollbar */
+  /* Content fades out at both edges instead of being cut against the header and the composer. */
+  mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 18px), transparent 100%);
 }
 
 .msgs {
@@ -52,6 +54,8 @@
 
 .systemerror {
   --c: var(--red);
+  border: 1px solid color-mix(in srgb, var(--red) 35%, transparent);
+  font-weight: var(--font-semibold);
 }
 
 .system {
@@ -87,9 +91,11 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-large);
   background: var(--paper);
-  font: var(--text-7) / 1.55 var(--mono);
+  font: var(--text-7) / 1.6 var(--mono);
+  font-size: 12.5px;
   white-space: pre-wrap;
-  word-break: break-all;
+  /* Lines wrap after "|" first; only a token too long for the bubble is split anywhere. */
+  overflow-wrap: anywhere;
 
   .out & {
     border-color: var(--teal);
@@ -103,20 +109,19 @@
   }
 
   .out & .sg {
-    color: var(--teal-l);
+    color: #fff;
+    opacity: 0.85;
   }
 
   .out & .cc {
     border-color: transparent;
-    background: color-mix(in srgb, var(--on) 20%, transparent);
+    background: color-mix(in srgb, var(--on) 28%, transparent);
     color: var(--on);
   }
 
   .sel &,
   .msg:focus-visible & {
-    box-shadow:
-      0 0 0 2px var(--paper),
-      0 0 0 4px var(--c);
+    box-shadow: 0 0 0 2px var(--c);
   }
 }
 
@@ -136,7 +141,7 @@
 }
 
 .af-text {
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 #message-form {
@@ -186,8 +191,26 @@
   font-size: var(--text-7);
 
   & > p {
-    margin-top: 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 40px auto 0;
+    max-width: 220px;
     text-align: center;
+
+    /* Same tile as the other empty states. */
+    &::before {
+      content: "▤";
+      display: grid;
+      place-items: center;
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-large);
+      background: color-mix(in srgb, var(--teal) var(--tint), var(--paper));
+      color: var(--teal);
+      font-size: 22px;
+    }
   }
 
   & > small {
@@ -301,6 +324,17 @@
 
   & ul {
     color: var(--mute);
+  }
+}
+
+@media (max-width: 960px) {
+  /* Room for the connection address: tighter header buttons. */
+  #view-session > header {
+    gap: var(--space-2);
+
+    & > button {
+      padding-inline: 8px;
+    }
   }
 }
 

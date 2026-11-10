@@ -16,6 +16,7 @@
   --c: var(--teal); /* current tone */
   --mono: "Cascadia Code", "Cascadia Mono", Consolas, monospace;
   --pad: 18px;
+  --head: 54px; /* height of the page header bar */
   --tint: 12%;
 
   /* Oat tokens */
@@ -26,9 +27,9 @@
   --font-semibold: 600;
   --font-bold: 700; /* headings, buttons, badges */
   --text-regular: var(--text-6);
-  --text-6: 13px; /* body, panel titles */
-  --text-7: 12px; /* controls, rows, payloads */
-  --text-8: 11px; /* labels, captions, tags */
+  --text-6: 13.5px; /* body, panel titles */
+  --text-7: 13px; /* controls, rows, payloads */
+  --text-8: 12px; /* labels, captions, tags */
   --radius-medium: 8px;
   --radius-large: 14px;
   --bar-height: 0.42rem;
@@ -48,8 +49,8 @@
 /* Neutrals derive from --fg/--paper, so the sidebar only swaps those two (and the teal) to go dark. */
 :root,
 #sidebar {
-  --mute: color-mix(in srgb, var(--fg) 62%, var(--paper));
-  --line: color-mix(in srgb, var(--fg) 12%, var(--paper));
+  --mute: color-mix(in srgb, var(--fg) 76%, var(--paper));
+  --line: color-mix(in srgb, var(--fg) 17%, var(--paper));
   --wash: color-mix(in srgb, var(--fg) 6%, var(--paper));
   --foreground: var(--fg);
   --muted-foreground: var(--mute);
@@ -74,7 +75,9 @@ body {
 body {
   background: var(--wash);
   font-size: var(--text-6);
+  font-variant-numeric: tabular-nums;
   line-height: 1.45;
+  text-rendering: optimizeLegibility;
 }
 
 h2,
@@ -84,6 +87,8 @@ h6 {
   margin: 0;
   font-size: var(--text-6);
   font-weight: var(--font-bold);
+  letter-spacing: -0.005em;
+  text-wrap: balance;
 }
 
 h2 {
@@ -110,13 +115,24 @@ p:not([role]),
 
 small,
 label {
-  color: var(--mute);
+  color: color-mix(in srgb, var(--fg) 78%, var(--paper));
   font-size: var(--text-8);
   font-weight: var(--font-medium);
 }
 
 label:has(:is(input, select, textarea):disabled) {
   opacity: 0.55;
+}
+
+label:has(> input[type="checkbox"]:not([role="switch"])) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+
+  & > input {
+    margin: 0;
+  }
 }
 
 label:has([role="switch"]) {
@@ -162,6 +178,15 @@ output {
 button {
   font-size: var(--text-7);
   font-weight: var(--font-bold);
+}
+
+/* A disabled solid button reads as unavailable (flat grey), not as a washed-out primary. */
+button:disabled:not(.ghost, .outline, .chip, .icon, .k-x, [role="menuitem"]) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--fg) 9%, var(--paper));
+  box-shadow: none;
+  color: color-mix(in srgb, var(--fg) 62%, var(--paper));
+  opacity: 1;
 }
 
 .hidden {
@@ -458,6 +483,25 @@ small:is(.ok, .warn, .error),
   }
 }
 
+.drawer-close {
+  display: none;
+}
+
+/* Nothing to list yet: a dashed note takes the place of the list until it has items. */
+.dashed-note {
+  margin: 0;
+  padding: 18px 12px;
+  border: 1px dashed color-mix(in srgb, var(--fg) 30%, var(--paper));
+  border-radius: var(--radius-large);
+  color: var(--mute);
+  font-size: var(--text-7);
+  text-align: center;
+}
+
+:is(#recent-list, #ab-list):not(:empty) ~ .dashed-note {
+  display: none;
+}
+
 .banner {
   flex-shrink: 0;
   display: flex;
@@ -513,7 +557,7 @@ ul[role="alert"] {
   color: var(--teal);
   font: var(--font-bold) 9.5px/15px var(--font-mono);
   vertical-align: 1px;
-  /* A chip is atomic: the bubble's break-all must not split "CR" into "C" / "R". */
+  /* A chip is atomic: the bubble's anywhere-wrapping must not split "CR" into "C" / "R". */
   white-space: nowrap;
 }
 
@@ -613,7 +657,7 @@ ul[role="alert"] {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 58px;
+  min-height: var(--head);
   padding: 0 var(--pad);
   border-bottom: 1px solid var(--line);
   background: var(--paper);
@@ -623,6 +667,23 @@ h4 {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* Page title: the name of the view, then a quiet one-line purpose. */
+.view > header h4 {
+  font-size: 16px;
+}
+
+.view > header .sub,
+#session-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view > header .sub {
+  font-size: var(--text-7);
+  font-weight: 400;
 }
 
 :is(aside, .dock) header {
@@ -740,6 +801,8 @@ footer {
   --fg: var(--on);
   --paper: var(--ink);
   --teal: var(--teal-l);
+  --amber: #fbbf24; /* status colours lightened to keep their contrast on the dark surface */
+  --red: #f87171;
   --c: var(--teal);
   --tint: 20%;
   flex: 0 0 224px;
@@ -789,6 +852,14 @@ footer {
 
   & p {
     padding: 2px 20px;
+  }
+
+  /* Empty lists in the sidebar use the same placeholder as the views. */
+  & .dashed-note {
+    margin: 2px 10px 0;
+    padding: 7px 10px;
+    font-size: var(--text-8);
+    text-align: left;
   }
 
   & footer {
@@ -843,10 +914,11 @@ footer {
 #side-lists {
   flex: 1;
   min-height: 0;
-  padding-bottom: 8px;
+  padding-bottom: 16px;
   overflow: hidden auto;
   scroll-padding-top: 40px;
   scrollbar-width: thin;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent);
 
   & > div {
     display: flex;
@@ -864,6 +936,7 @@ footer {
 
   &.on {
     background: var(--line);
+    box-shadow: inset 3px 0 0 var(--teal);
   }
 
   /* Row actions: a vertical stack as tall as the row, one equal share per button.
@@ -968,6 +1041,7 @@ footer {
   & small {
     display: block;
     font-weight: 400;
+    text-wrap: balance;
   }
 
   & b {
@@ -988,8 +1062,8 @@ footer {
 
 button.icon {
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   margin-right: var(--space-2);
   padding: 0;
   font-size: 15px;
@@ -1059,6 +1133,20 @@ button.card.k-add {
 }
 
 /* ── Responsive ── */
+@media (max-height: 640px) {
+  #sidebar h1 {
+    padding: 10px 16px;
+  }
+
+  #nav button {
+    padding: 5px 10px;
+  }
+
+  #sidebar h6 {
+    padding-top: 12px;
+  }
+}
+
 @media (max-height: 520px) {
   #sidebar h1 {
     padding: 8px 16px;
@@ -1072,7 +1160,6 @@ button.card.k-add {
 @media (max-width: 1100px) {
   .split > aside {
     --w: 300px;
-    flex: none;
   }
 
   .split > .tlist {
@@ -1086,15 +1173,72 @@ button.card.k-add {
   }
 
   #sidebar {
-    flex-basis: 192px;
+    flex-basis: 200px;
   }
 
-  .split > aside {
-    --w: 272px;
+  .ses small {
+    font-size: 10.5px;
   }
 
   .split > .tlist {
     --w: 216px;
+  }
+
+  #recent-list.cards {
+    & .card {
+      gap: 2px;
+      padding: 10px 12px;
+    }
+
+    & .card-actions > button {
+      padding-block: 5px;
+    }
+  }
+
+  /* Without a selected message the inspector has nothing to show: the conversation takes the room. */
+  #inspector:has(#insp-copy:disabled) {
+    display: none;
+  }
+
+  /* The chip rows share the width with a side panel: compact chips keep them on one row. */
+  :is(#special-chars, .tbar) {
+    gap: 3px;
+
+    & > span {
+      display: none;
+    }
+
+    & .chip {
+      padding-inline: 6px;
+    }
+  }
+
+  /* Side panels (message inspector, rule editor) slide over their view instead of squeezing it. */
+  .view:has(.drawer) {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .drawer {
+    position: absolute;
+    inset: var(--head) 0 0 auto;
+    z-index: 4;
+    width: min(340px, 92%);
+    box-shadow: 0 0 0 100vmax rgb(15 42 58 / 0.45), -10px 0 28px rgb(0 0 0 / 0.2);
+  }
+
+  .drawer-close {
+    display: grid;
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    margin: 0;
+    place-items: center;
+  }
+
+  .drawer header:has(.drawer-close) {
+    position: relative;
+    padding-right: 44px;
   }
 
   /* Auto reply and Autobuild: list above the editor, the whole view scrolls. */
