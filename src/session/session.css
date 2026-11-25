@@ -327,15 +327,33 @@
   }
 }
 
-@media (max-width: 960px) {
-  /* Room for the connection address: tighter header buttons. */
-  #view-session > header {
-    gap: var(--space-2);
+/* Header: identity first, actions wrap onto their own row when the window is narrow. */
+#view-session > header {
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  padding-block: var(--space-2);
 
-    & > button {
-      padding-inline: 8px;
-    }
+  & > h4 {
+    flex: 1 1 220px;
+    min-width: 0;
   }
+
+  & > .badge {
+    flex-shrink: 0;
+  }
+
+  & #session-address {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+#view-session > header > .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-left: auto;
 }
 
 @media (max-height: 520px) {
